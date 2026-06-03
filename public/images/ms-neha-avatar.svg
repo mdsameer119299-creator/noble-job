@@ -1,0 +1,5 @@
+<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="40" cy="40" r="40" fill="linear-gradient(135deg,#1847d4,#0d1f4e)"/>
+  <circle cx="40" cy="40" r="40" fill="#1847d4"/>
+  <text x="40" y="50" text-anchor="middle" font-family="Playfair Display,serif" font-size="28" font-weight="900" fill="white">N</text>
+</svg>

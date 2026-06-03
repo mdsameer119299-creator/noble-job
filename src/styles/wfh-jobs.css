@@ -1,0 +1,520 @@
+/* WFH Jobs page — premium recruitment platform styling */
+
+.wfh-page {
+  background: #f8faff;
+  min-height: 100vh;
+}
+
+/* Hero flush under full-width header */
+.wfh-page .category-hero--wfh {
+  margin-top: 0;
+  min-height: 360px;
+}
+
+@media (min-width: 1024px) {
+  .wfh-page .category-hero--wfh {
+    min-height: 400px;
+  }
+
+  .wfh-page .category-hero--wfh .category-hero__grid {
+    padding: 36px 0 40px;
+  }
+}
+
+.wfh-page .category-hero--wfh .category-hero__badge {
+  font-size: 13px;
+}
+
+.wfh-page .category-hero--wfh .category-hero__bullet {
+  font-size: 13px;
+  padding: 6px 14px;
+}
+
+.wfh-page .category-hero--wfh .category-hero__desc {
+  font-size: 16px;
+}
+
+.wfh-page .category-hero--wfh .category-hero__stat-label {
+  font-size: 11px;
+}
+
+.wfh-page .category-hero--wfh .category-hero__float-card-title {
+  font-size: 14px;
+}
+
+.wfh-page .category-hero--wfh .category-hero__float-card-sub {
+  font-size: 12px;
+}
+
+/* Main content */
+.wfh-panel {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+.wfh-panel__search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 14px;
+  border: 1.5px solid #e2e8f0;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.04);
+}
+
+.wfh-panel__search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: #0d1f4e;
+  font-family: "DM Sans", sans-serif;
+}
+
+.wfh-panel__search input::placeholder {
+  color: #94a3b8;
+}
+
+.wfh-panel__status-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.wfh-panel__status-tab {
+  padding: 9px 16px;
+  border-radius: 24px;
+  border: 1.5px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  color: #374151;
+  transition: all 0.2s ease;
+  font-family: "DM Sans", sans-serif;
+}
+
+.wfh-panel__status-tab--active {
+  border-color: #7c3aed;
+  background: #7c3aed;
+  color: #fff;
+}
+
+.wfh-panel__status-tab-count {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.wfh-panel__status-tab--active .wfh-panel__status-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.wfh-panel__layout {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 272px;
+  gap: 24px;
+  align-items: start;
+}
+
+.wfh-panel__results-meta {
+  font-size: 15px;
+  color: #64748b;
+  margin-bottom: 18px;
+}
+
+.wfh-panel__results-meta strong {
+  color: #0d1f4e;
+}
+
+.wfh-panel__job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wfh-panel__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Category chips */
+.wfh-categories {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.wfh-categories__chip {
+  padding: 10px 16px 10px 10px;
+  border-radius: 24px;
+  border: 1.5px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  color: #374151;
+  transition: all 0.2s ease;
+  font-family: "DM Sans", sans-serif;
+}
+
+.wfh-categories__chip--active {
+  border-color: #7c3aed;
+  background: #7c3aed;
+  color: #fff;
+}
+
+/* Filter sidebar */
+.wfh-filters {
+  position: sticky;
+  top: 108px;
+}
+
+.wfh-filters__card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 18px;
+  border: 1px solid rgba(124, 58, 237, 0.12);
+  padding: 22px 20px;
+  box-shadow:
+    0 4px 24px rgba(124, 58, 237, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+}
+
+.wfh-filters__title {
+  font-family: "Playfair Display", serif;
+  font-weight: 900;
+  color: #0d1f4e;
+  font-size: 18px;
+  margin: 0 0 20px;
+}
+
+.wfh-filters__section-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0d1f4e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 12px;
+}
+
+.wfh-filters__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  color: #374151;
+}
+
+.wfh-filters__option input {
+  accent-color: #7c3aed;
+  width: 16px;
+  height: 16px;
+}
+
+/* Job card */
+.wfh-job-card {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 22px 24px;
+  cursor: pointer;
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+  box-shadow: 0 2px 14px rgba(124, 58, 237, 0.06);
+}
+
+.wfh-job-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(124, 58, 237, 0.35);
+  box-shadow: 0 12px 32px rgba(124, 58, 237, 0.14);
+}
+
+.wfh-job-card__head {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.wfh-job-card__logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.wfh-job-card__title {
+  font-family: "Playfair Display", serif;
+  font-weight: 800;
+  font-size: 18px;
+  color: #0d1f4e;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.wfh-job-card__company {
+  font-size: 15px;
+  color: #374151;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.wfh-job-card__badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.wfh-job-card__meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.wfh-job-card__meta-tag {
+  background: #f5f3ff;
+  color: #5b21b6;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wfh-job-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wfh-job-card__applicants {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.wfh-job-card__cta {
+  background: linear-gradient(135deg, #1847d4, #7c3aed);
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: "DM Sans", sans-serif;
+}
+
+.wfh-job-card__cta--archived {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1.5px solid #cbd5e1;
+}
+
+.wfh-skill-tag {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+  padding: 5px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Top hiring companies */
+.wfh-top-hiring {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 22px 20px;
+  box-shadow: 0 4px 20px rgba(13, 31, 78, 0.06);
+}
+
+.wfh-top-hiring__title {
+  font-family: "Playfair Display", serif;
+  font-weight: 900;
+  color: #0d1f4e;
+  font-size: 17px;
+  margin: 0 0 16px;
+}
+
+.wfh-top-hiring__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wfh-top-hiring__company {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #f1f5f9;
+  background: linear-gradient(135deg, #fafbff 0%, #fff 100%);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.wfh-top-hiring__company:hover {
+  border-color: rgba(124, 58, 237, 0.25);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.08);
+}
+
+.wfh-top-hiring__logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 14px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.wfh-top-hiring__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wfh-top-hiring__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0d1f4e;
+  margin: 0 0 6px;
+}
+
+.wfh-top-hiring__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wfh-top-hiring__badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.wfh-top-hiring__badge--hiring {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.wfh-top-hiring__badge--verified {
+  background: #eff6ff;
+  color: #1847d4;
+}
+
+/* Tips + widgets */
+.wfh-widget {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 22px 20px;
+  box-shadow: 0 2px 14px rgba(124, 58, 237, 0.05);
+}
+
+.wfh-widget__title {
+  font-family: "Playfair Display", serif;
+  font-weight: 900;
+  color: #0d1f4e;
+  font-size: 17px;
+  margin: 0 0 14px;
+}
+
+.wfh-widget__list {
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wfh-widget__list li {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.55;
+}
+
+.wfh-upload-cta {
+  display: block;
+  background: linear-gradient(135deg, #f07020, #ea580c);
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 15px;
+  text-decoration: none;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(240, 112, 32, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .wfh-panel__layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .wfh-panel__sidebar {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .wfh-panel {
+    padding: 16px 16px 40px;
+  }
+
+  .wfh-panel__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .wfh-filters {
+    position: static;
+  }
+
+  .wfh-panel__sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .wfh-categories__chip {
+    font-size: 13px;
+  }
+}

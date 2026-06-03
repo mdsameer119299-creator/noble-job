@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="glow-air" x1="20%" y1="0%" x2="80%" y2="100%"><stop offset="0%" stop-color="#93c5fd" stop-opacity="0.55"/><stop offset="100%" stop-color="#4f46e5" stop-opacity="0.06"/></linearGradient>
+    <filter id="sh-air" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#0d1f4e" flood-opacity="0.22"/>
+    </filter>
+    <filter id="sh2-air" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#0d1f4e" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <ellipse cx="60" cy="108" rx="42" ry="7" fill="#0d1f4e" opacity="0.1"/>
+  <ellipse cx="62" cy="48" rx="50" ry="44" fill="url(#glow-air)"/>
+    <g filter="url(#sh-air)">
+      <path d="M18 58 Q40 42 60 50 Q80 58 102 52 L98 62 Q70 68 60 64 Q50 68 22 62 Z" fill="#93c5fd" opacity="0.35"/>
+      <path d="M28 62 L60 38 L92 62 L80 66 H40 Z" fill="#ffffff" stroke="#0d1f4e" stroke-width="2"/>
+      <path d="M44 62 L60 48 L76 62" fill="#2563eb" opacity="0.85"/>
+      <circle cx="60" cy="54" r="5" fill="#d4a853"/>
+      <rect x="52" y="66" width="16" height="4" rx="2" fill="#64748b" opacity="0.5"/>
+      <path d="M22 54h10M88 50h10" stroke="#1847d4" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    </g>
+</svg>

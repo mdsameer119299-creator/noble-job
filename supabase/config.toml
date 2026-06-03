@@ -1,0 +1,5 @@
+# Minimal Supabase CLI config for remote db push / query
+project_id = "jpdxyysijvqfrwnabenk"
+
+[db]
+major_version = 15

@@ -1,0 +1,18 @@
+{
+  "framework": "nextjs",
+  "nodeVersion": "20",
+  "git": {
+    "rootDirectory": "/",
+    "installCommand": "npm ci",
+    "buildCommand": "npm run build:hostinger",
+    "outputDirectory": ".next/standalone",
+    "startCommand": "HOSTNAME=0.0.0.0 node .next/standalone/server.js"
+  },
+  "zip": {
+    "rootDirectory": "/",
+    "installCommand": "",
+    "buildCommand": "npm run build",
+    "outputDirectory": "",
+    "startCommand": "HOSTNAME=0.0.0.0 node server.js"
+  }
+}

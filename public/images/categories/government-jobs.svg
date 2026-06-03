@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="glow-govt" x1="20%" y1="0%" x2="80%" y2="100%"><stop offset="0%" stop-color="#f5d78e" stop-opacity="0.45"/><stop offset="100%" stop-color="#0d1f4e" stop-opacity="0.1"/></linearGradient>
+    <filter id="sh-govt" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#0d1f4e" flood-opacity="0.22"/>
+    </filter>
+    <filter id="sh2-govt" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#0d1f4e" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <ellipse cx="60" cy="108" rx="42" ry="7" fill="#0d1f4e" opacity="0.1"/>
+  <ellipse cx="60" cy="48" rx="50" ry="44" fill="url(#glow-govt)"/>
+    <g filter="url(#sh-govt)">
+      <rect x="28" y="68" width="64" height="10" rx="2" fill="#64748b" opacity="0.25"/>
+      <path d="M36 68V52c0-12 24-20 24-20s24 8 24 20v16" fill="#ffffff" stroke="#0d1f4e" stroke-width="2"/>
+      <path d="M48 68V56h24v12" fill="#1847d4" opacity="0.2"/>
+      <circle cx="60" cy="40" r="14" fill="#2563eb"/>
+      <rect x="46" y="52" width="28" height="6" rx="1" fill="#d4a853"/>
+      <path d="M54 36h12v8h-12z" fill="#d4a853" opacity="0.85"/>
+      <rect x="22" y="72" width="8" height="14" fill="#0d1f4e" opacity="0.5"/>
+      <rect x="90" y="72" width="8" height="14" fill="#0d1f4e" opacity="0.5"/>
+      <path d="M32 44h6v6h-6zM82 44h6v6h-6z" fill="#d4a853" opacity="0.7"/>
+    </g>
+</svg>

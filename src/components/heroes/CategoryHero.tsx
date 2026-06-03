@@ -1,0 +1,66 @@
+import '@/styles/category-hero.css'
+import { getHeroTheme } from '@/lib/config/categoryHeroThemes'
+import {
+  getHeroStats,
+  getVerifiedEmployerCount,
+  type HeroVariant,
+} from '@/lib/services/heroStatsService'
+import { CategoryHeroView } from './CategoryHeroView'
+
+interface CategoryHeroProps {
+  variant: HeroVariant
+  /** Govt category slug for sector-specific stats */
+  govtSlug?: string
+}
+
+function buildDynamicBullets(variant: HeroVariant, stats: ReturnType<typeof getHeroStats>, govtSlug?: string) {
+  const n = (key: string) => stats.counters.find(c => c.key === key)?.value ?? 0
+  if (variant === 'private') {
+    return [
+      `${n('all').toLocaleString('en-IN')}+ Opportunities`,
+      `${n('live').toLocaleString('en-IN')}+ Live Jobs`,
+      `${n('verified').toLocaleString('en-IN')}+ Verified Jobs`,
+    ]
+  }
+  if (variant === 'wfh') {
+    return [
+      `${n('all').toLocaleString('en-IN')}+ Opportunities`,
+      `${n('live').toLocaleString('en-IN')}+ Live Remote Jobs`,
+      `${n('verified').toLocaleString('en-IN')}+ Verified Companies`,
+    ]
+  }
+  if (variant === 'abroad') {
+    const top = stats.countryCards?.slice(0, 3).map(c => c.name) ?? []
+    return [`${n('countries')}+ Countries`, ...top, `${n('all').toLocaleString('en-IN')}+ Global Jobs`].filter(Boolean)
+  }
+  if (variant === 'govt' || !!govtSlug) {
+    return [
+      `${n('vacancies').toLocaleString('en-IN')}+ Vacancies`,
+      `${n('notifications').toLocaleString('en-IN')}+ Notifications`,
+      `${n('departments')}+ Departments`,
+      `${n('states')} States Covered`,
+    ]
+  }
+  return getHeroTheme(variant).bullets
+}
+
+export function CategoryHero({ variant, govtSlug }: CategoryHeroProps) {
+  const base = getHeroTheme(variant)
+  const stats = getHeroStats(variant, { govtSlug })
+  const theme = { ...base, bullets: buildDynamicBullets(variant, stats, govtSlug) }
+  const showEmployers =
+    variant === 'private'
+      ? Math.max(getVerifiedEmployerCount(), stats.counters.find(c => c.key === 'verified')?.value ?? 0)
+      : variant === 'wfh'
+        ? Math.max(200, stats.counters.find(c => c.key === 'verified')?.value ?? 0)
+        : undefined
+
+  return (
+    <CategoryHeroView
+      theme={theme}
+      stats={stats}
+      showEmployers={showEmployers}
+      variantClass={variant === 'wfh' ? 'category-hero--wfh' : undefined}
+    />
+  )
+}

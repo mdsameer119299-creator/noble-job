@@ -1,0 +1,17 @@
+{
+  "name": "Noble Job — Job Portal India",
+  "short_name": "Noble Job",
+  "description": "Jobs in India: Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1f4e",
+  "theme_color": "#1847d4",
+  "orientation": "portrait-primary",
+  "lang": "en-IN",
+  "scope": "/",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "any", "type": "image/x-icon" },
+    { "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
+  ],
+  "categories": ["business", "productivity"]
+}

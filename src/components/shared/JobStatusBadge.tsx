@@ -1,0 +1,48 @@
+import type { JobStatus } from "@/types/job"
+import { JOB_STATUS_META } from "@/lib/config/jobStrategy"
+
+const STYLES: Record<"green" | "blue" | "gray", { bg: string; color: string; border: string }> = {
+  green: { bg: "#f0fdf4", color: "#15803d", border: "#86efac" },
+  blue: { bg: "#eff6ff", color: "#1847d4", border: "#bfdbfe" },
+  gray: { bg: "#f1f5f9", color: "#64748b", border: "#cbd5e1" },
+}
+
+interface JobStatusBadgeProps {
+  status?: JobStatus
+  /** Optional override label (e.g. "Archived Vacancy"). */
+  label?: string
+  size?: "sm" | "md"
+}
+
+export function JobStatusBadge({ status, label, size = "sm" }: JobStatusBadgeProps) {
+  if (!status) return null
+  const meta = JOB_STATUS_META[status]
+  const s = STYLES[meta.badgeColor]
+  const pad = size === "md" ? "4px 11px" : "3px 9px"
+  const fs = size === "md" ? 12 : 10.5
+  const dot = meta.badgeColor === "green"
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        background: s.bg,
+        color: s.color,
+        border: `1px solid ${s.border}`,
+        padding: pad,
+        borderRadius: 100,
+        fontSize: fs,
+        fontWeight: 800,
+        letterSpacing: ".02em",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {dot && (
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+      )}
+      {label || meta.label}
+    </span>
+  )
+}

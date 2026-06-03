@@ -1,0 +1,201 @@
+/* Premium category cards — visual-first, enterprise hover */
+
+.cat-illus-frame {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cat-illus-frame__scene {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.cat-illus-frame__img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 22px rgba(13, 31, 78, 0.2));
+  transition:
+    filter 0.32s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Illustration scale 1.05 on card hover */
+.cat-card-premium:hover .cat-illus-frame {
+  transform: scale(1.05);
+}
+
+.cat-card-premium:hover .cat-illus-frame__img {
+  filter: drop-shadow(0 16px 28px rgba(24, 71, 212, 0.35));
+}
+
+.govt-nav-cat-card:hover .cat-illus-frame {
+  transform: scale(1.05);
+}
+
+/* Homepage section */
+.cat-section-premium {
+  background: #fff;
+  padding: 52px 0 24px;
+}
+
+.cat-section-premium__wrap {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+.cat-section-premium__header {
+  margin-bottom: 22px;
+}
+
+.cat-section-premium__title {
+  font-family: "Playfair Display", serif;
+  font-size: 30px;
+  font-weight: 900;
+  color: #0d1f4e;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.cat-section-premium__grid {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cat-card-premium {
+  position: relative;
+  flex: 1;
+  min-width: 152px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 14px 12px 14px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.cat-card-premium:hover {
+  transform: translateY(-6px);
+  border-color: #1847d4;
+  box-shadow:
+    0 0 0 1px rgba(24, 71, 212, 0.12),
+    0 18px 40px rgba(24, 71, 212, 0.18),
+    0 0 48px rgba(24, 71, 212, 0.08);
+}
+
+.cat-card-premium__badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #1847d4;
+  background: linear-gradient(135deg, #eff6ff 0%, #fff 100%);
+  border: 1px solid rgba(24, 71, 212, 0.2);
+  border-radius: 100px;
+  padding: 4px 10px;
+  line-height: 1.2;
+  z-index: 2;
+}
+
+.cat-card-premium__illus {
+  margin: 8px auto 8px;
+  min-height: 108px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.cat-card-premium__title {
+  font-family: "Playfair Display", serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0d1f4e;
+  margin-bottom: 3px;
+  line-height: 1.25;
+}
+
+.cat-card-premium__count {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.cat-card-premium--view-all {
+  flex: 0 0 auto;
+  min-width: 124px;
+  border: 1.5px dashed #c7d3e8;
+  background: #f8faff;
+}
+
+.cat-card-premium__view-all-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1847d4;
+}
+
+.govt-nav-cat-card__illus {
+  flex-shrink: 0;
+}
+
+/* CV section — reserve space so corner controls never cover Upload CTA */
+.cv-analysis-section {
+  position: relative;
+  scroll-margin-bottom: 100px;
+  padding-bottom: 88px !important;
+}
+
+.cv-analysis-section__cta-col {
+  position: relative;
+  z-index: 2;
+}
+
+@media (max-width: 1100px) {
+  .cv-analysis-section .cv-analysis-section__inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 28px;
+  }
+
+  .cv-analysis-section__cta-col {
+    padding-bottom: 72px;
+  }
+}
+
+@media (max-width: 768px) {
+  .cat-section-premium__wrap {
+    padding: 0 20px;
+  }
+
+  .cat-card-premium {
+    min-width: calc(50% - 10px);
+  }
+}

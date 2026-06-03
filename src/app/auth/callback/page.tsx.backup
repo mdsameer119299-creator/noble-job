@@ -1,0 +1,46 @@
+// Backup of Server Component callback (removed — cookies not persisted before redirect).
+// Replaced by route.ts (Route Handler).
+import { redirect } from "next/navigation"
+import { createClient } from "@/lib/supabase/server"
+import { provisionOAuthUser } from "@/lib/auth/provisionOAuthUser"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
+
+export default async function AuthCallbackPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string; error?: string }>
+}) {
+  const { code, error: oauthError } = await searchParams
+
+  if (!isSupabaseConfigured()) {
+    redirect("/auth?reason=config")
+  }
+
+  if (oauthError) {
+    redirect(`/auth?reason=oauth&error=${encodeURIComponent(oauthError)}`)
+  }
+
+  if (!code) {
+    redirect("/auth")
+  }
+
+  const sb = await createClient()
+  if (!sb) redirect("/auth?reason=config")
+  const { error } = await sb.auth.exchangeCodeForSession(code)
+  if (error) {
+    redirect(`/auth?reason=oauth&error=${encodeURIComponent(error.message)}`)
+  }
+
+  const {
+    data: { user },
+  } = await sb.auth.getUser()
+  if (!user) {
+    redirect("/auth")
+  }
+
+  const role = await provisionOAuthUser(user)
+
+  if (role === "admin") redirect("/admin/dashboard")
+  if (role === "employer") redirect("/employer/dashboard")
+  redirect("/candidate/dashboard")
+}

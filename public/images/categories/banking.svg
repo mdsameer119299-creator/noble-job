@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="glow-bank" x1="20%" y1="0%" x2="80%" y2="100%"><stop offset="0%" stop-color="#f5d78e" stop-opacity="0.5"/><stop offset="100%" stop-color="#1847d4" stop-opacity="0.05"/></linearGradient>
+    <filter id="sh-bank" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#0d1f4e" flood-opacity="0.22"/>
+    </filter>
+    <filter id="sh2-bank" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#0d1f4e" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <ellipse cx="60" cy="108" rx="42" ry="7" fill="#0d1f4e" opacity="0.1"/>
+  <ellipse cx="58" cy="50" rx="44" ry="38" fill="url(#glow-bank)"/>
+    <g filter="url(#sh-bank)">
+      <path d="M24 72h72" stroke="#d4a853" stroke-width="4" stroke-linecap="round"/>
+      <path d="M30 72V46 L60 28 L90 46V72" fill="#ffffff" stroke="#0d1f4e" stroke-width="2.2"/>
+      <path d="M30 72H90" fill="#1847d4" opacity="0.15"/>
+      <rect x="38" y="58" width="10" height="14" rx="1" fill="#2563eb"/>
+      <rect x="52" y="52" width="10" height="20" rx="1" fill="#1847d4"/>
+      <rect x="66" y="60" width="10" height="12" rx="1" fill="#2563eb" opacity="0.8"/>
+      <circle cx="60" cy="38" r="6" fill="#d4a853"/>
+      <rect x="72" y="34" width="18" height="12" rx="3" fill="#ffffff" opacity="0.9" stroke="#d4a853" stroke-width="1.5"/>
+      <text x="76" y="43" font-size="8" font-weight="700" fill="#0d1f4e">₹</text>
+    </g>
+</svg>

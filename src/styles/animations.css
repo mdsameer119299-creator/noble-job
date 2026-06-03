@@ -1,0 +1,7 @@
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.animate-fade-in { animation: fadeIn .25s ease-out; }
+.animate-slide-in { animation: slideIn .3s ease-out; }
+.animate-shake { animation: shake .4s ease; }

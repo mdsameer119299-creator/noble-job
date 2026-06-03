@@ -1,0 +1,248 @@
+/*
+ * globals.css — Noble Job Global Styles
+ *
+ * Tailwind base directives + Noble Job CSS custom properties.
+ * All --variable tokens match the original HTML file's css-base block exactly.
+ * These are the SAME tokens from the original 29 style blocks, now in one file.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Font declarations (self-hosted, no CDN blocking) ─────── */
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/playfair-display-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/playfair-display-800.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/playfair-display-900.woff2') format('woff2');
+  font-weight: 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/fonts/dm-sans-300.woff2') format('woff2');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/fonts/dm-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/fonts/dm-sans-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/fonts/dm-sans-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('/fonts/dm-sans-800.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+
+/* ── Noble Job CSS Custom Properties (exact from original) ── */
+:root {
+  /* Brand colours */
+  --blue:    #1847d4;   /* primary: nav, CTAs, active states     */
+  --navy:    #0d1f4e;   /* dark text, logo, headings              */
+  --navy2:   #0a1635;   /* footer bg                              */
+  --navy3:   #060e28;   /* NCC banner, darkest surfaces           */
+  --orange:  #f07020;   /* Post a Job, Apply Now, CTA buttons     */
+  --green:   #15803d;   /* salary text, success, verified badges  */
+  --red:     #dc2626;   /* errors, rejected, Closed (Sunday)      */
+  --border:  #e2e8f0;   /* card and input borders                 */
+  --border2: #c7d3e8;   /* secondary borders                      */
+  --t1:      #0d1f4e;   /* primary text                           */
+  --t2:      #374151;   /* secondary text                         */
+  --t3:      #6b7280;   /* muted text                             */
+  --t4:      #9ca3af;   /* placeholder / disabled text            */
+  --sw:      230px;     /* sidebar width (employer/candidate/admin)*/
+  --wrap:    1280px;    /* max page container width               */
+
+  /* Typography */
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+
+  /* Transitions */
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Base resets ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  color: var(--t2);
+  background: #ffffff;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--navy);
+  line-height: 1.2;
+}
+
+/* ── Page wrapper ─────────────────────────────────────────── */
+.wrap {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ── Noble Job Logo (exact replica of css-logo-definitive) ── */
+.logo-text-block h2 {
+  font-family: var(--font-body);
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--navy);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin: 0;
+  padding-bottom: 7px;
+  border-bottom: 2.5px solid var(--blue);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.logo-text-block p {
+  font-size: 12px;
+  font-weight: 400;
+  color: #4b5e7e;
+  font-style: normal;
+  margin: 7px 0 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/* ── Scrollbar styling ────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Focus visible (accessibility) ───────────────────────── */
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ── Utility: premium card ───────────────────────────────── */
+@layer components {
+  .noble-card {
+    @apply bg-white rounded-[16px] border border-noble-border shadow-card
+           transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5;
+  }
+
+  .btn-primary {
+    @apply bg-noble-orange text-white font-bold rounded-btn px-5 py-2.5
+           shadow-btn hover:shadow-btn-hover hover:-translate-y-0.5
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .btn-outline {
+    @apply border-2 border-noble-orange text-noble-orange font-bold rounded-btn
+           px-5 py-2.5 bg-transparent hover:bg-noble-orange hover:text-white
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .btn-blue {
+    @apply bg-noble-blue text-white font-bold rounded-btn px-5 py-2.5
+           shadow-blue hover:shadow-blue-lg hover:-translate-y-0.5
+           transition-all duration-200 cursor-pointer;
+  }
+}
+
+/* Floating scroll control — avoids bottom-right overlap with CV CTA / OS UI */
+.scroll-to-top-btn {
+  position: fixed;
+  z-index: 45;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #1847d4;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  box-shadow: 0 4px 16px rgba(24, 71, 212, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: bottom 0.25s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.scroll-to-top-btn--home {
+  bottom: 28px;
+  left: 28px;
+  right: auto;
+}
+
+.scroll-to-top-btn:not(.scroll-to-top-btn--home) {
+  bottom: 28px;
+  right: 28px;
+}
+
+.scroll-to-top-btn--lifted {
+  bottom: 200px;
+}
+
+.scroll-to-top-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(24, 71, 212, 0.45);
+}
+
+@media (max-width: 768px) {
+  .scroll-to-top-btn--home {
+    bottom: 20px;
+    left: 16px;
+  }
+
+  .scroll-to-top-btn--lifted {
+    bottom: 220px;
+  }
+}
+
+/* Accessibility: skip link (visible on keyboard focus) */
+.skip-to-main {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 10000;
+  padding: 12px 20px;
+  background: #1847d4;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 0 0 8px 0;
+}
+.skip-to-main:focus {
+  left: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+}

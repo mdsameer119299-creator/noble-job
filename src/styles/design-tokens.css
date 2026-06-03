@@ -1,0 +1,11 @@
+/* Noble Job design tokens — mirrors tailwind.config.ts + CSS custom properties */
+:root {
+  --blue: #1847d4; --navy: #0d1f4e; --navy2: #0a1635; --navy3: #060e28;
+  --orange: #f07020; --green: #15803d; --red: #dc2626;
+  --border: #e2e8f0; --border2: #c7d3e8;
+  --t1: #0d1f4e; --t2: #374151; --t3: #6b7280; --t4: #9ca3af;
+  --sw: 230px; --wrap: 1280px;
+  --shadow-card: 0 4px 20px rgba(24,71,212,.08);
+  --shadow-card-hover: 0 8px 28px rgba(24,71,212,.12);
+  --radius-card: 16px; --radius-btn: 10px;
+}

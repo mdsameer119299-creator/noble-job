@@ -1,0 +1,8 @@
+/* Self-hosted Playfair Display and DM Sans — no CDN blocking */
+@font-face { font-family: "Playfair Display"; src: url("/fonts/playfair-display-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/playfair-display-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/playfair-display-900.woff2") format("woff2"); font-weight: 900; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/dm-sans-300.woff2") format("woff2"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/dm-sans-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/dm-sans-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/dm-sans-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }

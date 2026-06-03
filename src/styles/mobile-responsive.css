@@ -1,0 +1,288 @@
+/**
+ * Mobile responsiveness — 320px–768px fixes (Critical/High audit items)
+ */
+
+html {
+  overflow-x: clip;
+}
+
+body {
+  overflow-x: clip;
+}
+
+@media (max-width: 768px) {
+  .wrap {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* ── Site header: prevent 3-col grid overflow on small screens ── */
+@media (max-width: 1023px) {
+  .site-header__nav-inner {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 12px !important;
+    height: auto !important;
+    min-height: 64px;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .site-header__utility-inner {
+    grid-template-columns: 1fr !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* ── Dashboard layouts (candidate / employer) ── */
+.dashboard-shell {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1023px) {
+  .dashboard-shell {
+    flex-direction: column !important;
+    gap: 16px !important;
+    padding-top: 20px !important;
+    padding-bottom: 32px !important;
+  }
+
+  .dashboard-sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-shrink: 1 !important;
+    position: static !important;
+    top: auto !important;
+  }
+
+  .dashboard-sidebar__nav {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px !important;
+    padding: 8px 10px !important;
+    scrollbar-width: thin;
+  }
+
+  .dashboard-sidebar__nav a {
+    flex-shrink: 0 !important;
+    border-right: none !important;
+    border-bottom: 3px solid transparent !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    font-size: 12.5px !important;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .dashboard-sidebar__nav a[style*="borderRight"] {
+    border-bottom-color: currentColor !important;
+  }
+}
+
+/* ── Job listing 3-column layouts ── */
+.jobs-layout-3col {
+  display: grid;
+  grid-template-columns: 230px 1fr 220px;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+@media (max-width: 1100px) {
+  .jobs-layout-3col {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .jobs-layout-3col > :last-child {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .jobs-layout-3col {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .jobs-layout-3col > :last-child {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.filter-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .filter-sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ── Job detail & dashboard 2-column layouts ── */
+.jobs-layout-2col,
+.dashboard-content-grid {
+  display: grid;
+  gap: 24px;
+}
+
+.jobs-layout-2col {
+  grid-template-columns: 1fr 300px;
+}
+
+.dashboard-content-grid {
+  grid-template-columns: 1fr 280px;
+}
+
+@media (max-width: 768px) {
+  .jobs-layout-2col,
+  .dashboard-content-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+}
+
+/* ── Job detail hero row ── */
+.job-detail-hero-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+@media (max-width: 480px) {
+  .job-detail-hero-row {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .job-detail-hero-row h1 {
+    font-size: clamp(22px, 6vw, 30px) !important;
+  }
+}
+
+/* ── Page titles ── */
+.page-title {
+  font-family: 'Playfair Display', serif;
+  font-weight: 900;
+  color: #0d1f4e;
+  font-size: clamp(22px, 5.5vw, 28px);
+  margin-bottom: 24px;
+  line-height: 1.2;
+}
+
+/* ── Post job / forms ── */
+.post-job-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .post-job-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Auth card ── */
+@media (max-width: 360px) {
+  .auth-page__card {
+    padding: 24px 16px 20px !important;
+  }
+
+  .auth-page__title {
+    font-size: 24px !important;
+  }
+
+  .auth-role-btn {
+    font-size: 12px !important;
+    padding: 10px 8px !important;
+  }
+}
+
+/* ── Footer ── */
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2.3fr 1fr 1fr 1fr;
+  gap: 40px;
+  margin-bottom: 44px;
+}
+
+@media (max-width: 900px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* ── Contact page ── */
+.contact-layout-2col {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 28px;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 768px) {
+  .contact-layout-2col {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+}
+
+/* ── Touch targets (High) ── */
+@media (max-width: 768px) {
+  .site-header__nav .lg\:hidden button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ── Modal full width on narrow screens ── */
+@media (max-width: 400px) {
+  .noble-modal-panel {
+    max-width: calc(100vw - 24px) !important;
+    margin: 0 12px;
+  }
+}
+
+/* ── Hero search (home) — stack fields on narrow screens ── */
+@media (max-width: 520px) {
+  .hero-search-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hero-search-grid > div {
+    border-right: none !important;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .hero-search-grid > div:last-child {
+    border-bottom: none;
+  }
+}
+
+/* ── Data tables in dashboards ── */
+@media (max-width: 768px) {
+  .dashboard-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -4px;
+  }
+}
