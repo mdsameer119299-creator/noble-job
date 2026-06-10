@@ -5,6 +5,7 @@ import { applyGovtVacancies, sumGovtVacancies } from "@/lib/data/govtVacancies"
 import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { filterGovtJobsByCategory, filterGovtJobsByQualification } from "@/lib/services/govtNavStats"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
+import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
 async function getSupabaseClient() {
@@ -119,7 +120,10 @@ export function getGovtJobsFiltered(filters: GovtJobFilters = {}): GovtJobListRe
   if (filters.state) list = list.filter(j => j.stateSlug === filters.state)
   if (filters.department) list = list.filter(j => (j.department || j.org).toLowerCase().includes(filters.department!.toLowerCase()))
   if (filters.experience) list = list.filter(j => (j.experience || "").toLowerCase().includes(filters.experience!.toLowerCase()))
-  if (filters.lastDate === "open") list = list.filter(j => j.status !== "expired")
+  // "open" means the application window has not yet closed — check both the
+  // explicit status flag and the actual lastDate so date-passed jobs are hidden
+  // even when the status column hasn't been updated by the nightly cron yet.
+  if (filters.lastDate === "open") list = list.filter(j => j.status !== "expired" && !isGovtJobExpired(j.lastDate))
   if (filters.q) {
     const q = filters.q.toLowerCase()
     list = list.filter(j => `${j.title} ${j.org} ${j.post}`.toLowerCase().includes(q))

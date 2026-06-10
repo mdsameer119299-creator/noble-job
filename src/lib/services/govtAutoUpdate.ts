@@ -14,6 +14,7 @@
 import { GOVT_SOURCES, SCHEDULER_CONFIG, type GovtSource } from "@/lib/config/govtSources"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { enrichGovtJob } from "@/lib/data/govtData"
+import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import type { GovtJob } from "@/types/govtJob"
 
 export interface AutoUpdateResult {
@@ -21,6 +22,8 @@ export interface AutoUpdateResult {
   autoPublish: boolean
   sources: { id: string; label: string; fetched: number; published: number; skipped: number }[]
   totalPublished: number
+  /** Number of jobs flipped to status=expired by this run. */
+  totalExpired: number
 }
 
 /** Fetch notifications for a source; uses local inventory slices until live parsers ship. */
@@ -155,6 +158,42 @@ async function persist(jobs: GovtJob[]): Promise<number> {
   }
 }
 
+/**
+ * Scans the database for active jobs whose lastDate has passed and marks them
+ * expired. This keeps the status column in sync with real-world closing dates
+ * without requiring manual admin intervention.
+ *
+ * Safe to run repeatedly — it only touches rows where status is still "active"
+ * and the last_date is a parseable date that has already passed.
+ */
+async function expireStaleJobs(): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase/admin")
+    // Only fetch the two columns we need to decide expiry — minimise payload.
+    const { data, error } = await supabaseAdmin
+      .from("govt_jobs")
+      .select("id, last_date")
+      .eq("status", "active")
+    if (error || !data?.length) return 0
+
+    const staleIds = data
+      .filter((row: { id: string; last_date: string }) => isGovtJobExpired(row.last_date))
+      .map((row: { id: string; last_date: string }) => row.id)
+
+    if (!staleIds.length) return 0
+
+    const { error: updateError } = await supabaseAdmin
+      .from("govt_jobs")
+      .update({ status: "expired" })
+      .in("id", staleIds)
+
+    return updateError ? 0 : staleIds.length
+  } catch {
+    return 0
+  }
+}
+
 /** Run one ingestion pass across all enabled sources. */
 export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
   const seen = new Set<string>()
@@ -181,10 +220,14 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
     report.push({ id: source.id, label: source.label, fetched, published, skipped })
   }
 
+  // After ingesting new jobs, expire any that have passed their closing date.
+  const totalExpired = await expireStaleJobs()
+
   return {
     ranAt: new Date().toISOString(),
     autoPublish: SCHEDULER_CONFIG.autoPublish,
     sources: report,
     totalPublished,
+    totalExpired,
   }
 }
