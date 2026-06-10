@@ -37,7 +37,11 @@ export function GovtNavGrids() {
                 </div>
                 <div className="govt-nav-cat-card__meta">
                   <span className="govt-nav-pill govt-nav-pill--jobs">{fmt(stat.notifications)}+ notices</span>
-                  <span className="govt-nav-pill govt-nav-pill--vac">{fmt(stat.vacancies)}+ posts</span>
+                  {/* Hide the posts pill for content categories (results / admit
+                      cards / answer keys / syllabus / papers) that have no vacancies. */}
+                  {stat.vacancies > 0 && (
+                    <span className="govt-nav-pill govt-nav-pill--vac">{fmt(stat.vacancies)}+ posts</span>
+                  )}
                 </div>
               </div>
             </Link>

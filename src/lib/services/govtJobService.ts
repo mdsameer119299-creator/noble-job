@@ -1,11 +1,11 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
 import { GOVT_JOBS, GOVT_CONTENT, enrichGovtJob } from "@/lib/data/govtData"
-import { applyGovtVacancies, sumGovtVacancies } from "@/lib/data/govtVacancies"
+import { applyGovtVacancies, sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { filterGovtJobsByCategory, filterGovtJobsByQualification } from "@/lib/services/govtNavStats"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
-import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isGovtJobExpired, isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
 async function getSupabaseClient() {
@@ -137,7 +137,9 @@ export function getGovtJobsFiltered(filters: GovtJobFilters = {}): GovtJobListRe
   return {
     items: list.slice((page - 1) * limit, page * limit),
     total: list.length,
-    vacanciesTotal: sumGovtVacancies(list),
+    // Headline vacancy stat counts active, recruitment-tab jobs only; the
+    // displayed item list / pagination above are intentionally left unchanged.
+    vacanciesTotal: sumGovtVacancies(list.filter(j => isActiveGovtJob(j) && isVacancyBearingJob(j))),
     page,
     totalPages: Math.ceil(list.length / limit) || 1,
     facets,
@@ -184,9 +186,11 @@ export function getGovtContent(
 }
 
 export async function getGovtStats() {
-  const jobs = preferLocalInventory() ? GOVT_JOBS.filter(j => j.tab === "latest") : await getGovtJobs("latest")
-  const source = jobs.length ? jobs : GOVT_JOBS
-  const totalVacancies = sumGovtVacancies(source)
+  const base = preferLocalInventory() ? GOVT_JOBS.filter(j => j.tab === "latest") : await getGovtJobs("latest")
+  // Active notifications only; fall back to active latest-tab inventory.
+  const active = base.filter(isActiveGovtJob)
+  const source = active.length ? active : GOVT_JOBS.filter(j => j.tab === "latest" && isActiveGovtJob(j))
+  const totalVacancies = sumGovtVacancies(source.filter(isVacancyBearingJob))
   const departments = new Set(source.map(j => j.org)).size
   const locations = new Set(source.map(j => j.location)).size
   return { totalVacancies, departments, locations, totalExams: source.length }

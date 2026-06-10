@@ -38,11 +38,23 @@ function stableSeed(job: Partial<GovtJob>): number {
 
 export function resolveGovtVacancyCount(job: Partial<GovtJob>): number {
   const parsed = parseVacancyCount(job.vacancies)
+  // Use the real official count as-is when present — never clamp it to a
+  // keyword profile (clamping previously inflated low counts to a minimum and
+  // truncated large ones). The profile spread is only a deterministic
+  // placeholder for demo rows that have no real number (e.g. "TBA" / "0").
+  if (parsed !== null) return parsed
   const profile = profileFor(job)
   const seed = stableSeed(job)
-  const spread = profile.typical + (seed % (profile.max - profile.min + 1))
-  const resolved = parsed ?? spread
-  return Math.min(profile.max, Math.max(profile.min, resolved))
+  return profile.typical + (seed % (profile.max - profile.min + 1))
+}
+
+/**
+ * Tabs that represent open/forthcoming recruitment and therefore carry real
+ * vacancies. Results, admit cards and answer keys are post-application stages
+ * with no new vacancies, so they are excluded from vacancy totals.
+ */
+export function isVacancyBearingJob(job: Pick<GovtJob, "tab">): boolean {
+  return job.tab === "latest" || job.tab === "upcoming"
 }
 
 export function formatVacancyCount(n: number): string {
