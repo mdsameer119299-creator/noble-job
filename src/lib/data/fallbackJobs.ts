@@ -3,6 +3,7 @@
  * Mirrors src/database/seeds/*.sql so the site works in local dev without a DB.
  */
 import type { GovtJob, GovtJobTab } from '@/types/govtJob'
+import { isGovtJobExpired } from '@/lib/utils/govtJobExpiry'
 import type { WfhJob } from '@/types/wfhJob'
 import type { AbroadJob } from '@/types/abroadJob'
 import type { Job } from '@/types/job'
@@ -11,13 +12,13 @@ import type { Job } from '@/types/job'
 type GovtJobRow = GovtJob & { last_date: string; age_range: string }
 
 export const FALLBACK_GOVT_JOBS: GovtJobRow[] = [
-  { id: 'sbi-apprentice-2026', title: 'SBI Apprentice Recruitment 2026', org: 'State Bank of India', short: 'SBI', post: 'Apprentice', vacancies: '7150', qualification: 'Graduation', ageRange: '20-28 Years', age_range: '20-28 Years', fee: '300', lastDate: '08 Jun 2026', last_date: '08 Jun 2026', salary: '15,000/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#1e3a8a', badge: 'New', status: 'active' },
+  { id: 'sbi-apprentice-2026', title: 'SBI Apprentice Recruitment 2026', org: 'State Bank of India', short: 'SBI', post: 'Apprentice', vacancies: '7150', qualification: 'Graduation', ageRange: '20-28 Years', age_range: '20-28 Years', fee: '300', lastDate: '30 Jun 2026', last_date: '30 Jun 2026', salary: '15,000/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#1e3a8a', badge: 'New', status: 'active' },
   { id: 'iaf-afcat-02-2026', title: 'IAF AFCAT 02 2026 Notification', org: 'Indian Air Force', short: 'IAF', post: 'Flying/Ground Duty Officer', vacancies: '379', qualification: 'Graduation (60%)', ageRange: '20-26 Years', age_range: '20-26 Years', fee: '250', lastDate: '15 Jun 2026', last_date: '15 Jun 2026', salary: '56,100-1,77,500/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#1d4ed8', badge: 'Hot', status: 'active' },
   { id: 'crpf-constable-2026', title: 'CRPF Constable Tradesman 2026', org: 'CRPF', short: 'CRPF', post: 'Constable (Tradesman)', vacancies: '9195', qualification: '10th / ITI', ageRange: '18-23 Years', age_range: '18-23 Years', fee: '100', lastDate: '30 Jun 2026', last_date: '30 Jun 2026', salary: '21,700-69,100/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#7c3aed', badge: 'Hot', status: 'active' },
   { id: 'bob-credit-officer-2026', title: 'Bank of Baroda Credit Officer 2026', org: 'Bank of Baroda', short: 'BOB', post: 'Credit Officer', vacancies: '5000', qualification: 'Graduation', ageRange: '25-35 Years', age_range: '25-35 Years', fee: '600', lastDate: '20 Jun 2026', last_date: '20 Jun 2026', salary: '48,170-69,810/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#b45309', badge: 'New', status: 'active' },
   { id: 'ossc-je-2026', title: 'OSSC Junior Engineer 2026', org: 'Odisha SSC', short: 'OSSC', post: 'Junior Engineer (Civil/Elect/Mech)', vacancies: '646', qualification: 'B.Tech/Diploma', ageRange: '21-38 Years', age_range: '21-38 Years', fee: '0', lastDate: '25 Jun 2026', last_date: '25 Jun 2026', salary: '35,400-1,12,400/mo', location: 'Odisha', state: 'Odisha', tab: 'latest', color: '#0e7490', badge: 'New', status: 'active' },
   { id: 'cnp-nashik-2026', title: 'Currency Note Press Nashik 2026', org: 'CNP Nashik (SPMCIL)', short: 'CNP', post: 'Skilled Artisan / Technician', vacancies: '534', qualification: '10th / ITI', ageRange: '18-30 Years', age_range: '18-30 Years', fee: '100', lastDate: '18 Jun 2026', last_date: '18 Jun 2026', salary: '19,900-63,200/mo', location: 'Nashik, Maharashtra', state: 'Maharashtra', tab: 'latest', color: '#be123c', badge: 'New', status: 'active' },
-  { id: 'secr-apprentice-2026', title: 'SECR Apprentice Recruitment 2026', org: 'South East Central Railway', short: 'SECR', post: 'Apprentice (Various Trades)', vacancies: '1079', qualification: '10th + ITI', ageRange: '15-24 Years', age_range: '15-24 Years', fee: '0', lastDate: '05 Jun 2026', last_date: '05 Jun 2026', salary: 'As per NATS norms', location: 'Bilaspur (CG)', state: 'Chhattisgarh', tab: 'latest', color: '#047857', badge: 'New', status: 'active' },
+  { id: 'secr-apprentice-2026', title: 'SECR Apprentice Recruitment 2026', org: 'South East Central Railway', short: 'SECR', post: 'Apprentice (Various Trades)', vacancies: '1079', qualification: '10th + ITI', ageRange: '15-24 Years', age_range: '15-24 Years', fee: '0', lastDate: '25 Jun 2026', last_date: '25 Jun 2026', salary: 'As per NATS norms', location: 'Bilaspur (CG)', state: 'Chhattisgarh', tab: 'latest', color: '#047857', badge: 'New', status: 'active' },
   { id: 'union-bank-credit-2026', title: 'Union Bank Credit Officer 2026', org: 'Union Bank of India', short: 'UBI', post: 'Credit Officer (Scale II/III)', vacancies: '1865', qualification: 'Graduation', ageRange: '25-35 Years', age_range: '25-35 Years', fee: '600', lastDate: '10 Jun 2026', last_date: '10 Jun 2026', salary: '48,170-85,920/mo', location: 'All India', state: 'All India', tab: 'latest', color: '#d97706', badge: 'New', status: 'active' },
   { id: 'upsc-cse-2026', title: 'UPSC Civil Services Exam 2026', org: 'UPSC', short: 'UPSC', post: 'IAS/IPS/IFS', vacancies: '1059', qualification: 'Graduation', ageRange: '21-32 Years', age_range: '21-32 Years', fee: '100', lastDate: 'TBA', last_date: 'TBA', salary: '56,100+', location: 'All India', state: 'All India', tab: 'upcoming', color: '#1e3a8a', badge: 'Upcoming', status: 'active' },
   { id: 'ssc-cgl-2026', title: 'SSC CGL 2026-27 Recruitment', org: 'SSC', short: 'SSC', post: 'Group B & C', vacancies: '17727', qualification: 'Graduation', ageRange: '18-32 Years', age_range: '18-32 Years', fee: '100', lastDate: 'TBA', last_date: 'TBA', salary: '25,500-1,51,100/mo', location: 'All India', state: 'All India', tab: 'upcoming', color: '#7c3aed', badge: 'Upcoming', status: 'active' },
@@ -55,6 +56,10 @@ export function getFallbackGovtJobs(tab: GovtJobTab = 'latest', state?: string):
     list = FALLBACK_GOVT_JOBS.filter(j => j.tab === tab)
   }
   if (state && state !== 'All India') list = list.filter(j => j.state === state || j.location === state)
+  // Remove jobs whose application window has closed. Both the status flag and
+  // the actual lastDate are checked so stale seed entries are filtered even
+  // before a cron run has had a chance to flip the status column.
+  list = list.filter(j => j.status !== 'expired' && !isGovtJobExpired(j.lastDate))
   // Government openings are treated as live/verified; expired notices become archived.
   return list.map(j => ({
     ...j,
