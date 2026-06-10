@@ -31,3 +31,12 @@ export function isGovtJobExpired(lastDate: string | null | undefined): boolean {
   if (d === null) return false
   return isBefore(d, startOfToday())
 }
+
+/**
+ * A job is "active" when it is not flagged expired AND its application window
+ * has not closed. This is the exact predicate used to filter the govt job
+ * listing, reused here so statistics never count expired notifications.
+ */
+export function isActiveGovtJob(job: { status?: string; lastDate?: string | null }): boolean {
+  return job.status !== "expired" && !isGovtJobExpired(job.lastDate)
+}

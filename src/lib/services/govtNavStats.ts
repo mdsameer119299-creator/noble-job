@@ -2,13 +2,13 @@
  * Live counts for govt browse grids & sub-page heroes (from GOVT_JOBS / GOVT_CONTENT).
  */
 import { GOVT_JOBS, GOVT_CONTENT } from "@/lib/data/govtData"
-import { sumGovtVacancies } from "@/lib/data/govtVacancies"
+import { sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
 import {
   GOVT_TOP_CATEGORIES,
   INDIAN_STATES,
   GOVT_QUALIFICATIONS,
   getCategoryBySlug,
-  getStateBySlug,
   getQualificationBySlug,
   type GovtCategory,
 } from "@/lib/config/govtTaxonomy"
@@ -52,9 +52,11 @@ export function filterGovtJobsByQualification(slug: string): GovtJob[] {
 }
 
 function statsFromJobs(jobs: GovtJob[]): GovtNavStat {
+  // Count active notifications only; sum vacancies for recruitment tabs only.
+  const active = jobs.filter(isActiveGovtJob)
   return {
-    notifications: jobs.length,
-    vacancies: sumGovtVacancies(jobs),
+    notifications: active.length,
+    vacancies: sumGovtVacancies(active.filter(isVacancyBearingJob)),
   }
 }
 
@@ -62,8 +64,10 @@ export function getCategoryNavStat(slug: string): GovtNavStat {
   const cat = getCategoryBySlug(slug)
   if (!cat) return { notifications: 0, vacancies: 0 }
   if (cat.contentType !== "jobs") {
+    // Content categories (admit cards / results / answer keys / syllabus /
+    // papers) have no vacancies — report the real resource count, zero posts.
     const n = GOVT_CONTENT.filter(c => c.contentType === cat.contentType).length
-    return { notifications: Math.max(n, 4), vacancies: Math.max(n * 4_500, 18_000) }
+    return { notifications: n, vacancies: 0 }
   }
   const jobs = filterGovtJobsByCategory(slug)
   const s = statsFromJobs(jobs)
@@ -74,16 +78,8 @@ export function getCategoryNavStat(slug: string): GovtNavStat {
 }
 
 export function getStateNavStat(slug: string): GovtNavStat {
-  const jobs = filterGovtJobsByState(slug)
-  const s = statsFromJobs(jobs)
-  if (s.notifications > 0) return s
-  const region = getStateBySlug(slug)
-  if (!region) return s
-  const seed = slug.length * 17 + region.label.length
-  return {
-    notifications: 3 + (seed % 5),
-    vacancies: 1200 + (seed % 9) * 450,
-  }
+  // Real active counts only — no fabricated numbers for states without jobs.
+  return statsFromJobs(filterGovtJobsByState(slug))
 }
 
 export function getQualificationNavStat(slug: string): GovtNavStat {

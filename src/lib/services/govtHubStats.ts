@@ -2,8 +2,10 @@
  * Lightweight govt hub stats (GOVT_JOBS only — no private/WFH inventory).
  */
 import { GOVT_JOBS } from "@/lib/data/govtData"
-import { sumGovtVacancies } from "@/lib/data/govtVacancies"
+import { sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { filterGovtJobsByCategory } from "@/lib/services/govtNavStats"
+import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
 
 export interface GovtHubStatItem {
   key: string
@@ -13,14 +15,17 @@ export interface GovtHubStatItem {
 }
 
 export function getGovtHubStats(opts?: { slug?: string }): GovtHubStatItem[] {
-  const jobs = opts?.slug ? filterGovtJobsByCategory(opts.slug) : GOVT_JOBS
-  const vacancies = sumGovtVacancies(jobs)
-  const vacDisplay = Math.max(vacancies, opts?.slug ? jobs.length * 400 : 25_000)
+  // Statistics only ever reflect active (non-expired) notifications.
+  const jobs = (opts?.slug ? filterGovtJobsByCategory(opts.slug) : GOVT_JOBS).filter(isActiveGovtJob)
+  // Vacancies count only recruitment tabs (latest/upcoming); results/admit/
+  // answer-key entries carry no open posts. Real sum only — no minimum floor.
+  const vacancies = sumGovtVacancies(jobs.filter(isVacancyBearingJob))
+  const departments = new Set(jobs.map(j => j.org)).size
 
   return [
-    { key: "vacancies", icon: "👥", num: vacDisplay, label: "Vacancies" },
-    { key: "notifications", icon: "📋", num: Math.max(jobs.length, opts?.slug ? jobs.length : 120), label: "Notifications" },
-    { key: "departments", icon: "🏛", num: opts?.slug ? Math.min(12, Math.max(4, Math.ceil(jobs.length / 3))) : 15, label: "Departments" },
-    { key: "states", icon: "🗺️", num: 36, label: "States Covered" },
+    { key: "vacancies", icon: "👥", num: vacancies, label: "Vacancies" },
+    { key: "notifications", icon: "📋", num: jobs.length, label: "Notifications" },
+    { key: "departments", icon: "🏛", num: departments, label: "Departments" },
+    { key: "states", icon: "🗺️", num: INDIAN_STATES.length, label: "States Covered" },
   ]
 }
