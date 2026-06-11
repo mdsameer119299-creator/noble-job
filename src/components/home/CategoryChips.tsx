@@ -6,8 +6,8 @@ import "@/styles/category-illustrations.css"
 /** Visual-first: illustration dominates the card (~55–60% height). */
 const ILLUS_SIZE = 108
 
-export function CategoryChips() {
-  const cards = buildPremiumCategoryCards()
+export async function CategoryChips() {
+  const cards = await buildPremiumCategoryCards()
 
   return (
     <section className="cat-section-premium">

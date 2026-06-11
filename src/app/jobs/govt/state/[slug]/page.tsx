@@ -10,6 +10,8 @@ interface Props {
   searchParams: Promise<Record<string, string | undefined>>
 }
 
+// DB-driven content regenerates so new govt_jobs rows appear without a redeploy.
+export const revalidate = 600
 export function generateStaticParams() {
   return INDIAN_STATES.map(s => ({ slug: s.slug }))
 }
@@ -34,7 +36,7 @@ export default async function GovtStatePage({ params, searchParams }: Props) {
   if (!state) notFound()
 
   const page = Number(sp.page || 1)
-  const r = getGovtJobsFiltered({
+  const r = await getGovtJobsFiltered({
     state: slug,
     q: sp.q,
     qualification: sp.qualification,

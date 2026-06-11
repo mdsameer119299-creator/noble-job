@@ -8,7 +8,7 @@ import {
   getStateRelatedGovtJobs,
   getQualificationRelatedGovtJobs,
 } from "@/lib/services/govtJobService"
-import { GOVT_JOBS } from "@/lib/data/govtData"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getStateBySlug } from "@/lib/config/govtTaxonomy"
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs"
 import { GovtJobJsonLd } from "@/components/govt/GovtJobJsonLd"
@@ -19,8 +19,11 @@ import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
 interface Props { params: Promise<{ id: string }> }
 
 export const dynamicParams = true
-export function generateStaticParams() {
-  return GOVT_JOBS.slice(0, 50).map(j => ({ id: j.slug || j.id }))
+// Regenerate so newly-added govt_jobs rows surface without a redeploy.
+export const revalidate = 600
+export async function generateStaticParams() {
+  const rows = await getActiveGovtRows()
+  return rows.slice(0, 50).map(j => ({ id: j.slug || j.id }))
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -53,9 +56,11 @@ export default async function GovtJobDetailPage({ params }: Props) {
   const job = await getGovtJobBySlug(id)
   if (!job) notFound()
 
-  const related = getRelatedGovtJobs(job)
-  const stateRelated = getStateRelatedGovtJobs(job)
-  const qualRelated = getQualificationRelatedGovtJobs(job)
+  const [related, stateRelated, qualRelated] = await Promise.all([
+    getRelatedGovtJobs(job),
+    getStateRelatedGovtJobs(job),
+    getQualificationRelatedGovtJobs(job),
+  ])
   const stateLabel = job.stateSlug ? getStateBySlug(job.stateSlug)?.label : undefined
 
   const links = buildGovtJobLinkButtons(job)

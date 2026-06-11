@@ -3,9 +3,9 @@
  * Govt sectors use sumGovtVacancies (same pipeline as /jobs/govt hub).
  * Private sectors use live+verified inventory with a consistent multiplier.
  */
-import { GOVT_JOBS } from "@/lib/data/govtData"
-import { sumGovtVacancies } from "@/lib/data/govtVacancies"
-import { filterGovtJobsByCategory } from "@/lib/services/govtNavStats"
+import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { PRIVATE_INVENTORY, WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
 import type {
   CategoryIllustrationSlug,
@@ -30,11 +30,6 @@ const PRIVATE_VACANCY_PER_ROLE = 14
 
 function fmtVacancies(n: number): string {
   return `${n.toLocaleString("en-IN")} Vacancies`
-}
-
-function govtVacancies(categorySlug?: string): number {
-  const jobs = categorySlug ? filterGovtJobsByCategory(categorySlug) : GOVT_JOBS
-  return sumGovtVacancies(jobs)
 }
 
 function matchesCat(jobCat: string, needles: string[]): boolean {
@@ -63,8 +58,13 @@ function abroadVacancies(needles: string[]): number {
   return Math.max(active * PRIVATE_VACANCY_PER_ROLE * 2, active > 0 ? 2_400 : 0)
 }
 
-/** Single source of truth for all category card vacancy numbers. */
-export function getCategoryMarketplaceStats(): CategoryMarketplaceStat[] {
+/** Single source of truth for all category card vacancy numbers. DB-first for govt. */
+export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplaceStat[]> {
+  const pool = await getActiveGovtRows()
+  const govtVacancies = (categorySlug?: string): number => {
+    const jobs = categorySlug ? pool.filter(j => jobMatchesCategorySlug(j, categorySlug)) : pool
+    return sumRealVacancies(jobs.filter(isVacancyBearingJob))
+  }
   const stats: { slug: CategoryIllustrationSlug; vacancies: number }[] = [
     { slug: "it-software", vacancies: privateVacancies(["software", "it", "developer", "devops"]) },
     {
@@ -95,8 +95,8 @@ export function getCategoryMarketplaceStats(): CategoryMarketplaceStat[] {
   }))
 }
 
-export function getCategoryVacancyCount(slug: CategoryIllustrationSlug): number {
-  return getCategoryMarketplaceStats().find(s => s.slug === slug)?.vacancies ?? 0
+export async function getCategoryVacancyCount(slug: CategoryIllustrationSlug): Promise<number> {
+  return (await getCategoryMarketplaceStats()).find(s => s.slug === slug)?.vacancies ?? 0
 }
 
 const CARD_META: Omit<CategoryCardConfig, "count">[] = [
@@ -114,9 +114,9 @@ const CARD_META: Omit<CategoryCardConfig, "count">[] = [
   { slug: "hospitality", name: "Hospitality", href: "/jobs/private?category=Hospitality" },
 ]
 
-/** Homepage cards with unified stats + badges. */
-export function buildPremiumCategoryCards(): (CategoryCardConfig & { badge?: CategoryBadge })[] {
-  const bySlug = Object.fromEntries(getCategoryMarketplaceStats().map(s => [s.slug, s]))
+/** Homepage cards with unified stats + badges. DB-first for govt. */
+export async function buildPremiumCategoryCards(): Promise<(CategoryCardConfig & { badge?: CategoryBadge })[]> {
+  const bySlug = Object.fromEntries((await getCategoryMarketplaceStats()).map(s => [s.slug, s]))
   return CARD_META.map(meta => {
     const stat = bySlug[meta.slug]
     return {

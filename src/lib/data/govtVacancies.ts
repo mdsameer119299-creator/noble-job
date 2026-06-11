@@ -128,3 +128,12 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(job: T): T {
 export function sumGovtVacancies(jobs: Pick<GovtJob, "vacancies">[]): number {
   return jobs.reduce((s, j) => s + resolveGovtVacancyCount(j), 0)
 }
+
+/**
+ * Sum ONLY real, parseable vacancy counts — no keyword-profile fabrication.
+ * Used by database-backed statistics so totals reflect actual notified posts;
+ * "TBA"/"-"/"0" contribute 0 rather than a synthetic spread value.
+ */
+export function sumRealVacancies(jobs: Pick<GovtJob, "vacancies">[]): number {
+  return jobs.reduce((s, j) => s + (parseVacancyCount(j.vacancies) ?? 0), 0)
+}

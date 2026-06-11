@@ -1,7 +1,6 @@
 import Link from "next/link"
 import { Breadcrumbs, type Crumb } from "@/components/shared/Breadcrumbs"
 import { getGovtCategoryTheme } from "@/lib/config/govtCategoryTheme"
-import { getCategoryNavStat, getStateNavStat, getQualificationNavStat } from "@/lib/services/govtNavStats"
 import { CategoryIllustration } from "@/components/shared/CategoryIllustration"
 import { resolveCategoryIllustrationSlug } from "@/lib/config/categoryIllustrations"
 import { CategoryHeroVisual } from "@/components/heroes/CategoryHeroVisual"
@@ -26,16 +25,12 @@ function fmt(n: number) {
 }
 
 /** Premium banner for state / qualification / scope category pages without sector hero variant. */
-export function GovtScopeHero({ crumbs, title, description, categorySlug, stateSlug, qualificationSlug, statOverride }: GovtScopeHeroProps) {
+export function GovtScopeHero({ crumbs, title, description, categorySlug, qualificationSlug, statOverride }: GovtScopeHeroProps) {
   const slug = qualificationSlug || categorySlug || "state-govt"
   const theme = getGovtCategoryTheme(slug)
-  const stat = statOverride ?? (categorySlug
-    ? getCategoryNavStat(categorySlug)
-    : stateSlug
-      ? getStateNavStat(stateSlug)
-      : qualificationSlug
-        ? getQualificationNavStat(qualificationSlug)
-        : { notifications: 0, vacancies: 0 })
+  // Stats are always supplied by the caller (DB-derived via getGovtJobsFiltered /
+  // getGovtContent). No local-inventory fallback.
+  const stat = statOverride ?? { notifications: 0, vacancies: 0 }
 
   const heroVariant = (categorySlug ? govtSlugToHeroVariant(categorySlug) : null) as HeroVariant | null
 

@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { GOVT_TOP_CATEGORIES, INDIAN_STATES, GOVT_QUALIFICATIONS } from "@/lib/config/govtTaxonomy"
 import { getGovtCategoryTheme } from "@/lib/config/govtCategoryTheme"
-import { GOVT_NAV_STATS } from "@/lib/services/govtNavStats"
+import { getGovtNavStats } from "@/lib/services/govtNavStats"
 import { CategoryIllustration } from "@/components/shared/CategoryIllustration"
 import { resolveCategoryIllustrationSlug } from "@/lib/config/categoryIllustrations"
 import "@/styles/govt-nav.css"
@@ -11,8 +11,8 @@ function fmt(n: number) {
 }
 
 /** Premium browse grid with live notification & vacancy counts. */
-export function GovtNavGrids() {
-  const { categories, states, qualifications } = GOVT_NAV_STATS
+export async function GovtNavGrids() {
+  const { categories, states, qualifications } = await getGovtNavStats()
 
   return (
     <div>

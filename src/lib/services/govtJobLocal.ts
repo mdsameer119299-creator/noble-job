@@ -16,13 +16,13 @@ const SECTOR_MATCHERS: Partial<Record<GovtJobTab, (j: GovtJob) => boolean>> = {
   psu: j => /ongc|ntpc|bhel|gail|sail|iocl|psu|coal india/i.test(`${j.org} ${j.title}`),
 }
 
-export function getGovtJobsLocal(tab: GovtJobTab = "latest", state?: string): GovtJob[] {
+export function getGovtJobsLocal(tab: GovtJobTab = "latest", state?: string, pool: GovtJob[] = GOVT_JOBS): GovtJob[] {
   const matcher = SECTOR_MATCHERS[tab]
   let list: GovtJob[]
   if (matcher) {
-    list = GOVT_JOBS.filter(matcher)
+    list = pool.filter(matcher)
   } else if (tab === "latest") {
-    list = GOVT_JOBS.filter(
+    list = pool.filter(
       j =>
         j.tab === "latest" ||
         j.tab === "upcoming" ||
@@ -31,7 +31,7 @@ export function getGovtJobsLocal(tab: GovtJobTab = "latest", state?: string): Go
   } else if (tab === "syllabus" || tab === "scholarships") {
     list = []
   } else {
-    list = GOVT_JOBS.filter(j => j.tab === tab)
+    list = pool.filter(j => j.tab === tab)
   }
   if (state && state !== "All India") {
     list = list.filter(j => j.state === state || j.location === state)

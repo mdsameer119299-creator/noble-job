@@ -1,10 +1,10 @@
 /**
- * Lightweight govt hub stats (GOVT_JOBS only — no private/WFH inventory).
+ * Govt hub stat counters — sourced from the database (active govt_jobs rows),
+ * with the local seeded inventory as a fallback. No fabricated vacancy totals.
  */
-import { GOVT_JOBS } from "@/lib/data/govtData"
-import { sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
-import { filterGovtJobsByCategory } from "@/lib/services/govtNavStats"
-import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
+import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
 
 export interface GovtHubStatItem {
@@ -14,12 +14,11 @@ export interface GovtHubStatItem {
   label: string
 }
 
-export function getGovtHubStats(opts?: { slug?: string }): GovtHubStatItem[] {
-  // Statistics only ever reflect active (non-expired) notifications.
-  const jobs = (opts?.slug ? filterGovtJobsByCategory(opts.slug) : GOVT_JOBS).filter(isActiveGovtJob)
-  // Vacancies count only recruitment tabs (latest/upcoming); results/admit/
-  // answer-key entries carry no open posts. Real sum only — no minimum floor.
-  const vacancies = sumGovtVacancies(jobs.filter(isVacancyBearingJob))
+export async function getGovtHubStats(opts?: { slug?: string }): Promise<GovtHubStatItem[]> {
+  const all = await getActiveGovtRows()
+  const jobs = opts?.slug ? all.filter(j => jobMatchesCategorySlug(j, opts.slug!)) : all
+  // Vacancies: real, parseable counts on recruitment tabs only (latest/upcoming).
+  const vacancies = sumRealVacancies(jobs.filter(isVacancyBearingJob))
   const departments = new Set(jobs.map(j => j.org)).size
 
   return [

@@ -24,6 +24,9 @@ export const metadata = buildPageMetadata({
   keywords: ['Jobs in India', 'Job Portal India', 'Government Jobs', 'Private Jobs', 'Work From Home Jobs', 'Abroad Jobs'],
 })
 
+// Refresh so homepage category cards (CategoryChips) reflect govt_jobs without a redeploy.
+export const revalidate = 600
+
 export default function HomePage() {
   return (
     <div id="page-home">

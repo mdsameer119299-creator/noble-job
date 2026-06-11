@@ -25,6 +25,7 @@
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "db:seed": "node scripts/seed.js",
+    "db:seed:govt": "tsx scripts/seed-govt-jobs.ts",
     "db:generate-types": "supabase gen types typescript --local > src/types/supabase.ts",
     "verify:rbac": "node scripts/verify-rbac.mjs",
     "verify:rls": "node scripts/verify-rls.mjs",
@@ -72,6 +73,7 @@
     "prettier": "^3.3.0",
     "prettier-plugin-tailwindcss": "^0.6.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.0"
   }
 }

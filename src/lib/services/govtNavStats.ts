@@ -2,8 +2,9 @@
  * Live counts for govt browse grids & sub-page heroes (from GOVT_JOBS / GOVT_CONTENT).
  */
 import { GOVT_JOBS, GOVT_CONTENT } from "@/lib/data/govtData"
-import { sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { sumGovtVacancies, sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import {
   GOVT_TOP_CATEGORIES,
   INDIAN_STATES,
@@ -86,17 +87,59 @@ export function getQualificationNavStat(slug: string): GovtNavStat {
   return statsFromJobs(filterGovtJobsByQualification(slug))
 }
 
-/** Precomputed map for the hub browse grid (built once). */
-export function buildGovtNavStatMaps() {
+// ── Database-backed browse-grid stats (used by the /jobs/govt hub) ──────────
+
+/** Category-slug predicate usable against any rows array (job categories only). */
+export function jobMatchesCategorySlug(job: GovtJob, slug: string): boolean {
+  const cat = getCategoryBySlug(slug)
+  return !!cat && cat.contentType === "jobs" && jobMatchesCategory(job, cat)
+}
+
+/** Real, active stats for a subset of rows (recruitment-tab vacancies only). */
+function realStatsFromRows(jobs: GovtJob[]): GovtNavStat {
+  const active = jobs.filter(isActiveGovtJob)
+  return {
+    notifications: active.length,
+    vacancies: sumRealVacancies(active.filter(isVacancyBearingJob)),
+  }
+}
+
+/** Map a content-type category to its govt_jobs tab (null = no job rows). */
+function contentTabFor(contentType: string): GovtJob["tab"] | null {
+  if (contentType === "results") return "results"
+  if (contentType === "admit_cards") return "admit"
+  if (contentType === "answer_keys") return "answer"
+  return null
+}
+
+/** Build all browse-grid stats from a given (already-active) rows array. */
+export function computeNavStats(rows: GovtJob[]) {
+  const active = rows.filter(isActiveGovtJob)
   const categories: Record<string, GovtNavStat> = {}
   const states: Record<string, GovtNavStat> = {}
   const qualifications: Record<string, GovtNavStat> = {}
 
-  for (const c of GOVT_TOP_CATEGORIES) categories[c.slug] = getCategoryNavStat(c.slug)
-  for (const s of INDIAN_STATES) states[s.slug] = getStateNavStat(s.slug)
-  for (const q of GOVT_QUALIFICATIONS) qualifications[q.slug] = getQualificationNavStat(q.slug)
-
+  for (const c of GOVT_TOP_CATEGORIES) {
+    if (c.contentType !== "jobs") {
+      const tab = contentTabFor(c.contentType)
+      const n = tab ? active.filter(j => j.tab === tab).length : 0
+      categories[c.slug] = { notifications: n, vacancies: 0 }
+      continue
+    }
+    let jobs = active.filter(j => jobMatchesCategory(j, c))
+    if (jobs.length === 0 && c.scope === "latest") jobs = active.filter(j => j.tab === "latest")
+    categories[c.slug] = realStatsFromRows(jobs)
+  }
+  for (const s of INDIAN_STATES) {
+    states[s.slug] = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
+  }
+  for (const q of GOVT_QUALIFICATIONS) {
+    qualifications[q.slug] = realStatsFromRows(active.filter(j => jobMatchesQualification(j, q.slug)))
+  }
   return { categories, states, qualifications }
 }
 
-export const GOVT_NAV_STATS = buildGovtNavStatMaps()
+/** Async, database-backed browse-grid stats for the hub (local fallback). */
+export async function getGovtNavStats() {
+  return computeNavStats(await getActiveGovtRows())
+}

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next"
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { GOVT_TOP_CATEGORIES, INDIAN_STATES, GOVT_QUALIFICATIONS } from "@/lib/config/govtTaxonomy"
-import { GOVT_JOBS } from "@/lib/data/govtData"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { FALLBACK_WFH_JOBS, FALLBACK_ABROAD_JOBS } from "@/lib/data/fallbackJobs"
 import { siteUrl } from "@/lib/seo/constants"
 
@@ -41,7 +41,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.75,
   }))
 
-  const govtJobRoutes: MetadataRoute.Sitemap = GOVT_JOBS.map(j => ({
+  const govtRows = await getActiveGovtRows()
+  const govtJobRoutes: MetadataRoute.Sitemap = govtRows.map(j => ({
     url: `${base}/jobs/govt/${j.slug || j.id}`,
     lastModified: now,
     changeFrequency: "weekly",

@@ -1,85 +1,32 @@
-import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
-import { GOVT_JOBS, GOVT_CONTENT, enrichGovtJob } from "@/lib/data/govtData"
-import { applyGovtVacancies, sumGovtVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { GOVT_CONTENT } from "@/lib/data/govtData"
+import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
-import { filterGovtJobsByCategory, filterGovtJobsByQualification } from "@/lib/services/govtNavStats"
+import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
+import { jobMatchesQualification } from "@/lib/services/govtQualificationMatch"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
-import { isGovtJobExpired, isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
+import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
-async function getSupabaseClient() {
-  const { createClient } = await import("@/lib/supabase/server")
-  return createClient()
-}
-
-function mapGovtRow(row: Record<string, unknown>): GovtJob {
-  const r = row as unknown as GovtJob & { last_date?: string; age_range?: string }
-  return applyGovtVacancies({
-    ...r,
-    lastDate: r.lastDate ?? r.last_date,
-    last_date: r.last_date ?? r.lastDate,
-    ageRange: r.ageRange ?? r.age_range,
-    age_range: r.age_range ?? r.ageRange,
-  }) as GovtJob
-}
-
+/**
+ * DB-first job tabs. Derives from the shared active-rows pool (Supabase, with
+ * local emergency fallback baked into getActiveGovtRows) and reuses the exact
+ * tab-matching logic from getGovtJobsLocal. No flag gate, no thin-data guard.
+ */
 export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): Promise<GovtJob[]> {
-  const local = getGovtJobsLocal(tab, state)
-  if (preferLocalInventory() || !isSupabaseConfigured()) return local
-
-  try {
-    const sb = await getSupabaseClient()
-    if (!sb) return local
-    let q = sb.from("govt_jobs").select("*").eq("status", "active").eq("tab", tab).order("sort_order")
-    if (state && state !== "All India") q = q.eq("state", state)
-    const { data, error } = await q
-    if (error || !data?.length) return local
-    const remote = data.map(row =>
-      enrichGovtJob(mapGovtRow(row as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }),
-    )
-    return shouldFallbackToLocal(remote.length, local.length) ? local : remote
-  } catch {
-    return local
-  }
+  const pool = await getActiveGovtRows()
+  return getGovtJobsLocal(tab, state, pool)
 }
 
 export async function getGovtJobById(id: string): Promise<GovtJob | null> {
-  const local = getGovtJobByIdLocal(id)
-  if (preferLocalInventory()) return local
-
-  if (!isSupabaseConfigured()) return local
-  try {
-    const sb = await getSupabaseClient()
-    if (!sb) return local
-    const { data } = await sb.from("govt_jobs").select("*").or(`id.eq.${id},slug.eq.${id}`).maybeSingle()
-    if (data) {
-      return enrichGovtJob(mapGovtRow(data as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string })
-    }
-    return local
-  } catch {
-    return local
-  }
+  const pool = await getActiveGovtRows()
+  return pool.find(j => j.id === id || j.slug === id) ?? getGovtJobByIdLocal(id)
 }
 
 /** Look up a single government job by SEO slug (falls back to id). */
 export async function getGovtJobBySlug(slug: string): Promise<GovtJob | null> {
-  const local = getGovtJobByIdLocal(slug)
-  if (preferLocalInventory()) return local
-
-  if (isSupabaseConfigured()) {
-    try {
-      const sb = await getSupabaseClient()
-      if (!sb) return local
-      const { data } = await sb.from("govt_jobs").select("*").or(`slug.eq.${slug},id.eq.${slug}`).maybeSingle()
-      if (data) {
-        return enrichGovtJob(
-          mapGovtRow(data as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string },
-        )
-      }
-    } catch { /* fall through */ }
-  }
-  return local
+  const pool = await getActiveGovtRows()
+  return pool.find(j => j.slug === slug || j.id === slug) ?? getGovtJobByIdLocal(slug)
 }
 
 export interface GovtJobFilters {
@@ -104,25 +51,24 @@ export interface GovtJobListResult {
   facets: { departments: string[]; experiences: string[] }
 }
 
-/** Filtered + paginated government job listing (state / qualification / dept / category). */
-export function getGovtJobsFiltered(filters: GovtJobFilters = {}): GovtJobListResult {
+/** Filtered + paginated government job listing (state / qualification / dept / category). DB-first. */
+export async function getGovtJobsFiltered(filters: GovtJobFilters = {}): Promise<GovtJobListResult> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  let list = [...GOVT_JOBS]
+  const pool = await getActiveGovtRows()
+  let list = pool
 
   if (filters.category) {
     const cat = getCategoryBySlug(filters.category)
     if (cat?.contentType === "jobs") {
-      list = filterGovtJobsByCategory(filters.category)
+      list = list.filter(j => jobMatchesCategorySlug(j, filters.category!))
     }
   }
-  if (filters.qualification) list = filterGovtJobsByQualification(filters.qualification)
+  if (filters.qualification) list = list.filter(j => jobMatchesQualification(j, filters.qualification!))
   if (filters.state) list = list.filter(j => j.stateSlug === filters.state)
   if (filters.department) list = list.filter(j => (j.department || j.org).toLowerCase().includes(filters.department!.toLowerCase()))
   if (filters.experience) list = list.filter(j => (j.experience || "").toLowerCase().includes(filters.experience!.toLowerCase()))
-  // "open" means the application window has not yet closed — check both the
-  // explicit status flag and the actual lastDate so date-passed jobs are hidden
-  // even when the status column hasn't been updated by the nightly cron yet.
+  // Pool is already active (non-expired); the "open" filter is a no-op safety net.
   if (filters.lastDate === "open") list = list.filter(j => j.status !== "expired" && !isGovtJobExpired(j.lastDate))
   if (filters.q) {
     const q = filters.q.toLowerCase()
@@ -130,48 +76,87 @@ export function getGovtJobsFiltered(filters: GovtJobFilters = {}): GovtJobListRe
   }
 
   const facets = {
-    departments: Array.from(new Set(GOVT_JOBS.map(j => j.department || j.org))).sort(),
-    experiences: Array.from(new Set(GOVT_JOBS.map(j => j.experience).filter(Boolean) as string[])).sort(),
+    departments: Array.from(new Set(pool.map(j => j.department || j.org))).sort(),
+    experiences: Array.from(new Set(pool.map(j => j.experience).filter(Boolean) as string[])).sort(),
   }
 
   return {
     items: list.slice((page - 1) * limit, page * limit),
     total: list.length,
-    // Headline vacancy stat counts active, recruitment-tab jobs only; the
-    // displayed item list / pagination above are intentionally left unchanged.
-    vacanciesTotal: sumGovtVacancies(list.filter(j => isActiveGovtJob(j) && isVacancyBearingJob(j))),
+    vacanciesTotal: sumRealVacancies(list.filter(isVacancyBearingJob)),
     page,
     totalPages: Math.ceil(list.length / limit) || 1,
     facets,
   }
 }
 
-/** Related jobs sharing a category with the given job. */
-export function getRelatedGovtJobs(job: GovtJob, limit = 6): GovtJob[] {
-  return GOVT_JOBS.filter(j => j.id !== job.id && j.categoryTags?.some(t => job.categoryTags?.includes(t) && t !== "latest-notifications")).slice(0, limit)
+/** Related jobs sharing a category with the given job. DB-first. */
+export async function getRelatedGovtJobs(job: GovtJob, limit = 6): Promise<GovtJob[]> {
+  const pool = await getActiveGovtRows()
+  return pool.filter(j => j.id !== job.id && j.categoryTags?.some(t => job.categoryTags?.includes(t) && t !== "latest-notifications")).slice(0, limit)
 }
 
-/** State-wise related jobs. */
-export function getStateRelatedGovtJobs(job: GovtJob, limit = 5): GovtJob[] {
+/** State-wise related jobs. DB-first. */
+export async function getStateRelatedGovtJobs(job: GovtJob, limit = 5): Promise<GovtJob[]> {
   if (!job.stateSlug) return []
-  return GOVT_JOBS.filter(j => j.id !== job.id && j.stateSlug === job.stateSlug).slice(0, limit)
+  const pool = await getActiveGovtRows()
+  return pool.filter(j => j.id !== job.id && j.stateSlug === job.stateSlug).slice(0, limit)
 }
 
-/** Qualification-wise related jobs. */
-export function getQualificationRelatedGovtJobs(job: GovtJob, limit = 5): GovtJob[] {
-  return GOVT_JOBS.filter(j => j.id !== job.id && j.qualificationTags?.some(t => job.qualificationTags?.includes(t))).slice(0, limit)
+/** Qualification-wise related jobs. DB-first. */
+export async function getQualificationRelatedGovtJobs(job: GovtJob, limit = 5): Promise<GovtJob[]> {
+  const pool = await getActiveGovtRows()
+  return pool.filter(j => j.id !== job.id && j.qualificationTags?.some(t => job.qualificationTags?.includes(t))).slice(0, limit)
 }
 
 export interface GovtContentResult { items: GovtContentItem[]; total: number; page: number; totalPages: number }
 
-/** Government content listing (admit cards / results / answer keys / syllabus / papers). */
-export function getGovtContent(
+/** content_type → govt_jobs.tab for the three DB-backed content surfaces. */
+const CONTENT_TAB: Partial<Record<GovtContentItem["contentType"], GovtJobTab>> = {
+  results: "results",
+  admit_cards: "admit",
+  answer_keys: "answer",
+}
+
+/** Map a govt_jobs row into the GovtContentItem shape used by content pages. */
+function jobToContentItem(j: GovtJob, contentType: GovtContentItem["contentType"]): GovtContentItem {
+  return {
+    id: j.id,
+    slug: j.slug || j.id,
+    contentType,
+    title: j.title,
+    org: j.org,
+    examName: j.post || j.short || j.title,
+    date: j.lastDate || j.examDate || "",
+    link: j.officialUrl || j.applyUrl,
+    state: j.state,
+    stateSlug: j.stateSlug,
+    color: j.color,
+    badge: j.badge,
+  }
+}
+
+/**
+ * Government content listing. Results / Admit Cards / Answer Keys are served
+ * from govt_jobs rows (by tab) so they are fully DB-driven; Syllabus and
+ * Previous Papers remain on local GOVT_CONTENT until a content table exists.
+ */
+export async function getGovtContent(
   contentType: GovtContentItem["contentType"],
   filters: { q?: string; state?: string; page?: number; limit?: number } = {},
-): GovtContentResult {
+): Promise<GovtContentResult> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  let list = GOVT_CONTENT.filter(c => c.contentType === contentType)
+
+  const tab = CONTENT_TAB[contentType]
+  let list: GovtContentItem[]
+  if (tab) {
+    const pool = await getActiveGovtRows()
+    list = pool.filter(j => j.tab === tab).map(j => jobToContentItem(j, contentType))
+  } else {
+    list = GOVT_CONTENT.filter(c => c.contentType === contentType)
+  }
+
   if (filters.state) list = list.filter(c => c.stateSlug === filters.state)
   if (filters.q) {
     const q = filters.q.toLowerCase()
@@ -186,11 +171,8 @@ export function getGovtContent(
 }
 
 export async function getGovtStats() {
-  const base = preferLocalInventory() ? GOVT_JOBS.filter(j => j.tab === "latest") : await getGovtJobs("latest")
-  // Active notifications only; fall back to active latest-tab inventory.
-  const active = base.filter(isActiveGovtJob)
-  const source = active.length ? active : GOVT_JOBS.filter(j => j.tab === "latest" && isActiveGovtJob(j))
-  const totalVacancies = sumGovtVacancies(source.filter(isVacancyBearingJob))
+  const source = await getActiveGovtRows()
+  const totalVacancies = sumRealVacancies(source.filter(isVacancyBearingJob))
   const departments = new Set(source.map(j => j.org)).size
   const locations = new Set(source.map(j => j.location)).size
   return { totalVacancies, departments, locations, totalExams: source.length }

@@ -10,6 +10,8 @@ interface Props {
   searchParams: Promise<Record<string, string | undefined>>
 }
 
+// DB-driven content regenerates so new govt_jobs rows appear without a redeploy.
+export const revalidate = 600
 export function generateStaticParams() {
   return GOVT_TOP_CATEGORIES.map(c => ({ slug: c.slug }))
 }
@@ -41,7 +43,7 @@ export default async function GovtCategoryPage({ params, searchParams }: Props) 
   ]
 
   if (cat.contentType !== "jobs") {
-    const r = getGovtContent(cat.contentType, { q: sp.q, state: sp.state, page })
+    const r = await getGovtContent(cat.contentType, { q: sp.q, state: sp.state, page })
     return (
       <GovtListingView
         kind="content"
@@ -52,6 +54,7 @@ export default async function GovtCategoryPage({ params, searchParams }: Props) 
         categorySlug={slug}
         items={r.items}
         total={r.total}
+        vacanciesTotal={0}
         page={r.page}
         totalPages={r.totalPages}
         basePath={basePath}
@@ -60,7 +63,7 @@ export default async function GovtCategoryPage({ params, searchParams }: Props) 
     )
   }
 
-  const r = getGovtJobsFiltered({
+  const r = await getGovtJobsFiltered({
     category: slug,
     q: sp.q,
     state: sp.state,

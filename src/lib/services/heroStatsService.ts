@@ -44,8 +44,8 @@ export interface HeroStatsPayload {
   countryCards?: { flag: string; name: string; jobs: number }[]
 }
 
-function govtStatsForSlug(slug?: string): HeroStatsPayload {
-  const counters: HeroCounter[] = getGovtHubStats({ slug }).map(({ key, label, num }) => ({
+async function govtStatsForSlug(slug?: string): Promise<HeroStatsPayload> {
+  const counters: HeroCounter[] = (await getGovtHubStats({ slug })).map(({ key, label, num }) => ({
     key,
     label,
     value: num,
@@ -122,7 +122,7 @@ function govtStatsForSlug(slug?: string): HeroStatsPayload {
   }
 }
 
-export function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: string }): HeroStatsPayload {
+export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: string }): Promise<HeroStatsPayload> {
   switch (variant) {
     case "private": {
       const c = getPrivateInventoryCounts()

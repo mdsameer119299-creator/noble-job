@@ -4,6 +4,7 @@ import {
   getHeroStats,
   getVerifiedEmployerCount,
   type HeroVariant,
+  type HeroStatsPayload,
 } from '@/lib/services/heroStatsService'
 import { CategoryHeroView } from './CategoryHeroView'
 
@@ -13,7 +14,7 @@ interface CategoryHeroProps {
   govtSlug?: string
 }
 
-function buildDynamicBullets(variant: HeroVariant, stats: ReturnType<typeof getHeroStats>, govtSlug?: string) {
+function buildDynamicBullets(variant: HeroVariant, stats: HeroStatsPayload, govtSlug?: string) {
   const n = (key: string) => stats.counters.find(c => c.key === key)?.value ?? 0
   if (variant === 'private') {
     return [
@@ -44,9 +45,9 @@ function buildDynamicBullets(variant: HeroVariant, stats: ReturnType<typeof getH
   return getHeroTheme(variant).bullets
 }
 
-export function CategoryHero({ variant, govtSlug }: CategoryHeroProps) {
+export async function CategoryHero({ variant, govtSlug }: CategoryHeroProps) {
   const base = getHeroTheme(variant)
-  const stats = getHeroStats(variant, { govtSlug })
+  const stats = await getHeroStats(variant, { govtSlug })
   const theme = { ...base, bullets: buildDynamicBullets(variant, stats, govtSlug) }
   const showEmployers =
     variant === 'private'

@@ -207,6 +207,8 @@ export interface Database {
           age_range: string
           fee: string
           last_date: string
+          start_date: string | null
+          exam_date: string | null
           salary: string
           location: string
           state: string | null
@@ -216,9 +218,104 @@ export interface Database {
           slug: string | null
           color: string
           badge: string | null
+          notification_url: string | null
+          official_url: string | null
+          result_url: string | null
+          admit_url: string | null
+          answer_url: string | null
+          created_at: string
+          // ── Phase 0 reconciliation columns ──
+          state_slug: string | null
+          department: string | null
+          experience: string | null
+          category_tags: string[] | null
+          qualification_tags: string[] | null
+          selection_process: string[] | null
+          job_status: string | null
+          notification_pdf: string | null
+          apply_url: string | null
+          overview: string | null
+          eligibility: string | null
+          age_limit: string | null
+          salary_details: string | null
+          exam_pattern: string | null
+          syllabus_content: string | null
+          article: string | null
+          vacancy_breakup: Json | null
+          fee_details: Json | null
+          important_dates: Json | null
+          faqs: Json | null
+          source_id: string | null
+          content_hash: string | null
+          published: boolean | null
+          review_status: string | null
+          updated_at: string | null
         }
-        Insert: { id: string; title: string; status?: string; tab?: string }
-        Update: { id?: string; title?: string; status?: string; tab?: string }
+        Insert: {
+          id: string
+          title: string
+          org?: string
+          short?: string
+          post?: string
+          vacancies?: string
+          qualification?: string
+          age_range?: string
+          fee?: string
+          last_date?: string
+          start_date?: string | null
+          exam_date?: string | null
+          salary?: string
+          location?: string
+          state?: string | null
+          tab?: string
+          status?: string
+          sort_order?: number
+          slug?: string | null
+          color?: string
+          badge?: string | null
+          notification_url?: string | null
+          official_url?: string | null
+          result_url?: string | null
+          admit_url?: string | null
+          answer_url?: string | null
+          state_slug?: string | null
+          department?: string | null
+          experience?: string | null
+          category_tags?: string[] | null
+          qualification_tags?: string[] | null
+          selection_process?: string[] | null
+          job_status?: string | null
+          notification_pdf?: string | null
+          apply_url?: string | null
+          overview?: string | null
+          eligibility?: string | null
+          age_limit?: string | null
+          salary_details?: string | null
+          exam_pattern?: string | null
+          syllabus_content?: string | null
+          article?: string | null
+          vacancy_breakup?: Json | null
+          fee_details?: Json | null
+          important_dates?: Json | null
+          faqs?: Json | null
+          source_id?: string | null
+          content_hash?: string | null
+          published?: boolean | null
+          review_status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          status?: string
+          tab?: string
+          review_status?: string | null
+          published?: boolean | null
+          job_status?: string | null
+          content_hash?: string | null
+          last_date?: string | null
+          updated_at?: string | null
+        }
         Relationships: []
       }
       wfh_jobs: {
