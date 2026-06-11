@@ -45,6 +45,12 @@ const nextConfig: NextConfig = {
       { source: '/employer', destination: '/employer/dashboard', permanent: false },
       { source: '/candidate', destination: '/candidate/dashboard', permanent: false },
       { source: '/admin', destination: '/admin/dashboard', permanent: false },
+      // Canonical-slug redirect: external/indexed title-derived slug → stored slug.
+      {
+        source: '/jobs/govt/rrb-ntpc-graduate-level-recruitment-2026',
+        destination: '/jobs/govt/rrb-ntpc-graduate-level-2026',
+        permanent: true,
+      },
     ]
   },
 
