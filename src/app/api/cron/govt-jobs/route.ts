@@ -15,9 +15,15 @@ export const dynamic = "force-dynamic"
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env[SCHEDULER_CONFIG.secretEnvVar]
-  if (!secret) return true // no secret configured → allow (dev convenience)
-  const header = req.headers.get("authorization") || ""
-  return header === `Bearer ${secret}` || req.nextUrl.searchParams.get("secret") === secret
+  if (!secret) {
+    // Fail CLOSED in production: a missing secret must never leave the ingestion
+    // endpoint publicly callable (previously this returned true and exposed it).
+    // Allowed only outside production so local dev without a secret still works.
+    return process.env.NODE_ENV !== "production"
+  }
+  // Bearer header only. The legacy ?secret= query param was dropped — query
+  // strings leak into access logs / referrers, an avoidable credential-exposure.
+  return (req.headers.get("authorization") || "") === `Bearer ${secret}`
 }
 
 export async function GET(req: NextRequest) {

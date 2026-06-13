@@ -73,7 +73,9 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
     notificationPdf: raw.notificationPdf,
     officialUrl: raw.officialUrl,
   }
-  return { job: enrichGovtJob(base), sourceId: adapter.id, hash: contentHash(raw) }
+  // synthesizeVacancies:false — real ingested jobs must never carry a fabricated
+  // vacancy count; unknown counts surface as "Not Specified".
+  return { job: enrichGovtJob(base, { synthesizeVacancies: false }), sourceId: adapter.id, hash: contentHash(raw) }
 }
 
 /** Idempotent upsert (onConflict:"id") with provenance + content hash. */
