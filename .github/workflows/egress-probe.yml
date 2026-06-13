@@ -1,0 +1,30 @@
+name: Egress Probe (Phase 0)
+
+# One-off diagnostic: runs the read-only egress probe from a GitHub Actions runner
+# to confirm Indian government sources are reachable from GitHub's egress IP before
+# any ingestion migration. Does NOT touch the database. Manual trigger only.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [chore/egress-probe]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run egress probe
+        run: npx tsx scripts/egress-probe.ts --out egress-report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: egress-report
+          path: egress-report.json
