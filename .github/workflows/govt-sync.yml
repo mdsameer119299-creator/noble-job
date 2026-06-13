@@ -1,0 +1,35 @@
+name: Government Jobs Hourly Sync
+
+# Hourly ingestion + auto-expiry. Triggers the secured cron endpoint, which runs
+# runGovtAutoUpdate() (poll enabled adapters -> normalise -> dedupe -> publish ->
+# expireStaleJobs -> record ingest_runs).
+#
+# Alternative (preferred if available): a Hostinger hPanel cron job running
+#   curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://www.noblejob.in/api/cron/govt-jobs
+# on the schedule "0 * * * *". This workflow is the off-platform fallback.
+#
+# Required repo secrets: SITE_URL (e.g. https://www.noblejob.in), CRON_SECRET.
+
+on:
+  schedule:
+    - cron: "0 * * * *"      # every hour, on the hour (UTC)
+  workflow_dispatch: {}       # allow manual runs
+
+concurrency:
+  group: govt-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger govt-jobs cron endpoint
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o response.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/govt-jobs")
+          echo "HTTP $code"
+          cat response.json || true
+          test "$code" = "200"

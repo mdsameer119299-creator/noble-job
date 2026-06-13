@@ -509,6 +509,44 @@ export interface Database {
         }
         Relationships: []
       }
+      ingest_runs: {
+        Row: {
+          id: number
+          source_id: string
+          trigger: string
+          status: string
+          started_at: string
+          finished_at: string | null
+          duration_ms: number | null
+          fetched: number
+          inserted: number
+          updated: number
+          skipped: number
+          expired: number
+          error: string | null
+        }
+        Insert: {
+          source_id?: string
+          trigger?: string
+          status?: string
+          started_at?: string
+          finished_at?: string | null
+          duration_ms?: number | null
+          fetched?: number
+          inserted?: number
+          updated?: number
+          skipped?: number
+          expired?: number
+          error?: string | null
+        }
+        Update: {
+          status?: string
+          finished_at?: string | null
+          duration_ms?: number | null
+          error?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

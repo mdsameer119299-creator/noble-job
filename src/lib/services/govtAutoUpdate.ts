@@ -1,233 +1,236 @@
 /**
- * govtAutoUpdate.ts — scheduler/ingestion engine for government jobs.
+ * govtAutoUpdate.ts — adapter-driven ingestion engine for government jobs.
  *
- * Reads the central source config (govtSources.ts), polls each enabled source,
- * normalises notifications into GovtJob rows, de-duplicates against what's
- * already stored, and publishes new entries. Designed to be invoked daily by
- * the cron endpoint at /api/cron/govt-jobs.
+ * runGovtAutoUpdate polls every ENABLED SourceAdapter (src/lib/ingest), normalises
+ * notifications into enriched GovtJob rows, de-duplicates (stable id + content_hash),
+ * publishes, then expires stale jobs — and records the run in ingest_runs.
+ * Adapters are added incrementally; disabled stubs contribute nothing, so this is
+ * safe to schedule hourly today (expiry automation runs regardless of sources).
  *
- * NOTE: live scraping/feed parsing is intentionally stubbed (`fetchFromSource`)
- * so the architecture works without external dependencies. Wire real parsers
- * per `source.kind` when feeds are finalised; everything downstream already
- * supports the full flow (normalise → dedupe → publish).
+ * Invoked by /api/cron/govt-jobs (Hostinger cron or GitHub Actions).
  */
-import { GOVT_SOURCES, SCHEDULER_CONFIG, type GovtSource } from "@/lib/config/govtSources"
+import { createHash } from "crypto"
+import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { enrichGovtJob } from "@/lib/data/govtData"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { slugify } from "@/lib/config/govtTaxonomy"
+import { ADAPTERS, enabledAdapters } from "@/lib/ingest/registry"
+import type { SourceAdapter, RawNotification } from "@/lib/ingest/types"
 import type { GovtJob } from "@/types/govtJob"
+
+type GovtJobRow = GovtJob & { last_date: string; age_range: string }
+interface PersistEntry { job: GovtJob; sourceId: string; hash: string }
 
 export interface AutoUpdateResult {
   ranAt: string
   autoPublish: boolean
-  sources: { id: string; label: string; fetched: number; published: number; skipped: number }[]
+  sourcesChecked: number
+  failedSources: string[]
+  sources: { id: string; label: string; fetched: number; published: number; skipped: number; error?: string }[]
   totalPublished: number
   /** Number of jobs flipped to status=expired by this run. */
   totalExpired: number
 }
 
-/** Fetch notifications for a source; uses local inventory slices until live parsers ship. */
-async function fetchFromSource(source: GovtSource): Promise<Partial<GovtJob & { last_date: string; age_range: string }>[]> {
-  const { GOVT_JOBS } = await import("@/lib/data/govtData")
-  const tab = source.defaultTab
-  const sector = source.sectors?.[0]
-  const pool = GOVT_JOBS.filter(j => {
-    if (sector && j.categoryTags?.includes(sector as GovtJob["tab"])) return true
-    if (j.tab === tab) return true
-    return j.org?.toLowerCase().includes(source.id.split("-")[0])
-  })
-  const slice = pool.slice(0, SCHEDULER_CONFIG.maxPerSourcePerRun)
-  return slice.map(j => ({
-    id: `${source.id}-${j.id}`,
-    title: j.title,
-    org: j.org,
-    short: j.short,
-    post: j.post,
-    vacancies: j.vacancies,
-    qualification: j.qualification,
-    lastDate: j.lastDate,
-    last_date: j.lastDate,
-    ageRange: j.ageRange,
-    age_range: j.ageRange,
-    fee: j.fee,
-    salary: j.salary,
-    location: j.location,
-    state: j.state,
-    tab: j.tab,
-    department: j.department,
-    officialUrl: j.officialUrl,
-    notificationPdf: j.notificationPdf,
-  }))
+/** Stable content fingerprint for change-detection / duplicate protection. */
+function contentHash(raw: RawNotification): string {
+  return createHash("sha256")
+    .update([raw.title, raw.org, raw.post, raw.vacancies, raw.lastDate, raw.officialUrl, raw.notificationPdf].join("|"))
+    .digest("hex")
 }
 
-type GovtJobRow = GovtJob & { last_date: string; age_range: string }
-
 /**
- * Normalise a raw notification into a fully-enriched GovtJob:
- * generates a unique SEO slug, taxonomy tags and a complete article + detail
- * sections so the imported job is immediately publishable as its own SEO page.
+ * Normalise a raw notification into a fully-enriched GovtJob (unique SEO slug,
+ * taxonomy tags, complete article + detail sections), plus provenance + hash.
  */
-function normalise(raw: Partial<GovtJobRow>, source: GovtSource): GovtJob {
+function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
+  const stableId = `${adapter.id}:${slugify(raw.externalId || raw.title) || String(Date.now())}`
   const base: GovtJobRow = {
-    id: raw.id || `${source.id}-${Date.now()}`,
+    id: stableId,
     title: raw.title || "Untitled Notification",
-    org: raw.org || source.label,
-    short: raw.short || (raw.org || source.label).slice(0, 4).toUpperCase(),
+    org: raw.org || adapter.label,
+    short: (raw.org || adapter.label).slice(0, 4).toUpperCase(),
     post: raw.post || "",
     vacancies: raw.vacancies || "TBA",
     qualification: raw.qualification || "",
     lastDate: raw.lastDate || "TBA",
-    last_date: raw.last_date || raw.lastDate || "TBA",
-    ageRange: raw.ageRange || "-",
-    age_range: raw.age_range || raw.ageRange || "-",
+    last_date: raw.lastDate || "TBA",
+    ageRange: "-",
+    age_range: "-",
     fee: raw.fee || "-",
+    startDate: raw.startDate,
     salary: raw.salary || "-",
     location: raw.location || "All India",
     state: raw.state || "All India",
-    tab: raw.tab || source.defaultTab,
-    department: raw.department || raw.org || source.label,
-    color: raw.color || "#1e3a8a",
-    badge: raw.badge || "New",
+    tab: raw.tab || "latest",
+    department: raw.org || adapter.label,
+    color: "#1e3a8a",
+    badge: "New",
     status: "active",
     jobStatus: "LIVE_JOB",
     postedAt: new Date().toISOString(),
-    notificationPdf: raw.notificationPdf || raw.notificationUrl,
-    officialUrl: raw.officialUrl || source.url,
+    notificationPdf: raw.notificationPdf,
+    officialUrl: raw.officialUrl,
   }
-  // Auto-tag against sector config + auto-generate the article / SEO sections.
-  const enriched = enrichGovtJob(base)
-  // Honour explicit sector tags declared on the source.
-  if (source.sectors?.length) {
-    enriched.categoryTags = Array.from(new Set([...(enriched.categoryTags || []), ...source.sectors]))
-  }
-  return enriched
+  return { job: enrichGovtJob(base), sourceId: adapter.id, hash: contentHash(raw) }
 }
 
-async function persist(jobs: GovtJob[]): Promise<number> {
-  if (!isSupabaseConfigured() || jobs.length === 0) return 0
+/** Idempotent upsert (onConflict:"id") with provenance + content hash. */
+async function persist(entries: PersistEntry[]): Promise<number> {
+  if (!isSupabaseConfigured() || entries.length === 0) return 0
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
-    const rows = jobs.map(j => ({
-      id: j.id,
-      slug: j.slug,
-      title: j.title,
-      org: j.org,
-      short: j.short,
-      post: j.post,
-      vacancies: j.vacancies,
-      qualification: j.qualification,
-      age_range: j.ageRange,
-      fee: j.fee,
-      last_date: j.lastDate,
-      start_date: j.startDate,
-      salary: j.salary,
-      location: j.location,
-      state: j.state,
-      state_slug: j.stateSlug,
-      tab: j.tab,
-      department: j.department,
-      experience: j.experience,
-      category_tags: j.categoryTags,
-      qualification_tags: j.qualificationTags,
-      color: j.color,
-      badge: j.badge,
-      status: j.status,
-      job_status: j.jobStatus,
-      notification_pdf: j.notificationPdf,
-      apply_url: j.applyUrl,
-      official_url: j.officialUrl,
-      overview: j.overview,
-      vacancy_breakup: j.vacancyBreakup,
-      eligibility: j.eligibility,
-      age_limit: j.ageLimit,
-      salary_details: j.salaryDetails,
-      selection_process: j.selectionProcess,
-      fee_details: j.feeDetails,
-      exam_pattern: j.examPattern,
-      syllabus_content: j.syllabusContent,
-      important_dates: j.importantDates,
-      faqs: j.faqs,
-      article: j.article,
-      source_id: undefined as string | undefined,
-      published: SCHEDULER_CONFIG.autoPublish,
+    const rows = entries.map(({ job: j, sourceId, hash }) => ({
+      id: j.id, slug: j.slug, title: j.title, org: j.org, short: j.short, post: j.post,
+      vacancies: j.vacancies, qualification: j.qualification, age_range: j.ageRange, fee: j.fee,
+      last_date: j.lastDate, start_date: j.startDate, salary: j.salary, location: j.location,
+      state: j.state, state_slug: j.stateSlug, tab: j.tab, department: j.department, experience: j.experience,
+      category_tags: j.categoryTags, qualification_tags: j.qualificationTags, color: j.color, badge: j.badge,
+      status: j.status, job_status: j.jobStatus, notification_pdf: j.notificationPdf, apply_url: j.applyUrl,
+      official_url: j.officialUrl, overview: j.overview, vacancy_breakup: j.vacancyBreakup, eligibility: j.eligibility,
+      age_limit: j.ageLimit, salary_details: j.salaryDetails, selection_process: j.selectionProcess,
+      fee_details: j.feeDetails, exam_pattern: j.examPattern, syllabus_content: j.syllabusContent,
+      important_dates: j.importantDates, faqs: j.faqs, article: j.article,
+      source_id: sourceId, content_hash: hash, published: SCHEDULER_CONFIG.autoPublish,
     }))
     const { error } = await supabaseAdmin.from("govt_jobs").upsert(rows as never, { onConflict: "id" })
-    return error ? 0 : jobs.length
+    return error ? 0 : entries.length
   } catch {
     return 0
   }
 }
 
 /**
- * Scans the database for active jobs whose lastDate has passed and marks them
- * expired. This keeps the status column in sync with real-world closing dates
- * without requiring manual admin intervention.
- *
- * Safe to run repeatedly — it only touches rows where status is still "active"
- * and the last_date is a parseable date that has already passed.
+ * Flip active jobs whose lastDate has passed to status=expired. Jobs are never
+ * deleted — expired rows remain published/searchable and resolve on their URL.
+ * Safe to run repeatedly.
  */
 async function expireStaleJobs(): Promise<number> {
   if (!isSupabaseConfigured()) return 0
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
-    // Only fetch the two columns we need to decide expiry — minimise payload.
     const { data, error } = await supabaseAdmin
       .from("govt_jobs")
       .select("id, last_date")
       .eq("status", "active")
     if (error || !data?.length) return 0
-
-    const staleIds = data
-      .filter((row: { id: string; last_date: string }) => isGovtJobExpired(row.last_date))
-      .map((row: { id: string; last_date: string }) => row.id)
-
+    const staleIds = (data as { id: string; last_date: string }[])
+      .filter(row => isGovtJobExpired(row.last_date))
+      .map(row => row.id)
     if (!staleIds.length) return 0
-
     const { error: updateError } = await supabaseAdmin
       .from("govt_jobs")
       .update({ status: "expired" })
       .in("id", staleIds)
-
     return updateError ? 0 : staleIds.length
   } catch {
     return 0
   }
 }
 
-/** Run one ingestion pass across all enabled sources. */
+/** Best-effort monitoring write — never breaks a run. */
+async function recordIngestRun(result: AutoUpdateResult, durationMs: number): Promise<void> {
+  if (!isSupabaseConfigured()) return
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase/admin")
+    const status = result.failedSources.length ? (result.totalPublished ? "partial" : "error") : "success"
+    await supabaseAdmin.from("ingest_runs").insert({
+      source_id: "all",
+      trigger: "cron",
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: durationMs,
+      fetched: result.sources.reduce((s, r) => s + r.fetched, 0),
+      inserted: result.totalPublished,
+      updated: 0,
+      skipped: result.sources.reduce((s, r) => s + r.skipped, 0),
+      expired: result.totalExpired,
+      error: result.failedSources.length ? `failed: ${result.failedSources.join(", ")}` : null,
+    } as never)
+  } catch {
+    /* monitoring is best-effort */
+  }
+}
+
+/** Run one ingestion pass across all enabled adapters, then expire stale jobs. */
 export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
+  const startedAt = Date.now()
   const seen = new Set<string>()
   const report: AutoUpdateResult["sources"] = []
+  const failedSources: string[] = []
   let totalPublished = 0
 
-  for (const source of GOVT_SOURCES.filter(s => s.enabled)) {
+  for (const adapter of enabledAdapters()) {
     let fetched = 0, skipped = 0
-    const toPublish: GovtJob[] = []
     try {
-      const raws = (await fetchFromSource(source)).slice(0, SCHEDULER_CONFIG.maxPerSourcePerRun)
+      const raws = (await adapter.fetch()).slice(0, SCHEDULER_CONFIG.maxPerSourcePerRun)
       fetched = raws.length
+      const toPublish: PersistEntry[] = []
       for (const raw of raws) {
-        const job = normalise(raw, source)
-        if (seen.has(job.id)) { skipped++; continue }
-        seen.add(job.id)
-        toPublish.push(job)
+        const entry = normalise(raw, adapter)
+        if (seen.has(entry.job.id)) { skipped++; continue }
+        seen.add(entry.job.id)
+        toPublish.push(entry)
       }
-    } catch {
-      // a single bad source should never break the whole run
+      const published = SCHEDULER_CONFIG.autoPublish ? await persist(toPublish) : 0
+      totalPublished += published
+      report.push({ id: adapter.id, label: adapter.label, fetched, published, skipped })
+    } catch (e) {
+      failedSources.push(adapter.id)
+      report.push({ id: adapter.id, label: adapter.label, fetched, published: 0, skipped, error: (e as Error).message })
     }
-    const published = SCHEDULER_CONFIG.autoPublish ? await persist(toPublish) : 0
-    totalPublished += published
-    report.push({ id: source.id, label: source.label, fetched, published, skipped })
   }
 
-  // After ingesting new jobs, expire any that have passed their closing date.
   const totalExpired = await expireStaleJobs()
-
-  return {
+  const result: AutoUpdateResult = {
     ranAt: new Date().toISOString(),
     autoPublish: SCHEDULER_CONFIG.autoPublish,
+    sourcesChecked: ADAPTERS.length,
+    failedSources,
     sources: report,
     totalPublished,
     totalExpired,
+  }
+  await recordIngestRun(result, Date.now() - startedAt)
+  return result
+}
+
+export interface GovtIngestMetrics {
+  activeJobs: number
+  expiredJobs: number
+  addedToday: number
+  lastSync: string | null
+  failedSources: string[]
+  sourcesChecked: number
+}
+
+/** Dashboard metrics: Active / Expired / Added-today / Last-sync / Failed / Checked. */
+export async function getGovtIngestMetrics(): Promise<GovtIngestMetrics> {
+  const empty: GovtIngestMetrics = {
+    activeJobs: 0, expiredJobs: 0, addedToday: 0, lastSync: null, failedSources: [], sourcesChecked: ADAPTERS.length,
+  }
+  if (!isSupabaseConfigured()) return empty
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase/admin")
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const [active, expired, added, lastRun] = await Promise.all([
+      supabaseAdmin.from("govt_jobs").select("id", { count: "exact", head: true }).eq("status", "active").eq("published", true),
+      supabaseAdmin.from("govt_jobs").select("id", { count: "exact", head: true }).eq("status", "expired"),
+      supabaseAdmin.from("govt_jobs").select("id", { count: "exact", head: true }).gte("created_at", startOfToday.toISOString()),
+      supabaseAdmin.from("ingest_runs").select("started_at, error").order("started_at", { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const last = lastRun.data as { started_at?: string; error?: string | null } | null
+    return {
+      activeJobs: active.count ?? 0,
+      expiredJobs: expired.count ?? 0,
+      addedToday: added.count ?? 0,
+      lastSync: last?.started_at ?? null,
+      failedSources: last?.error ? [last.error] : [],
+      sourcesChecked: ADAPTERS.length,
+    }
+  } catch {
+    return empty
   }
 }

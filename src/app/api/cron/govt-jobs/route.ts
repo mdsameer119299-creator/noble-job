@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { runGovtAutoUpdate } from "@/lib/services/govtAutoUpdate"
+import { runGovtAutoUpdate, getGovtIngestMetrics } from "@/lib/services/govtAutoUpdate"
 import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
 
 /**
@@ -25,6 +25,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
+    // Read-only monitoring snapshot (does not run a sync).
+    if (req.nextUrl.searchParams.get("metrics") === "1") {
+      return NextResponse.json({ ok: true, metrics: await getGovtIngestMetrics() })
+    }
     const result = await runGovtAutoUpdate()
     return NextResponse.json({ ok: true, ...result })
   } catch (e) {
