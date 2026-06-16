@@ -2,11 +2,25 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 
-export async function GET() {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   if (!isSupabaseConfigured()) return NextResponse.json({ data: [] })
   const api = await requireApiSupabase()
   if (api.error) return NextResponse.json({ data: [] })
   const sb = api.sb
+  const { params: p } = await params
+  const id = p?.[0]
+
+  // Single test (with questions) for the runner: GET /api/skill-tests/{id}
+  if (id) {
+    const { data, error } = await sb
+      .from("skill_tests")
+      .select("id, title, category, duration_mins, passing_score, questions_json")
+      .eq("id", id)
+      .single()
+    if (error || !data) return NextResponse.json({ error: "Test not found" }, { status: 404 })
+    return NextResponse.json({ data })
+  }
+
   const { data } = await sb.from("skill_tests").select("id, title, category, duration_mins, passing_score")
   return NextResponse.json({ data: data || [] })
 }
