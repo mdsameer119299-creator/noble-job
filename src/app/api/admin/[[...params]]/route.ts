@@ -48,6 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     const sp = req.nextUrl.searchParams
     const status = sp.get("status")
     const board = sp.get("board")
+    const owner = sp.get("owner")
     const q = sp.get("q")?.trim()
     let query = supabaseAdmin
       .from("applications")
@@ -58,6 +59,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
       .limit(200)
     if (status && status !== "all") query = query.eq("status", status)
     if (board && board !== "all") query = query.eq("board", board)
+    // Recruitment Queue: ownerless (imported) applications have no employer account.
+    if (owner === "unassigned") query = query.is("employer_id", null)
+    else if (owner === "employer") query = query.not("employer_id", "is", null)
     const { data, error } = await query
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
     let rows = (data || []) as Record<string, unknown>[]

@@ -48,29 +48,76 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "Invalid data" }, { status: 400 })
   }
 
-  const { data: candidate } = await sb.from("candidates").select("id").eq("user_id", user.id).single()
+  const { data: candidate } = await sb
+    .from("candidates")
+    .select("id, resume_url")
+    .eq("user_id", user.id)
+    .single()
   if (!candidate) return NextResponse.json({ error: "Candidate profile not found" }, { status: 404 })
 
   const d = parsed.data
+
+  // Resume is mandatory for the internal (private) application flow — enforced
+  // server-side so the rule can't be bypassed by calling the API directly.
+  if (d.board === "private" && !(candidate as { resume_url?: string | null }).resume_url) {
+    return NextResponse.json({ error: "Please upload your resume before applying" }, { status: 400 })
+  }
+
   const isUuid = UUID_RE.test(d.jobId)
+  const candidateId = (candidate as { id: string }).id
   let employerId: string | null = null
+  // Only set applications.job_id when the job actually exists in the `jobs` table.
+  // Live/imported jobs (e.g. Himalayas) can have UUID-shaped ids that are NOT in
+  // `jobs`; inserting those would violate the job_id → jobs(id) foreign key. Such
+  // applications are stored as ownerless imported records (job_id = NULL + metadata).
+  let jobExists = false
 
   if (isUuid) {
     const { data: job } = await sb.from("jobs").select("employer_id, title").eq("id", d.jobId).single()
-    employerId = (job as { employer_id?: string })?.employer_id ?? null
+    if (job) {
+      jobExists = true
+      employerId = (job as { employer_id?: string })?.employer_id ?? null
+    }
   }
 
+  // Imported jobs insert job_id = NULL, so the UNIQUE(job_id, candidate_id)
+  // constraint can't catch duplicates — dedupe by externalJobId in metadata.
+  if (!jobExists) {
+    const { data: existing } = await sb
+      .from("applications")
+      .select("id, notes")
+      .eq("candidate_id", candidateId)
+      .is("job_id", null)
+    const dup = (existing || []).some((row) => {
+      try {
+        return (JSON.parse((row as { notes?: string }).notes || "{}") as { externalJobId?: string }).externalJobId === d.jobId
+      } catch {
+        return false
+      }
+    })
+    if (dup) {
+      return NextResponse.json({ error: "You have already applied to this job" }, { status: 409 })
+    }
+  }
+
+  // Ownerless (imported) applications belong to the Admin Recruitment Queue:
+  // they are retained, visible to admins, and flagged as awaiting employer outreach.
   const meta = {
     externalJobId: d.jobId,
     title: d.jobTitle,
     company: d.company,
     board: d.board,
+    source: d.source || null,
+    sourceUrl: d.sourceUrl || null, // metadata only — never exposed to candidates
+    coverNote: d.coverNote || null,
+    managedBy: employerId ? "employer" : "noblejob",
+    outreach: employerId ? null : "pending",
   }
 
   const { error } = await sb.from("applications").insert({
-    job_id: isUuid ? d.jobId : null,
+    job_id: jobExists ? d.jobId : null,
     board: d.board,
-    candidate_id: (candidate as { id: string }).id,
+    candidate_id: candidateId,
     employer_id: employerId,
     status: "new",
     notes: JSON.stringify(meta),
