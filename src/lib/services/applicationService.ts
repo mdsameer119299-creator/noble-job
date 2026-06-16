@@ -22,6 +22,24 @@ function mapApps(data: Record<string, unknown>[]): Application[] {
   }) as unknown as Application[]
 }
 
+// Internal-only metadata that must never be returned to a candidate (esp. the
+// original employer/source URL of imported jobs).
+const CANDIDATE_HIDDEN_NOTE_KEYS = ["sourceUrl", "source", "managedBy", "outreach"]
+
+function redactCandidateNotes(apps: Application[]): Application[] {
+  return apps.map((a) => {
+    const notes = (a as { notes?: string }).notes
+    if (!notes) return a
+    try {
+      const meta = JSON.parse(notes) as Record<string, unknown>
+      for (const k of CANDIDATE_HIDDEN_NOTE_KEYS) delete meta[k]
+      return { ...a, notes: JSON.stringify(meta) }
+    } catch {
+      return a
+    }
+  })
+}
+
 export async function getApplicationsByCandidate(candidateId: string): Promise<Application[]> {
   if (!isSupabaseConfigured()) return []
   const sb = await createClient()
@@ -31,7 +49,7 @@ export async function getApplicationsByCandidate(candidateId: string): Promise<A
     .select("*, jobs(title,location)")
     .eq("candidate_id", candidateId)
     .order("applied_at", { ascending: false })
-  return mapApps((data || []) as Record<string, unknown>[])
+  return redactCandidateNotes(mapApps((data || []) as Record<string, unknown>[]))
 }
 
 export async function getApplicationsByEmployer(

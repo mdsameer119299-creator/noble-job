@@ -13,6 +13,11 @@ type Row = {
 
 const STATUSES = ['all', 'new', 'shortlisted', 'interview', 'hired', 'rejected']
 const BOARDS = ['all', 'private', 'govt', 'wfh', 'abroad']
+const OWNERS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All applications' },
+  { value: 'employer', label: 'Employer-owned' },
+  { value: 'unassigned', label: 'Recruitment queue (no employer)' },
+]
 
 const selectStyle: React.CSSProperties = {
   padding: '8px 10px',
@@ -28,6 +33,7 @@ export function ApplicationsTable() {
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState('all')
   const [board, setBoard] = useState('all')
+  const [owner, setOwner] = useState('all')
   const [q, setQ] = useState('')
 
   const load = useCallback(() => {
@@ -35,12 +41,13 @@ export function ApplicationsTable() {
     const sp = new URLSearchParams()
     if (status !== 'all') sp.set('status', status)
     if (board !== 'all') sp.set('board', board)
+    if (owner !== 'all') sp.set('owner', owner)
     if (q.trim()) sp.set('q', q.trim())
     fetch(`/api/admin/applications?${sp.toString()}`)
       .then(r => (r.ok ? r.json() : { data: [] }))
       .then(d => setRows(d.data || []))
       .finally(() => setLoading(false))
-  }, [status, board, q])
+  }, [status, board, owner, q])
 
   useEffect(() => {
     load()
@@ -65,6 +72,11 @@ export function ApplicationsTable() {
             <option key={b} value={b}>{b === 'all' ? 'All boards' : b}</option>
           ))}
         </select>
+        <select value={owner} onChange={e => setOwner(e.target.value)} style={selectStyle}>
+          {OWNERS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
 
       <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', overflow: 'auto' }}>
@@ -74,7 +86,7 @@ export function ApplicationsTable() {
               <th style={{ padding: 12 }}>Applicant</th>
               <th style={{ padding: 12 }}>Email</th>
               <th style={{ padding: 12 }}>Job</th>
-              <th style={{ padding: 12 }}>Employer</th>
+              <th style={{ padding: 12 }}>Owner</th>
               <th style={{ padding: 12 }}>Board</th>
               <th style={{ padding: 12 }}>Status</th>
               <th style={{ padding: 12 }}>Applied</th>
@@ -94,7 +106,11 @@ export function ApplicationsTable() {
                     <td style={{ padding: 12, fontWeight: 700 }}>{name || '—'}</td>
                     <td style={{ padding: 12 }}>{c?.users?.email || '—'}</td>
                     <td style={{ padding: 12 }}>{r.jobs?.title || '—'}</td>
-                    <td style={{ padding: 12 }}>{r.employers?.company_name || '—'}</td>
+                    <td style={{ padding: 12 }}>
+                      {r.employers?.company_name || (
+                        <span style={{ color: '#b45309', fontWeight: 700 }}>Noble Job · outreach pending</span>
+                      )}
+                    </td>
                     <td style={{ padding: 12 }}>{r.board || 'private'}</td>
                     <td style={{ padding: 12 }}>{r.status}</td>
                     <td style={{ padding: 12 }}>{r.applied_at ? new Date(r.applied_at).toLocaleDateString() : '—'}</td>
