@@ -137,6 +137,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
   if (route === "jobs") {
     const { error, data } = await sb.from("jobs").insert({ ...body, employer_id: (employer as any).id, status: "pending" }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    const { alertAdmins } = await import("@/lib/services/adminNotifyService")
+    await alertAdmins({
+      type: "job_pending",
+      title: "New job pending approval",
+      message: `"${(data as { title?: string })?.title ?? "A job"}" was submitted and is awaiting approval.`,
+      email: true,
+    })
+
     return NextResponse.json({ data })
   }
 

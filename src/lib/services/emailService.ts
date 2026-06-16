@@ -64,6 +64,11 @@ ${bodyHtml}
 </div></body></html>`
 }
 
+/** Public wrapper around the branded email layout (used by notification services). */
+export function renderEmail(title: string, bodyHtml: string): string {
+  return layout(title, bodyHtml)
+}
+
 export async function sendOtpEmail(
   to: string,
   otp: string,
@@ -129,5 +134,41 @@ export async function sendEmployerApprovalEmail(
 <p><a href="${appUrl}/employer/dashboard" style="display:inline-block;background:#1847d4;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Go to employer dashboard</a></p>`
     ),
     text: `Your Noble Job employer account for ${company} is approved. Dashboard: ${appUrl}/employer/dashboard`,
+  })
+}
+
+export async function sendJobDecisionEmail(
+  to: string,
+  jobTitle: string,
+  approved: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://www.noblejob.in"
+  const title = approved ? "Your job is now live" : "Job not approved"
+  const body = approved
+    ? `<p style="color:#374151">Your job posting <strong>${jobTitle}</strong> has been approved and is now live on Noble Job.</p>
+<p><a href="${appUrl}/employer/jobs" style="color:#1847d4;font-weight:700">View your jobs</a></p>`
+    : `<p style="color:#374151">Your job posting <strong>${jobTitle}</strong> was not approved. Please review our posting guidelines and try again.</p>
+<p><a href="${appUrl}/employer/jobs" style="color:#1847d4;font-weight:700">Manage your jobs</a></p>`
+  return sendEmail({
+    to,
+    subject: approved ? "Noble Job — Job approved" : "Noble Job — Job not approved",
+    html: layout(title, body),
+    text: `${title}: ${jobTitle}`,
+  })
+}
+
+export async function sendEmployerSuspendedEmail(
+  to: string,
+  companyName?: string
+): Promise<{ success: boolean; error?: string }> {
+  const company = companyName?.trim() || "your company"
+  return sendEmail({
+    to,
+    subject: "Noble Job — Employer account suspended",
+    html: layout(
+      "Account suspended",
+      `<p style="color:#374151">Your employer account for <strong>${company}</strong> has been suspended. Please contact support if you believe this is a mistake.</p>`
+    ),
+    text: `Your Noble Job employer account for ${company} has been suspended.`,
   })
 }

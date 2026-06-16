@@ -7,6 +7,7 @@ const NAV=[
   {href:'/admin/jobs',label:'All Jobs',icon:'💼'},
   {href:'/admin/employers',label:'Employers',icon:'🏢'},
   {href:'/admin/candidates',label:'Candidates',icon:'👥'},
+  {href:'/admin/applications',label:'Applications',icon:'📋'},
   {href:'/admin/messages',label:'Messages',icon:'📬'},
   {href:'/admin/content',label:'Site Content',icon:'📝'},
   {href:'/admin/settings',label:'Settings',icon:'⚙️'},
