@@ -62,6 +62,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ data: data || [] })
   }
 
+  if (route === "resources") {
+    // career_resources is not in the generated Database types; cast to decouple.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (sb as any)
+      .from("career_resources")
+      .select("*")
+      .order("order_index", { ascending: true })
+    return NextResponse.json({ data: data || [] })
+  }
+
+  if (route === "interview-prep") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (sb as any)
+      .from("interview_modules")
+      .select("*")
+      .order("order_index", { ascending: true })
+    return NextResponse.json({ data: data || [] })
+  }
+
   return NextResponse.json({ error: "Not found" }, { status: 404 })
 }
 

@@ -1,6 +1,7 @@
 'use client'
 import Link from'next/link'
 import{usePathname}from'next/navigation'
+import{LogoutButton}from'./LogoutButton'
 const NAV=[
   {href:'/candidate/dashboard',label:'Dashboard',icon:'📊'},
   {href:'/candidate/applications',label:'My Applications',icon:'📋'},
@@ -35,6 +36,9 @@ export function CandidateSidebar(){
             )
           })}
         </nav>
+        <div style={{padding:'12px 18px',borderTop:'1px solid #f0f4ff'}}>
+          <LogoutButton/>
+        </div>
       </div>
     </aside>
   )
