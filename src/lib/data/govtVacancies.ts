@@ -115,8 +115,24 @@ function normalizeBreakupRows(
   return buildVacancyBreakup(post, total, qualification)
 }
 
-/** Apply resolved vacancy count + optional break-up table to a job record. */
-export function applyGovtVacancies<T extends Partial<GovtJob>>(job: T): T {
+/**
+ * Apply vacancy count + optional break-up table to a job record.
+ *
+ * synthesize=true (default): demo/fallback behaviour — fabricate a deterministic
+ *   keyword-profile count + break-up when the source gives no real number.
+ * synthesize=false: REAL ingested jobs — never invent a number. Use the source's
+ *   parseable count as-is, otherwise store "Not Specified" with no break-up.
+ */
+export function applyGovtVacancies<T extends Partial<GovtJob>>(
+  job: T,
+  opts?: { synthesize?: boolean },
+): T {
+  if (opts?.synthesize === false) {
+    const parsed = parseVacancyCount(job.vacancies)
+    const vacancies = parsed === null ? "Not Specified" : formatVacancyCount(parsed)
+    const vacancyBreakup = job.vacancyBreakup?.length ? job.vacancyBreakup : []
+    return { ...job, vacancies, vacancyBreakup }
+  }
   const total = resolveGovtVacancyCount(job)
   const vacancies = formatVacancyCount(total)
   const vacancyBreakup = job.vacancyBreakup?.length

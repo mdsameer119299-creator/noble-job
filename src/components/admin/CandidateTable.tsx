@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
 type Row = {
   id: string
@@ -39,7 +40,9 @@ export function CandidateTable() {
           {rows.map(r => (
             <tr key={r.id} style={{ borderTop: '1px solid #f0f4ff' }}>
               <td style={{ padding: 12, fontWeight: 700 }}>
-                {r.first_name} {r.last_name}
+                <Link href={`/admin/candidates/${r.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  {r.first_name} {r.last_name}
+                </Link>
               </td>
               <td style={{ padding: 12 }}>{r.users?.email}</td>
               <td style={{ padding: 12 }}>{r.category || '—'}</td>

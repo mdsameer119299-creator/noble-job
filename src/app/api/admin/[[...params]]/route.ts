@@ -9,6 +9,80 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   const { params: p } = await params
   const route = p?.join("/") || "stats"
 
+  // --- Admin candidate detail: GET /api/admin/candidates/{id} ---
+  if (p?.[0] === "candidates" && p?.[1] && !p?.[2]) {
+    const { data, error } = await supabaseAdmin
+      .from("candidates")
+      .select("*, users(email, status, created_at)")
+      .eq("id", p[1])
+      .single()
+    if (error || !data) return NextResponse.json({ error: "Candidate not found" }, { status: 404 })
+    return NextResponse.json({ data })
+  }
+
+  // --- Admin resume access (signed URL): GET /api/admin/candidates/{id}/resume-url ---
+  if (p?.[0] === "candidates" && p?.[1] && p?.[2] === "resume-url") {
+    const candidateId = p[1]
+    const { data: candidate } = await supabaseAdmin
+      .from("candidates")
+      .select("resume_url")
+      .eq("id", candidateId)
+      .single()
+    if (!candidate) return NextResponse.json({ error: "Candidate not found" }, { status: 404 })
+    const { resolveResumeSignedUrl } = await import("@/lib/storage/resumeStorage")
+    const url = await resolveResumeSignedUrl(
+      // service-role client is runtime-compatible with the storage helpers
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabaseAdmin as any,
+      candidateId,
+      (candidate as { resume_url?: string | null }).resume_url
+    )
+    if (!url) return NextResponse.json({ error: "Resume not available" }, { status: 404 })
+    // Audit: which admin opened which candidate's resume.
+    console.info(`[admin-resume-access] admin=${auth.user?.id} candidate=${candidateId}`)
+    return NextResponse.json({ url })
+  }
+
+  // --- Admin applications list (filter + search): GET /api/admin/applications ---
+  if (route === "applications") {
+    const sp = req.nextUrl.searchParams
+    const status = sp.get("status")
+    const board = sp.get("board")
+    const q = sp.get("q")?.trim()
+    let query = supabaseAdmin
+      .from("applications")
+      .select(
+        "*, candidates(first_name, last_name, users(email)), employers(company_name), jobs(title)"
+      )
+      .order("applied_at", { ascending: false })
+      .limit(200)
+    if (status && status !== "all") query = query.eq("status", status)
+    if (board && board !== "all") query = query.eq("board", board)
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    let rows = (data || []) as Record<string, unknown>[]
+    if (q) {
+      const needle = q.toLowerCase()
+      rows = rows.filter((r) => {
+        const c = r.candidates as { first_name?: string; last_name?: string; users?: { email?: string } } | null
+        const j = r.jobs as { title?: string } | null
+        const e = r.employers as { company_name?: string } | null
+        const hay = [
+          c?.first_name,
+          c?.last_name,
+          c?.users?.email,
+          j?.title,
+          e?.company_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+        return hay.includes(needle)
+      })
+    }
+    return NextResponse.json({ data: rows })
+  }
+
   if (route === "stats") {
     const stats = await getAdminStats()
     return NextResponse.json(stats)

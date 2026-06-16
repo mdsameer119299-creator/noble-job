@@ -7,7 +7,24 @@ import {
   otpSchema,
   forgotPasswordSchema,
 } from "@/lib/validations/authSchema"
+import { rateLimit } from "@/lib/utils/rateLimit"
+import {
+  authRequestMeta,
+  recordAuthFailure,
+  isLockedOut,
+  LOCKOUT_WINDOW_MINUTES,
+} from "@/lib/services/authFailureService"
 import { z } from "zod"
+
+// Per-IP, per-minute throttle for each auth action: [maxRequests, windowMs].
+const AUTH_RATE_LIMITS: Record<string, [number, number]> = {
+  login: [5, 60_000],
+  "register/candidate": [3, 60_000],
+  "register/employer": [3, 60_000],
+  "verify-otp": [10, 60_000],
+  "forgot-password": [3, 60_000],
+  "reset-password": [5, 60_000],
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ route: string[] }> }) {
   if (!isSupabaseConfigured()) return supabaseUnavailableResponse()
@@ -22,6 +39,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ rou
       body = await req.json()
     } catch {
       body = {}
+    }
+  }
+
+  const { ip, userAgent } = authRequestMeta(req)
+  const bodyEmail = typeof body.email === "string" ? body.email : null
+
+  // Per-IP rate limiting for sensitive auth actions (brute-force protection).
+  const limit = AUTH_RATE_LIMITS[action]
+  if (limit) {
+    const { success } = rateLimit(`auth:${action}:${ip}`, limit[0], limit[1])
+    if (!success) {
+      await recordAuthFailure("rate_limit", { email: bodyEmail, ip, userAgent })
+      return NextResponse.json(
+        { error: "Too many requests. Please try again in a minute." },
+        { status: 429 }
+      )
     }
   }
 
@@ -48,9 +81,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ rou
       return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 })
     }
     const { email, password } = parsed.data
+    if (await isLockedOut(email, "login")) {
+      await recordAuthFailure("lockout", { email, ip, userAgent }, true)
+      return NextResponse.json(
+        { error: `Too many failed login attempts. Try again in ${LOCKOUT_WINDOW_MINUTES} minutes.` },
+        { status: 429 }
+      )
+    }
     const { data, error } = await sb.auth.signInWithPassword({ email, password })
-    if (error) return NextResponse.json({ error: error.message }, { status: 401 })
-    return NextResponse.json({ user: data.user })
+    if (error) {
+      await recordAuthFailure("login", { email, ip, userAgent })
+      return NextResponse.json({ error: error.message }, { status: 401 })
+    }
+    // Return the user's role so the client routes to the correct dashboard
+    // instead of always pushing to /candidate/dashboard.
+    const { data: profile } = await sb.from("users").select("role").eq("id", data.user.id).single()
+    const role = (profile as { role?: string } | null)?.role ?? "candidate"
+    return NextResponse.json({ user: data.user, role })
   }
 
   if (action === "register/employer") {
@@ -74,8 +121,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ rou
     }
     const { email, otp, type } = parsed.data
     const otpType = type || "email_verify"
+    if (await isLockedOut(email, "otp_verify")) {
+      await recordAuthFailure("lockout", { email, ip, userAgent }, true)
+      return NextResponse.json(
+        { error: `Too many incorrect codes. Try again in ${LOCKOUT_WINDOW_MINUTES} minutes.` },
+        { status: 429 }
+      )
+    }
     const valid = await verifyOtp(email, otp, otpType)
-    if (!valid) return NextResponse.json({ error: "Invalid or expired OTP" }, { status: 400 })
+    if (!valid) {
+      await recordAuthFailure("otp_verify", { email, ip, userAgent })
+      return NextResponse.json({ error: "Invalid or expired OTP" }, { status: 400 })
+    }
 
     if (otpType === "email_verify") {
       const { data: userRow, error: userErr } = await supabaseAdmin
@@ -131,8 +188,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ rou
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 })
     }
+    if (await isLockedOut(parsed.data.email, "password_reset")) {
+      await recordAuthFailure("lockout", { email: parsed.data.email, ip, userAgent }, true)
+      return NextResponse.json(
+        { error: `Too many attempts. Try again in ${LOCKOUT_WINDOW_MINUTES} minutes.` },
+        { status: 429 }
+      )
+    }
     const valid = await verifyOtp(parsed.data.email, parsed.data.otp, "password_reset")
-    if (!valid) return NextResponse.json({ error: "Invalid or expired OTP" }, { status: 400 })
+    if (!valid) {
+      await recordAuthFailure("password_reset", { email: parsed.data.email, ip, userAgent })
+      return NextResponse.json({ error: "Invalid or expired OTP" }, { status: 400 })
+    }
 
     const { data: userRow } = await supabaseAdmin
       .from("users")

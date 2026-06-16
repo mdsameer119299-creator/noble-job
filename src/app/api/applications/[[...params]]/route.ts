@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await sb.from("applications").insert({
     job_id: isUuid ? d.jobId : null,
-    job_board: d.board,
+    board: d.board,
     candidate_id: (candidate as { id: string }).id,
     employer_id: employerId,
     status: "new",
@@ -95,6 +95,13 @@ export async function POST(req: NextRequest) {
       )
     }
   }
+
+  const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
+  await notifyAdmins(
+    "application_submitted",
+    "New application submitted",
+    `A candidate applied for ${d.jobTitle || "a job"}${d.company ? ` at ${d.company}` : ""}.`
+  )
 
   return NextResponse.json({ success: true })
 }

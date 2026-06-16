@@ -93,7 +93,7 @@ export async function seedCuratedGovtJobs(opts: { dryRun?: boolean } = {}): Prom
       if (expired) skippedExpired.push(j.id)
       return !expired
     })
-    .map(enrichGovtJob)
+    .map(j => enrichGovtJob(j))
 
   // Guardrail 4 (post): enrichment must not move an id out of the allow-list.
   const postOffenders = enriched.filter(j => !ALLOW_LIST.has(j.id))

@@ -103,7 +103,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
       return NextResponse.json({ error: validation.error }, { status: 400 })
     }
 
-    const { data: candidate } = await sb.from("candidates").select("id").eq("user_id", user.id).single()
+    const { data: candidate } = await sb
+      .from("candidates")
+      .select("id, first_name, last_name")
+      .eq("user_id", user.id)
+      .single()
     if (!candidate) return NextResponse.json({ error: "Candidate profile not found" }, { status: 404 })
 
     const { resumeObjectPath, createResumeSignedUrl, RESUME_BUCKET } = await import(
@@ -114,6 +118,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
     const { error } = await sb.storage.from(RESUME_BUCKET).upload(path, file, { upsert: true })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     await sb.from("candidates").update({ resume_url: path }).eq("user_id", user.id)
+
+    const c = candidate as { first_name?: string; last_name?: string }
+    const { alertAdmins } = await import("@/lib/services/adminNotifyService")
+    await alertAdmins({
+      type: "resume_uploaded",
+      title: "Resume uploaded",
+      message: `${c.first_name ?? ""} ${c.last_name ?? ""} (${user.email}) uploaded a resume.`.trim(),
+      email: true,
+    })
+
     const url = await createResumeSignedUrl(sb, path)
     return NextResponse.json({ url, path })
   }

@@ -39,14 +39,33 @@ export function isRecruitmentPdf(text: string): boolean {
   return INCLUDE.test(text)
 }
 
-function toDisplayDate(s?: string): string | undefined {
-  const m = (s || "").match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/)
-  if (!m) return undefined
-  const d = +m[1], mo = +m[2]
-  let y = m[3]
-  if (y.length === 2) y = "20" + y
+function toDisplay(d: number, mo: number, y: number): string | undefined {
   if (mo < 1 || mo > 12 || d < 1 || d > 31) return undefined
   return `${String(d).padStart(2, "0")} ${MONTHS[mo - 1]} ${y}`
+}
+
+const monthIdx = (s: string) => MONTHS.findIndex(m => m.toLowerCase() === s.slice(0, 3).toLowerCase())
+
+// Closing-date labels seen across central/PSU/court/university ads. Order-independent.
+const LAST_DATE_LABEL = /(last date|closing date|last day|apply (?:on or )?before|online application(?:s)?(?: closes| last date)?|submission of (?:online )?application|receipt of (?:online )?application|last date for (?:receipt|submission|online))/i
+
+/**
+ * Extract a closing date from advertisement text. Anchors on a closing-date
+ * label, then reads the next ~90 chars for a numeric (DD/MM/YYYY) or spelled-out
+ * ("15 July 2026" / "July 15, 2026") date. Anchoring avoids grabbing unrelated
+ * dates (advertisement date, meeting date). Returns "DD Mon YYYY" or undefined.
+ */
+function extractLastDate(text: string): string | undefined {
+  const lm = text.match(LAST_DATE_LABEL)
+  if (!lm || lm.index == null) return undefined
+  const win = text.slice(lm.index, lm.index + 90)
+  let m = win.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/)
+  if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return toDisplay(+m[1], +m[2], +y) }
+  m = win.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})[,\s]+(\d{4})/) // 15 July 2026
+  if (m && monthIdx(m[2]) >= 0) return toDisplay(+m[1], monthIdx(m[2]) + 1, +m[3])
+  m = win.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?[,\s]+(\d{4})/) // July 15, 2026
+  if (m && monthIdx(m[1]) >= 0) return toDisplay(+m[2], monthIdx(m[1]) + 1, +m[3])
+  return undefined
 }
 
 function clean(s?: string): string | undefined {
@@ -70,7 +89,7 @@ export function parseRecruitmentFields(text: string): RecruitmentFields {
   const advtRaw = (text.match(/advertisement\s*(?:no\.?|number|:)\s*((?:[A-Za-z]{1,5}[-\/. ]?)?\d{1,4}(?:[-\/][A-Za-z0-9]{1,6}){0,3})/i) || [])[1]
   const advtNo = advtRaw && /\d/.test(advtRaw) ? clean(advtRaw) : undefined
   const vacancy = (text.match(/(?:total\s+(?:no\.?\s*of\s+)?(?:vacanc\w*|posts?)|no\.?\s*of\s+(?:vacanc\w*|posts?))\s*[:\-]?\s*(\d{1,5})\b/i) || [])[1]
-  const lastDate = toDisplayDate((text.match(/(?:last date|closing date)[^0-9]{0,40}(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i) || [])[1])
+  const lastDate = extractLastDate(text)
   const post = clean((text.match(/(?:for the posts?\s+of|recruitment\s+(?:of|to the posts?\s+of)|post\s+of|name\s+of\s+(?:the\s+)?post)\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{3,55})/i) || [])[1])
   const qualification = clean((text.match(/(?:educational\s+)?qualification[s]?\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{8,70})/i) || [])[1])
   const age = text.match(/age\s*(?:limit)?[^0-9]{0,15}(\d{2})\s*(?:to|-|–|and)\s*(\d{2})\s*years/i)

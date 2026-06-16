@@ -16,7 +16,7 @@ function mapApps(data: Record<string, unknown>[]): Application[] {
     const { candidates: _omit, ...rest } = row
     return {
       ...rest,
-      board: (row.job_board as string) || "private",
+      board: (row.board as string) || "private",
       candidate,
     }
   }) as unknown as Application[]

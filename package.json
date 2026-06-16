@@ -34,6 +34,7 @@
     "db:apply:migration": "node scripts/apply-migration.mjs",
     "verify:users": "node scripts/verify-users-table.mjs",
     "verify:storage": "node scripts/verify-storage-resumes.mjs",
+    "verify:schema": "node scripts/verify-schema-drift.mjs",
     "verify:resend": "node scripts/verify-resend.mjs",
     "verify:oauth": "node scripts/verify-oauth.mjs",
     "verify:seo": "node scripts/verify-seo.mjs",

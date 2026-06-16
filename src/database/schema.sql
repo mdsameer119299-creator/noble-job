@@ -245,7 +245,7 @@ CREATE INDEX wfh_jobs_cat_idx ON wfh_jobs(cat, status);
 CREATE TABLE applications (
   id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   job_id        UUID,
-  job_board     TEXT NOT NULL DEFAULT 'private',
+  board         TEXT NOT NULL DEFAULT 'private',
   candidate_id  UUID REFERENCES candidates(id) ON DELETE CASCADE,
   employer_id   UUID REFERENCES employers(id) ON DELETE SET NULL,
   status        TEXT DEFAULT 'new' CHECK (status IN ('new','shortlisted','interview','hired','rejected')),

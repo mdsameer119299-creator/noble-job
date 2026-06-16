@@ -73,7 +73,9 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
     notificationPdf: raw.notificationPdf,
     officialUrl: raw.officialUrl,
   }
-  return { job: enrichGovtJob(base), sourceId: adapter.id, hash: contentHash(raw) }
+  // synthesizeVacancies:false — real ingested jobs must never carry a fabricated
+  // vacancy count; unknown counts surface as "Not Specified".
+  return { job: enrichGovtJob(base, { synthesizeVacancies: false }), sourceId: adapter.id, hash: contentHash(raw) }
 }
 
 /** Idempotent upsert (onConflict:"id") with provenance + content hash. */
@@ -129,16 +131,21 @@ async function expireStaleJobs(): Promise<number> {
   }
 }
 
-/** Best-effort monitoring write — never breaks a run. */
-async function recordIngestRun(result: AutoUpdateResult, durationMs: number): Promise<void> {
+/**
+ * Best-effort monitoring write — never breaks a run, but no longer fails
+ * SILENTLY: a rejected insert (e.g. missing table / schema-cache miss) is logged
+ * so the gap is visible in deploy logs instead of being swallowed.
+ */
+async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, durationMs: number): Promise<void> {
   if (!isSupabaseConfigured()) return
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const status = result.failedSources.length ? (result.totalPublished ? "partial" : "error") : "success"
-    await supabaseAdmin.from("ingest_runs").insert({
+    const { error } = await supabaseAdmin.from("ingest_runs").insert({
       source_id: "all",
       trigger: "cron",
       status,
+      started_at: new Date(startedAtMs).toISOString(),
       finished_at: new Date().toISOString(),
       duration_ms: durationMs,
       fetched: result.sources.reduce((s, r) => s + r.fetched, 0),
@@ -148,8 +155,10 @@ async function recordIngestRun(result: AutoUpdateResult, durationMs: number): Pr
       expired: result.totalExpired,
       error: result.failedSources.length ? `failed: ${result.failedSources.join(", ")}` : null,
     } as never)
-  } catch {
-    /* monitoring is best-effort */
+    if (error) console.error(`[govtAutoUpdate] ingest_runs insert failed: ${error.message}`)
+  } catch (e) {
+    // Thrown (vs returned) failure — still best-effort, but surfaced.
+    console.error(`[govtAutoUpdate] ingest_runs recording threw: ${(e as Error).message}`)
   }
 }
 
@@ -192,7 +201,7 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
     totalPublished,
     totalExpired,
   }
-  await recordIngestRun(result, Date.now() - startedAt)
+  await recordIngestRun(result, startedAt, Date.now() - startedAt)
   return result
 }
 

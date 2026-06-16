@@ -43,14 +43,23 @@ function matchQualificationTags(job: GovtJob): string[] {
   return tags
 }
 
-/** Normalise + tag + generate SEO sections for a single job. */
-export function enrichGovtJob(raw: GovtJobRow): GovtJob {
-  const withVacancies = applyGovtVacancies({
-    ...raw,
-    lastDate: raw.lastDate || raw.last_date || "TBA",
-    ageRange: raw.ageRange || raw.age_range || "-",
-    department: raw.department || raw.org,
-  })
+/**
+ * Normalise + tag + generate SEO sections for a single job.
+ *
+ * opts.synthesizeVacancies=false (ingested jobs): never fabricate a vacancy
+ * count — unknown counts become "Not Specified". Default true preserves the
+ * demo/fallback datasets that rely on profile-based placeholders.
+ */
+export function enrichGovtJob(raw: GovtJobRow, opts?: { synthesizeVacancies?: boolean }): GovtJob {
+  const withVacancies = applyGovtVacancies(
+    {
+      ...raw,
+      lastDate: raw.lastDate || raw.last_date || "TBA",
+      ageRange: raw.ageRange || raw.age_range || "-",
+      department: raw.department || raw.org,
+    },
+    { synthesize: opts?.synthesizeVacancies ?? true },
+  )
   const job: GovtJob = { ...withVacancies }
   job.slug = job.slug || slugify(`${job.title}`) || job.id
   job.stateSlug = job.stateSlug || stateSlugFromName(job.state || job.location)

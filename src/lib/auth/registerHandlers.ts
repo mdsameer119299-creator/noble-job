@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { generateAndSendOtp } from "@/lib/services/otpService"
+import { alertAdmins } from "@/lib/services/adminNotifyService"
 import {
   candidateRegisterStep1Schema,
   candidateRegisterStep2Schema,
@@ -63,6 +64,14 @@ export async function registerCandidate(body: unknown) {
   )
 
   await generateAndSendOtp(d.email, "email_verify")
+
+  await alertAdmins({
+    type: "candidate_registered",
+    title: "New candidate registered",
+    message: `${d.firstName} ${d.lastName} (${d.email}) created a candidate account.`,
+    email: true,
+  })
+
   return { ok: true as const, userId }
 }
 
@@ -113,5 +122,13 @@ export async function registerEmployer(body: unknown) {
   )
 
   await generateAndSendOtp(d.email, "email_verify")
+
+  await alertAdmins({
+    type: "employer_registered",
+    title: "New employer awaiting review",
+    message: `${d.companyName} (${d.email}) registered as an employer.`,
+    email: true,
+  })
+
   return { ok: true as const, userId }
 }
