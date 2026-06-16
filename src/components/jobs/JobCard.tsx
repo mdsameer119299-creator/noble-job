@@ -1,9 +1,12 @@
+'use client'
 import Link from 'next/link'
+import { useState } from 'react'
 import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL } from '@/lib/config/jobStrategy'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
+import { ApplicationModal } from './ApplicationModal'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
 
@@ -11,6 +14,8 @@ export function JobCard({ job, onSave }: JobCardProps) {
   const initials = job.company?.slice(0, 2).toUpperCase() || 'NJ'
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
   const isActive = isActiveStatus(job.jobStatus)
+  const [applyOpen, setApplyOpen] = useState(false)
+  const [applied, setApplied] = useState(false)
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '18px 20px', transition: 'all .2s', boxShadow: '0 2px 12px rgba(24,71,212,.06)' }}
       className="hover:shadow-card-hover hover:-translate-y-0.5">
@@ -69,10 +74,10 @@ export function JobCard({ job, onSave }: JobCardProps) {
             <button onClick={() => onSave(job.id)} style={{ background: 'transparent', border: '1.5px solid #e2e8f0', color: '#6b7280', padding: '7px 12px', borderRadius: 9, fontSize: 18, cursor: 'pointer' }}>🔖</button>
           )}
           {isActive ? (
-            <a href={job.applyUrl || job.apply_url || '#'} target="_blank" rel="noopener noreferrer"
-              style={{ background: '#1847d4', color: '#fff', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
-              Apply Now →
-            </a>
+            <button type="button" onClick={() => setApplyOpen(true)} disabled={applied}
+              style={{ background: applied ? '#15803d' : '#1847d4', color: '#fff', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, border: 'none', cursor: applied ? 'not-allowed' : 'pointer', display: 'inline-block' }}>
+              {applied ? 'Applied ✓' : 'Apply Now →'}
+            </button>
           ) : (
             <Link href={`/jobs/private/${job.id}`}
               style={{ background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
@@ -81,6 +86,18 @@ export function JobCard({ job, onSave }: JobCardProps) {
           )}
         </div>
       </div>
+
+      <ApplicationModal
+        open={applyOpen}
+        onClose={() => setApplyOpen(false)}
+        jobId={job.id}
+        board="private"
+        title={job.title}
+        company={job.company}
+        sourceUrl={job.applyUrl || job.apply_url}
+        source={job.source}
+        onApplied={() => setApplied(true)}
+      />
     </div>
   )
 }
