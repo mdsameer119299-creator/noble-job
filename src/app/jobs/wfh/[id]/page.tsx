@@ -4,6 +4,7 @@ import { getWfhJobById } from '@/lib/services/wfhJobService'
 import Link from 'next/link'
 import { Breadcrumbs } from '@/components/shared/Breadcrumbs'
 import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
+import { ApplyButton } from '@/components/jobs/ApplyButton'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 
 interface Props { params: Promise<{ id: string }> }
@@ -50,8 +51,8 @@ export default async function WfhJobDetailPage({ params }: Props) {
           </div>
           <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '24px' }}>
             <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Apply Now</h3>
-            <a href={job.apply_url || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block', background: 'linear-gradient(135deg,#1847d4,#7c3aed)', color: '#fff', padding: '13px', borderRadius: 10, fontWeight: 900, textDecoration: 'none', textAlign: 'center', fontSize: 15 }}>Apply on Official Site →</a>
-            <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Noble Job never charges candidates</p>
+            <ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />
+            <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Noble Job never charges candidates · your application stays on Noble Job</p>
           </div>
         </div>
       </div>

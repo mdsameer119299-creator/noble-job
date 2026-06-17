@@ -57,9 +57,10 @@ export async function POST(req: NextRequest) {
 
   const d = parsed.data
 
-  // Resume is mandatory for the internal (private) application flow — enforced
-  // server-side so the rule can't be bypassed by calling the API directly.
-  if (d.board === "private" && !(candidate as { resume_url?: string | null }).resume_url) {
+  // Resume is mandatory for the internal application flow (private + wfh) —
+  // enforced server-side so the rule can't be bypassed by calling the API directly.
+  const INTERNAL_FLOW_BOARDS = new Set(["private", "wfh"])
+  if (INTERNAL_FLOW_BOARDS.has(d.board) && !(candidate as { resume_url?: string | null }).resume_url) {
     return NextResponse.json({ error: "Please upload your resume before applying" }, { status: 400 })
   }
 

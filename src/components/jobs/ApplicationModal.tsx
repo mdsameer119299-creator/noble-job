@@ -13,6 +13,8 @@ interface ApplicationModalProps {
   board?: 'private' | 'govt' | 'wfh' | 'abroad'
   title?: string
   company?: string
+  location?: string
+  salary?: string
   /** Original employer/source URL — sent as metadata only, never shown to the candidate. */
   sourceUrl?: string
   source?: string
@@ -50,7 +52,7 @@ function resumeFileName(path?: string | null): string | null {
   return ext ? `resume.${ext}` : 'resume'
 }
 
-export function ApplicationModal({ open, onClose, jobId, board = 'private', title, company, sourceUrl, source, onApplied }: ApplicationModalProps) {
+export function ApplicationModal({ open, onClose, jobId, board = 'private', title, company, location, salary, sourceUrl, source, onApplied }: ApplicationModalProps) {
   const [auth, setAuth] = useState<Auth>('unknown')
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<Profile>({})
@@ -186,6 +188,12 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
           {title || 'this job'}
         </h2>
         {company && <p style={{ color: '#64748b', fontSize: 14, margin: '4px 0 0', fontWeight: 600 }}>{company}</p>}
+        {(location || salary) && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            {location && <span style={metaChip}>📍 {location}</span>}
+            {salary && <span style={metaChip}>💰 {salary}</span>}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -209,6 +217,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
               <button type="button" onClick={() => goAuth('login')} style={btnPrimary}>Log in</button>
               <button type="button" onClick={() => goAuth('register')} style={btnOutline}>Create account</button>
             </div>
+            <p style={{ ...trustMsg, marginTop: 18 }}>🔒 Noble Job never charges candidates. Your application stays on Noble Job.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -276,6 +285,8 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
                 style={{ width: '100%', minHeight: 92, border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '11px 13px', fontSize: 13.5, lineHeight: 1.6, resize: 'vertical', outline: 'none', boxSizing: 'border-box', color: '#0d1f4e', fontFamily: 'inherit' }}
               />
             </section>
+
+            <p style={trustMsg}>🔒 Your application stays on Noble Job. We never charge candidates or share your details without consent.</p>
           </div>
         )}
       </div>
@@ -299,6 +310,8 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
   )
 }
 
+const metaChip: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#eef2fb', color: '#334155', borderRadius: 16, padding: '4px 11px', fontSize: 12.5, fontWeight: 600 }
+const trustMsg: React.CSSProperties = { fontSize: 11.5, color: '#94a3b8', textAlign: 'center', lineHeight: 1.5, margin: 0 }
 const cardStyle: React.CSSProperties = { background: '#f8faff', border: '1px solid #eef2fb', borderRadius: 14, padding: '14px 16px' }
 const sectionLabel: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: '#0d1f4e', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 12 }
 const btnPrimary: React.CSSProperties = { background: '#1847d4', color: '#fff', border: 'none', padding: '11px 22px', borderRadius: 10, fontWeight: 800, fontSize: 14, cursor: 'pointer', transition: 'all .15s' }

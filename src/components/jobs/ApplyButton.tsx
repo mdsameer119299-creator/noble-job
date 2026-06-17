@@ -7,6 +7,8 @@ interface ApplyButtonProps {
   applyUrl?: string
   title?: string
   company?: string
+  location?: string
+  salary?: string
   board?: 'private' | 'govt' | 'wfh' | 'abroad'
 }
 
@@ -16,7 +18,7 @@ interface ApplyButtonProps {
  * original employer URL (`applyUrl`) is forwarded to the application record as
  * metadata only and is never shown to the candidate.
  */
-export function ApplyButton({ jobId, applyUrl, title, company, board = 'private' }: ApplyButtonProps) {
+export function ApplyButton({ jobId, applyUrl, title, company, location, salary, board = 'private' }: ApplyButtonProps) {
   const [open, setOpen] = useState(false)
   const [applied, setApplied] = useState(false)
 
@@ -47,6 +49,8 @@ export function ApplyButton({ jobId, applyUrl, title, company, board = 'private'
         board={board}
         title={title}
         company={company}
+        location={location}
+        salary={salary}
         sourceUrl={applyUrl}
         onApplied={() => setApplied(true)}
       />
