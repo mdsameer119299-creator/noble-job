@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useToast } from '@/hooks/useToast'
 
 type Row = {
@@ -57,7 +58,9 @@ export function EmployerTable() {
         <tbody>
           {rows.map(r => (
             <tr key={r.id} style={{ borderTop: '1px solid #f0f4ff' }}>
-              <td style={{ padding: 12, fontWeight: 700 }}>{r.company_name}</td>
+              <td style={{ padding: 12, fontWeight: 700 }}>
+                <Link href={`/admin/employers/${r.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{r.company_name}</Link>
+              </td>
               <td style={{ padding: 12 }}>{r.city}</td>
               <td style={{ padding: 12 }}>{r.users?.email}</td>
               <td style={{ padding: 12 }}>{r.status}</td>
