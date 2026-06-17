@@ -93,9 +93,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ rou
       await recordAuthFailure("login", { email, ip, userAgent })
       return NextResponse.json({ error: error.message }, { status: 401 })
     }
-    // Return the user's role so the client routes to the correct dashboard
-    // instead of always pushing to /candidate/dashboard.
-    const { data: profile } = await sb.from("users").select("role").eq("id", data.user.id).single()
+    // Read the role with the SERVICE-ROLE client (not the RLS-bound session client).
+    // Reading via `sb` right after signInWithPassword can return null if the new
+    // session hasn't applied to the in-request PostgREST call, which previously made
+    // every role silently fall back to "candidate" — sending employers/admins to the
+    // candidate dashboard. By id, with service-role, the role is always deterministic.
+    const { data: profile } = await supabaseAdmin
+      .from("users")
+      .select("role")
+      .eq("id", data.user.id)
+      .single()
     const role = (profile as { role?: string } | null)?.role ?? "candidate"
     return NextResponse.json({ user: data.user, role })
   }

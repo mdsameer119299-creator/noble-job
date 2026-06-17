@@ -33,7 +33,7 @@ export function ErrorState({ onRetry, message }: { onRetry?: () => void; message
   return (
     <PanelCard>
       <p style={{ color: '#b91c1c', fontSize: 13, fontWeight: 600, marginBottom: onRetry ? 10 : 0 }}>
-        {message || 'Something went wrong.'}
+        {message || "We couldn't load this right now. Please try again."}
       </p>
       {onRetry && (
         <button
