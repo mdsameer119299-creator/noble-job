@@ -60,7 +60,7 @@ export default function AboutPage() {
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 30 }}>Our Core Values</h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20 }}>
+          <div className="grid-resp-3" style={{ display: 'grid', gap: 20 }}>
             {[
               { icon: '🛡️', title: 'Zero Fake Jobs', desc: 'Every listing passes our 40-point anti-scam filter. We partner only with verified employers and official company career pages.' },
               { icon: '💰', title: 'Always Free for Candidates', desc: 'Noble Job has never charged a job seeker and never will. This is written into our founding charter.' },
@@ -81,7 +81,7 @@ export default function AboutPage() {
         {/* Stats */}
         <div style={{ background: 'linear-gradient(135deg,#0d1f4e,#1847d4)', borderRadius: 20, padding: '40px', marginBottom: 48 }}>
           <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#fff', fontSize: 28, textAlign: 'center', marginBottom: 32 }}>Noble Job by Numbers</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 20 }}>
+          <div className="grid-resp-4" style={{ display: 'grid', gap: 20 }}>
             {[{n:'80,000+',l:'Jobs Posted',i:'💼'},{n:'2,500+',l:'Verified Employers',i:'🏢'},{n:'50,000+',l:'Candidates Placed',i:'✅'},{n:'800+',l:'Cities Covered',i:'🗺️'}].map((s,i)=>(
               <div key={i} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>{s.i}</div>
