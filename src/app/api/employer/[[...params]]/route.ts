@@ -36,6 +36,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ data: data || [] })
   }
 
+  // Single owned job for the edit form: GET /api/employer/jobs/{id}
+  if (p?.[0] === "jobs" && p?.[1]) {
+    const { data, error } = await sb.from("jobs").select("*").eq("id", p[1]).eq("employer_id", eid).single()
+    if (error || !data) return NextResponse.json({ error: "Job not found" }, { status: 404 })
+    return NextResponse.json({ data })
+  }
+
   if (route === "applications") {
     const status = req.nextUrl.searchParams.get("status") || "all"
     const apps = await getApplicationsByEmployer(eid, status === "all" ? undefined : status)
@@ -69,6 +76,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   if (route === "billing") {
     const { data } = await sb.from("employer_plans").select("*").eq("employer_id", eid).single()
     return NextResponse.json({ data: data || { plan_type: "free", jobs_limit: 3 } })
+  }
+
+  if (route === "settings") {
+    const { data } = await sb.from("employer_settings").select("*").eq("employer_id", eid).single()
+    return NextResponse.json({
+      data: data || { notify_applications: true, notify_interviews: true, notify_messages: true },
+    })
   }
 
   if (p?.[0] === "applications" && p?.[2] === "resume-url" && p?.[1]) {
@@ -170,6 +184,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ para
 
   if (route === "settings") {
     const { error } = await sb.from("employer_settings").upsert({ employer_id: (employer as any)?.id, ...body }, { onConflict: "employer_id" })
+    return NextResponse.json({ success: !error })
+  }
+
+  // Update an employer's own job: PUT /api/employer/jobs/{id}
+  if (p?.[0] === "jobs" && p?.[1]) {
+    const eid = (employer as any)?.id
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { id: _omitId, employer_id: _omitEid, ...safe } = body as any
+    const { error } = await sb.from("jobs").update(safe).eq("id", p[1]).eq("employer_id", eid)
+    return NextResponse.json({ success: !error })
+  }
+
+  return NextResponse.json({ error: "Not found" }, { status: 404 })
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
+  const api = await requireApiSupabase()
+  if (api.error) return api.error
+  const sb = api.sb
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const { data: employer } = await sb.from("employers").select("id").eq("user_id", user.id).single()
+  if (!employer) return NextResponse.json({ error: "Employer not found" }, { status: 404 })
+  const { params: p } = await params
+
+  if (p?.[0] === "jobs" && p?.[1]) {
+    const { error } = await sb.from("jobs").delete().eq("id", p[1]).eq("employer_id", (employer as any).id)
     return NextResponse.json({ success: !error })
   }
 
