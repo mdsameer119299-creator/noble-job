@@ -94,7 +94,14 @@ async function runSessionChecks(
     if (isProtectedDashboard) {
       const url = request.nextUrl.clone()
       url.pathname = "/auth"
+      url.search = ""
       url.searchParams.set("redirect", path)
+      // Preserve the intended role so an employer action (e.g. "Post a Job" →
+      // /employer/jobs/new) opens the EMPLOYER auth form, not the candidate
+      // default. Without this, logged-out employer navigation falls into the
+      // candidate flow.
+      if (isEmployerRoute) url.searchParams.set("role", "employer")
+      else if (isCandidateRoute) url.searchParams.set("role", "candidate")
       return NextResponse.redirect(url)
     }
     return supabaseResponse
@@ -104,10 +111,23 @@ async function runSessionChecks(
 
   if (isAuthRoute && path !== "/auth/callback") {
     if (profile?.status === "active" && profile.role in DASHBOARD_BY_ROLE) {
-      const url = request.nextUrl.clone()
-      url.pathname = DASHBOARD_BY_ROLE[profile.role as UserRole]
-      url.search = ""
-      return NextResponse.redirect(url)
+      // A logged-in, active user normally has no reason to see /auth, so send them
+      // to their own dashboard. EXCEPTION: when the URL explicitly requests a
+      // DIFFERENT role (e.g. a candidate clicking "Post a Job" → /auth?role=employer),
+      // render the auth page so they can sign in to / create that other account type.
+      // This is why a candidate doing a candidate action (Upload CV →
+      // /auth?role=candidate) still lands on /candidate/dashboard, while the same
+      // candidate requesting role=employer reaches the employer auth page.
+      const requestedRole = request.nextUrl.searchParams.get("role")
+      const wantsDifferentRole =
+        (requestedRole === "employer" || requestedRole === "candidate") &&
+        requestedRole !== profile.role
+      if (!wantsDifferentRole) {
+        const url = request.nextUrl.clone()
+        url.pathname = DASHBOARD_BY_ROLE[profile.role as UserRole]
+        url.search = ""
+        return NextResponse.redirect(url)
+      }
     }
     return supabaseResponse
   }
@@ -122,14 +142,18 @@ async function runSessionChecks(
   if (isEmployerRoute && profile?.role !== "employer") {
     const url = request.nextUrl.clone()
     url.pathname = "/auth"
+    url.search = ""
     url.searchParams.set("reason", "unauthorized")
+    url.searchParams.set("role", "employer")
     return NextResponse.redirect(url)
   }
 
   if (isCandidateRoute && profile?.role !== "candidate") {
     const url = request.nextUrl.clone()
     url.pathname = "/auth"
+    url.search = ""
     url.searchParams.set("reason", "unauthorized")
+    url.searchParams.set("role", "candidate")
     return NextResponse.redirect(url)
   }
 

@@ -136,6 +136,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ data: data || [] })
   }
 
+  // Single job for the admin edit form: GET /api/admin/jobs/{id}
+  if (p?.[0] === "jobs" && p?.[1]) {
+    const { data, error } = await supabaseAdmin.from("jobs").select("*").eq("id", p[1]).single()
+    if (error || !data) return NextResponse.json({ error: "Job not found" }, { status: 404 })
+    return NextResponse.json({ data })
+  }
+
+  // Employer detail + stats: GET /api/admin/employers/{id}
+  if (p?.[0] === "employers" && p?.[1] && !p?.[2]) {
+    const eid = p[1]
+    const { data: emp, error } = await supabaseAdmin
+      .from("employers")
+      .select("*, users(email, status, created_at)")
+      .eq("id", eid)
+      .single()
+    if (error || !emp) return NextResponse.json({ error: "Employer not found" }, { status: 404 })
+    const [jobsCount, appsCount, apps] = await Promise.all([
+      supabaseAdmin.from("jobs").select("id", { count: "exact", head: true }).eq("employer_id", eid),
+      supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).eq("employer_id", eid),
+      supabaseAdmin.from("applications").select("candidate_id").eq("employer_id", eid),
+    ])
+    const candidateCount = new Set((apps.data || []).map((a) => (a as { candidate_id: string }).candidate_id)).size
+    return NextResponse.json({
+      data: emp,
+      stats: { jobs: jobsCount.count || 0, applications: appsCount.count || 0, candidates: candidateCount },
+    })
+  }
+
   return NextResponse.json({ error: "Not found" }, { status: 404 })
 }
 
@@ -159,7 +187,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
 
   if (route === "jobs") {
     const body = await req.json()
-    const { data, error } = await supabaseAdmin.from("jobs").insert({ ...body, status: "active" }).select().single()
+    // Respect the requested status (draft → pending, publish → active, close → closed).
+    const ALLOWED = new Set(["active", "pending", "closed"])
+    const status = ALLOWED.has(body.status) ? body.status : "active"
+    const { data, error } = await supabaseAdmin.from("jobs").insert({ ...body, status }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
     return NextResponse.json({ data })
   }
@@ -215,6 +246,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   if (p?.[0] === "candidates" && p?.[2] === "status") {
     const { toggleCandidateStatus } = await import("@/lib/services/adminService")
     await toggleCandidateStatus(p[1], body.currentStatus)
+    return NextResponse.json({ success: true })
+  }
+
+  if (p?.[0] === "employers" && p?.[2] === "verify") {
+    const { verifyEmployer } = await import("@/lib/services/adminService")
+    await verifyEmployer(p[1])
     return NextResponse.json({ success: true })
   }
 

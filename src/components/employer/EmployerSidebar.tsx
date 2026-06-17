@@ -6,6 +6,7 @@ const NAV=[
   {href:'/employer/dashboard',label:'Dashboard',icon:'📊'},
   {href:'/employer/jobs',label:'Job Postings',icon:'💼'},
   {href:'/employer/candidates',label:'Applications',icon:'📋'},
+  {href:'/employer/find-candidates',label:'Find Candidates',icon:'🔍'},
   {href:'/employer/analytics',label:'Analytics',icon:'📈'},
   {href:'/employer/profile',label:'Company Profile',icon:'🏢'},
   {href:'/employer/billing',label:'Billing & Plans',icon:'💳'},

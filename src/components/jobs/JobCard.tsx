@@ -94,6 +94,8 @@ export function JobCard({ job, onSave }: JobCardProps) {
         board="private"
         title={job.title}
         company={job.company}
+        location={job.location}
+        salary={job.salary}
         sourceUrl={job.applyUrl || job.apply_url}
         source={job.source}
         onApplied={() => setApplied(true)}

@@ -1,3 +1,13 @@
-export default function DetailPage({params}:{params:Promise<{id:string}>}){
-  return <div style={{padding:24,color:'#0d1f4e',fontWeight:700}}>Loading detail view…</div>
+import { AdminEmployerDetail } from '@/components/admin/AdminEmployerDetail'
+
+export default async function AdminEmployerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return (
+    <div>
+      <h1 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 26, marginBottom: 24 }}>
+        Employer Detail
+      </h1>
+      <AdminEmployerDetail id={id} />
+    </div>
+  )
 }

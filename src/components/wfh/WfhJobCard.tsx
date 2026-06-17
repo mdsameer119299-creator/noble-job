@@ -76,7 +76,7 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
         <button
           type="button"
           className={`wfh-job-card__cta${isArchived ? ' wfh-job-card__cta--archived' : ''}`}
-          onClick={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onClick(job) }}
         >
           View Details
         </button>

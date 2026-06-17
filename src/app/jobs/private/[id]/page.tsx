@@ -83,7 +83,7 @@ export default async function JobDetailPage({ params }: Props) {
             <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '24px' }}>
               <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Apply for this Job</h3>
               <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
-                <ApplyButton jobId={job.id} applyUrl={(job as any).apply_url || job.applyUrl} title={job.title} />
+                <ApplyButton jobId={job.id} applyUrl={(job as any).apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)} />
                 <SaveJobButton jobId={job.id} board="private" />
               </div>
               <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 12 }}>Noble Job never charges candidates</p>
