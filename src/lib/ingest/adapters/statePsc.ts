@@ -77,7 +77,9 @@ export const STATE_PSC_ADAPTERS: SourceAdapter[] = [
   makeStatePscAdapter({ id: "gpsc",  label: "GPSC (Gujarat)",          org: "Gujarat Public Service Commission",          stateSlug: "gujarat",         stateName: "Gujarat",         listUrl: "https://gpsc.gujarat.gov.in/" }),
   makeStatePscAdapter({ id: "mppsc", label: "MPPSC (Madhya Pradesh)",  org: "Madhya Pradesh Public Service Commission",   stateSlug: "madhya-pradesh",  stateName: "Madhya Pradesh",  listUrl: "https://mppsc.mp.gov.in/" }),
   makeStatePscAdapter({ id: "wbpsc", label: "WBPSC (West Bengal)",     org: "West Bengal Public Service Commission",      stateSlug: "west-bengal",     stateName: "West Bengal",     listUrl: "https://wbpsc.gov.in/" }),
-  makeStatePscAdapter({ id: "tnpsc", label: "TNPSC (Tamil Nadu)",      org: "Tamil Nadu Public Service Commission",       stateSlug: "tamil-nadu",      stateName: "Tamil Nadu",      listUrl: "https://www.tnpsc.gov.in/" }),
+  // ENABLED: live audit (2026-06-18) confirmed tnpsc.gov.in serves recruitment
+  // PDFs over a plain GET and the adapter extracted a genuine notification.
+  makeStatePscAdapter({ id: "tnpsc", label: "TNPSC (Tamil Nadu)",      org: "Tamil Nadu Public Service Commission",       stateSlug: "tamil-nadu",      stateName: "Tamil Nadu",      listUrl: "https://www.tnpsc.gov.in/", enabled: true }),
   makeStatePscAdapter({ id: "kerala-psc", label: "Kerala PSC",         org: "Kerala Public Service Commission",           stateSlug: "kerala",          stateName: "Kerala",          listUrl: "https://www.keralapsc.gov.in/" }),
   makeStatePscAdapter({ id: "opsc",  label: "OPSC (Odisha)",           org: "Odisha Public Service Commission",           stateSlug: "odisha",          stateName: "Odisha",          listUrl: "https://www.opsc.gov.in/" }),
 ]
