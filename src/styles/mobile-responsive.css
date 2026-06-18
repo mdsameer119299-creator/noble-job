@@ -287,9 +287,15 @@ body {
   }
 }
 
-/* ── Homepage: Latest Jobs 4-column grid (Private/Govt/WFH/Abroad) ── */
-.lj-grid { grid-template-columns: repeat(4, 1fr); }
-@media (max-width: 1024px) { .lj-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+/* ── Homepage: Latest Jobs 4-column grid (Private/Govt/WFH/Abroad) ──
+   minmax(0, 1fr) (NOT plain 1fr = minmax(auto, 1fr)) so every column is an
+   exactly-equal share. With plain 1fr the Govt column's long content (org
+   names, "1,245+ notifications", badges) set an auto min-width that stole
+   width from the other three, making the centre wide and the sides narrow on
+   large screens. minmax(0, …) lets content clip (cards already ellipsis) and
+   keeps all four columns balanced at 1366–1920px. */
+.lj-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1024px) { .lj-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
 @media (max-width: 600px)  { .lj-grid { grid-template-columns: 1fr !important; } }
 
 /* ── Homepage: Employer CTA (1 CTA + 4 feature tiles) ── */
