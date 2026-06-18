@@ -6,6 +6,7 @@ import { ForgotPasswordModal } from './ForgotPasswordModal'
 import { useToast } from '@/hooks/useToast'
 import { useAuthConfigured } from './SupabaseConfigBanner'
 import { AUTH_UNAVAILABLE_MESSAGE } from '@/lib/supabase/guards'
+import { resolvePostLoginPath } from '@/lib/auth/postLoginRedirect'
 
 export function CandidateLoginForm() {
   const [form, setForm] = useState({ email: '', password: '' })
@@ -33,7 +34,8 @@ export function CandidateLoginForm() {
     const data = await res.json()
     if (res.ok) {
       toast.success('Welcome back!')
-      router.push('/candidate/dashboard')
+      const redirect = new URLSearchParams(window.location.search).get('redirect')
+      router.push(resolvePostLoginPath(data.role, redirect))
     } else {
       toast.error(data.error || AUTH_UNAVAILABLE_MESSAGE)
     }

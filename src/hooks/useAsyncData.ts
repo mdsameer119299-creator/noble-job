@@ -60,7 +60,11 @@ export function useAsyncData<T = unknown>(
       .catch((e: unknown) => {
         if (cancelled) return
         const aborted = e instanceof DOMException && e.name === 'AbortError'
-        setError(aborted ? 'This is taking longer than expected. Please try again.' : 'Something went wrong.')
+        setError(
+          aborted
+            ? 'This is taking longer than usual. Please try again.'
+            : "We couldn't load this right now. Please try again."
+        )
       })
       .finally(() => {
         clearTimeout(timer)

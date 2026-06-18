@@ -173,24 +173,23 @@ export async function LatestJobsGrid() {
       padding: '38px 0 80px',
       background: 'linear-gradient(180deg, #f0f4ff 0%, #e8effe 60%, #f7f9ff 100%)',
     }}>
-      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 48px' }}>
+      <div className="section-inner-pad" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 clamp(16px, 4vw, 48px)' }}>
         {/* Section header */}
-        <div style={{ marginBottom: 52 }}>
+        <div style={{ marginBottom: 'clamp(28px, 5vw, 52px)' }}>
           <h2 style={{
             fontFamily: '"Playfair Display", serif',
-            fontSize: 38, fontWeight: 900,
+            fontSize: 'clamp(24px, 5.5vw, 38px)', fontWeight: 900,
             color: '#0d1f4e',
             letterSpacing: '-.025em', marginBottom: 8,
           }}>Latest Job Openings</h2>
-          <p style={{ fontSize: 16, color: '#6b7280' }}>
+          <p style={{ fontSize: 'clamp(14px, 3.5vw, 16px)', color: '#6b7280' }}>
             Freshly posted vacancies across Private, Government, Remote &amp; International sectors
           </p>
         </div>
 
-        {/* 4-column grid */}
-        <div style={{
+        {/* Responsive jobs grid: 4 → 2 → 1 columns (see .lj-grid in mobile-responsive.css) */}
+        <div className="lj-grid" style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
           gap: 22,
           alignItems: 'start',
         }}>

@@ -3,7 +3,7 @@ import Link from 'next/link'
 export function AiCandidateTeaser() {
   return (
     <section id="cv-analysis-section" className="cv-analysis-section" style={{ background: '#edf2fb', padding: '44px 0' }}>
-      <div className="wrap cv-analysis-section__inner" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 48px', display: 'flex', alignItems: 'center', gap: 38 }}>
+      <div className="wrap cv-analysis-section__inner" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 clamp(16px, 4vw, 48px)', display: 'flex', alignItems: 'center', gap: 38, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', width: 100, height: 100, flexShrink: 0 }}>
             <svg viewBox="0 0 100 100" width={100} height={100} aria-hidden>
               <circle cx={50} cy={50} r={40} fill="none" stroke="#dde4ef" strokeWidth={8} />

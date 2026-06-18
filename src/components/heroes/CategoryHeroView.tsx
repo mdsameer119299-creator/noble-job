@@ -147,9 +147,9 @@ export function CategoryHeroView({ theme, stats, showEmployers, variantClass }: 
 
         <div>
           <div
+            className="grid-resp-2"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 10,
               marginBottom: 14,
             }}
@@ -182,9 +182,9 @@ export function CategoryHeroView({ theme, stats, showEmployers, variantClass }: 
           </div>
 
           <div
+            className="grid-resp-2"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 10,
             }}
           >

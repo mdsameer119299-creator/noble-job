@@ -7,15 +7,14 @@ export function AiEmployerTeaser() {
   return (
     // White background outer, rounded dark card inside
     <div style={{ background: '#fff', padding: '40px 0 0' }}>
-      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 48px' }}>
+      <div className="section-inner-pad" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 clamp(16px, 4vw, 48px)' }}>
         <div style={{ borderRadius: 24, overflow: 'hidden' }}>
           {/* Dark gradient card */}
-          <div style={{
+          <div className="ai-employer-grid" style={{
             background: 'linear-gradient(135deg,#0a1635 0%,#0d1f4e 40%,#0f2560 100%)',
             borderRadius: 24,
-            padding: '52px 48px',
+            padding: 'clamp(28px, 5vw, 52px) clamp(20px, 4vw, 48px)',
             display: 'grid',
-            gridTemplateColumns: '1.1fr 1fr 1.2fr',
             gap: 36,
             alignItems: 'start',
             position: 'relative',

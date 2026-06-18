@@ -39,7 +39,7 @@ export function AnalyticsDashboard() {
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="grid-resp-3" style={{ display: 'grid', gap: 14, marginBottom: 24 }}>
         <MetricCard label="Conversion rate" value={`${data.conversionRate}%`} />
         <MetricCard label="Time to hire" value={`${data.timeToHireDays} days`} />
         <MetricCard label="Applications" value={String(data.funnel[0]?.value ?? 0)} />

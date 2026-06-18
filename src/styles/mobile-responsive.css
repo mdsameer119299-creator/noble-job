@@ -286,3 +286,41 @@ body {
     margin: 0 -4px;
   }
 }
+
+/* ── Homepage: Latest Jobs 4-column grid (Private/Govt/WFH/Abroad) ── */
+.lj-grid { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1024px) { .lj-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+@media (max-width: 600px)  { .lj-grid { grid-template-columns: 1fr !important; } }
+
+/* ── Homepage: Employer CTA (1 CTA + 4 feature tiles) ── */
+.employer-cta-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr; }
+@media (max-width: 1000px) { .employer-cta-grid { grid-template-columns: repeat(2, 1fr) !important; } }
+@media (max-width: 560px)  { .employer-cta-grid { grid-template-columns: 1fr !important; } }
+
+/* ── Homepage: AI Employer teaser 3-column ── */
+.ai-employer-grid { grid-template-columns: 1.1fr 1fr 1.2fr; }
+@media (max-width: 900px) { .ai-employer-grid { grid-template-columns: 1fr !important; } }
+
+/* ── Generic responsive grids (replace hardcoded inline repeat(N,1fr)) ── */
+.grid-resp-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-resp-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-resp-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1024px) { .grid-resp-4 { grid-template-columns: repeat(2, 1fr) !important; } }
+@media (max-width: 768px)  { .grid-resp-3 { grid-template-columns: repeat(2, 1fr) !important; } }
+@media (max-width: 560px) {
+  .grid-resp-2,
+  .grid-resp-3,
+  .grid-resp-4 { grid-template-columns: 1fr !important; }
+}
+
+/* ── Homepage stats strip: wrap to 2 columns, drop dividers on mobile ── */
+@media (max-width: 640px) {
+  .stats-strip { justify-content: space-between !important; gap: 18px 16px !important; }
+  .stats-strip > div:not(.stats-divider) { flex: 0 0 calc(50% - 8px); }
+  .stats-divider { display: none !important; }
+}
+
+/* ── Home/about generic responsive section inner padding ── */
+@media (max-width: 768px) {
+  .section-inner-pad { padding-left: 16px !important; padding-right: 16px !important; }
+}

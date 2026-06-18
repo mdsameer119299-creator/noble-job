@@ -57,8 +57,8 @@ export async function StatsStrip() {
 
   return (
     <div style={{ background: '#0a1635', padding: '30px 0' }}>
-      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+      <div className="section-inner-pad" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 clamp(16px, 4vw, 48px)' }}>
+        <div className="stats-strip" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: '18px 24px' }}>
           {items.map((item, i) => (
             <Fragment key={item.key}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -78,7 +78,7 @@ export async function StatsStrip() {
                 <div>
                   <h3 style={{
                     fontFamily: '"Playfair Display", serif',
-                    fontSize: 34, fontWeight: 900,
+                    fontSize: 'clamp(22px, 5vw, 34px)', fontWeight: 900,
                     color: '#fff', lineHeight: 1,
                     letterSpacing: '-.03em',
                   }}>{item.num}</h3>
@@ -87,7 +87,7 @@ export async function StatsStrip() {
               </div>
               {/* Divider between items */}
               {i < items.length - 1 && (
-                <div style={{ width: 1, height: 46, background: 'rgba(255,255,255,.07)' }} />
+                <div className="stats-divider" style={{ width: 1, height: 46, background: 'rgba(255,255,255,.07)' }} />
               )}
             </Fragment>
           ))}

@@ -48,14 +48,13 @@ export function EmployerCta() {
 
   return (
     <section style={{ background: '#fff', padding: '32px 0 40px' }}>
-      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 48px' }}>
+      <div className="section-inner-pad" style={{ maxWidth: 1360, margin: '0 auto', padding: '0 clamp(16px, 4vw, 48px)' }}>
         {/* Dark navy card */}
-        <div style={{
+        <div className="employer-cta-grid" style={{
           background: '#0a1635',
           borderRadius: 20,
-          padding: '48px 44px',
+          padding: 'clamp(24px, 5vw, 48px) clamp(20px, 4vw, 44px)',
           display: 'grid',
-          gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr',
           gap: 28,
           alignItems: 'center',
         }}>

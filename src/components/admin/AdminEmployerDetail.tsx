@@ -91,7 +91,7 @@ export function AdminEmployerDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+      <div className="grid-resp-3" style={{ display: 'grid', gap: 12 }}>
         <Stat label="Jobs posted" value={stats.jobs} />
         <Stat label="Applications" value={stats.applications} />
         <Stat label="Candidates" value={stats.candidates} />
