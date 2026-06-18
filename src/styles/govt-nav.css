@@ -135,6 +135,29 @@
   color: #64748b;
 }
 
+.govt-nav-state-card__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.govt-nav-state-card__line strong {
+  color: #0d1f4e;
+  font-weight: 800;
+}
+
+.govt-nav-state-card__opps {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #eef2f9;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #1847d4;
+}
+
 .govt-nav-qual-grid {
   display: flex;
   flex-wrap: wrap;

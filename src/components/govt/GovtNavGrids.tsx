@@ -52,12 +52,20 @@ export async function GovtNavGrids() {
       <h2 className="govt-nav-section-title">Govt Jobs by State / UT</h2>
       <div className="govt-nav-state-grid">
         {INDIAN_STATES.map(s => {
-          const stat = states[s.slug] ?? { notifications: 0, vacancies: 0 }
+          const stat = states[s.slug] ?? { notifications: 0, vacancies: 0, national: { notifications: 0, vacancies: 0 }, opportunities: { notifications: 0, vacancies: 0 } }
           return (
             <Link key={s.slug} href={`/jobs/govt/state/${s.slug}`} className="govt-nav-state-card">
               <div className="govt-nav-state-card__name">{s.label}</div>
-              <div className="govt-nav-state-card__stats">
-                {fmt(stat.notifications)} notices · {fmt(stat.vacancies)} vacancies
+              <div className="govt-nav-state-card__lines">
+                <span className="govt-nav-state-card__line">
+                  <strong>{fmt(stat.notifications)}</strong> state {stat.notifications === 1 ? "job" : "jobs"}
+                </span>
+                <span className="govt-nav-state-card__line">
+                  <strong>{fmt(stat.national.notifications)}</strong> national {stat.national.notifications === 1 ? "job" : "jobs"}
+                </span>
+              </div>
+              <div className="govt-nav-state-card__opps">
+                {fmt(stat.opportunities.notifications)} {stat.opportunities.notifications === 1 ? "opportunity" : "opportunities"} available
               </div>
             </Link>
           )

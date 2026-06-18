@@ -21,6 +21,27 @@ export interface GovtNavStat {
   vacancies: number
 }
 
+/**
+ * Per-state browse stat. `notifications`/`vacancies` are the state's OWN
+ * recruitments; `national` is the All-India pool every state's candidates are
+ * eligible for; `opportunities` is the candidate-facing total (own + national).
+ * This lets a state with no state-specific jobs still show real opportunities
+ * (e.g. Karnataka: 0 state · 39 national · 39 opportunities) without ever
+ * mislabelling a national job as a state job.
+ */
+export interface StateNavStat extends GovtNavStat {
+  national: GovtNavStat
+  opportunities: GovtNavStat
+}
+
+/**
+ * A national / All-India recruitment: no state slug, or state literally
+ * "All India". These are eligible for candidates from every state.
+ */
+export function isNationalGovtJob(job: GovtJob): boolean {
+  return !job.stateSlug || (job.state || "").toLowerCase() === "all india"
+}
+
 function jobMatchesCategory(job: GovtJob, cat: GovtCategory): boolean {
   if (cat.scope === "latest") return job.tab === "latest"
   if (cat.scope === "all_india") {
@@ -116,7 +137,7 @@ function contentTabFor(contentType: string): GovtJob["tab"] | null {
 export function computeNavStats(rows: GovtJob[]) {
   const active = rows.filter(isActiveGovtJob)
   const categories: Record<string, GovtNavStat> = {}
-  const states: Record<string, GovtNavStat> = {}
+  const states: Record<string, StateNavStat> = {}
   const qualifications: Record<string, GovtNavStat> = {}
 
   for (const c of GOVT_TOP_CATEGORIES) {
@@ -130,17 +151,28 @@ export function computeNavStats(rows: GovtJob[]) {
     if (jobs.length === 0 && c.scope === "latest") jobs = active.filter(j => j.tab === "latest")
     categories[c.slug] = realStatsFromRows(jobs)
   }
-  // Real per-state counts only. A state with no active recruitments correctly
-  // shows 0 — never substitute the national/All-India total (that previously made
-  // e.g. Karnataka's card read 38/271747 while its detail page truthfully showed
-  // 0/0). Cards now match their detail pages.
+  // Per-state cards show real, separated counts: the state's OWN recruitments,
+  // the national pool its candidates are also eligible for, and the combined
+  // opportunity total. A state with no state-specific jobs correctly shows
+  // "0 state" while still surfacing national opportunities — national jobs are
+  // never relabelled as that state's own (which previously made Karnataka read
+  // 38/271747 while its detail page truthfully showed 0/0).
+  const national = realStatsFromRows(active.filter(isNationalGovtJob))
   for (const s of INDIAN_STATES) {
-    states[s.slug] = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
+    const own = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
+    states[s.slug] = {
+      ...own,
+      national,
+      opportunities: {
+        notifications: own.notifications + national.notifications,
+        vacancies: own.vacancies + national.vacancies,
+      },
+    }
   }
   for (const q of GOVT_QUALIFICATIONS) {
     qualifications[q.slug] = realStatsFromRows(active.filter(j => jobMatchesQualification(j, q.slug)))
   }
-  return { categories, states, qualifications }
+  return { categories, states, qualifications, national }
 }
 
 /** Async, database-backed browse-grid stats for the hub (local fallback). */
