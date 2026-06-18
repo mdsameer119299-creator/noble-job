@@ -61,8 +61,11 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
     fee: raw.fee || "-",
     startDate: raw.startDate,
     salary: raw.salary || "-",
-    location: raw.location || "All India",
+    location: raw.location || raw.state || "All India",
     state: raw.state || "All India",
+    // When an adapter supplies a canonical slug (state-PSC sources) it is
+    // authoritative; enrichGovtJob only fills stateSlug when it's still unset.
+    stateSlug: raw.stateSlug,
     tab: raw.tab || "latest",
     department: raw.org || adapter.label,
     color: "#1e3a8a",
