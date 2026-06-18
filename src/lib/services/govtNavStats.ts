@@ -130,18 +130,12 @@ export function computeNavStats(rows: GovtJob[]) {
     if (jobs.length === 0 && c.scope === "latest") jobs = active.filter(j => j.tab === "latest")
     categories[c.slug] = realStatsFromRows(jobs)
   }
-  // Central (All-India) recruitment is open to candidates in every state, so a
-  // state with no state-specific notifications still has these to show — the grid
-  // must never display "0 notices · 0 vacancies". Empty states fall back to this
-  // national baseline (mirrors the state page's own central-jobs fallback).
-  const national = realStatsFromRows(
-    active.filter(j => !j.stateSlug || (j.state || "").toLowerCase() === "all india"),
-  )
+  // Real per-state counts only. A state with no active recruitments correctly
+  // shows 0 — never substitute the national/All-India total (that previously made
+  // e.g. Karnataka's card read 38/271747 while its detail page truthfully showed
+  // 0/0). Cards now match their detail pages.
   for (const s of INDIAN_STATES) {
-    const own = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
-    // Use the state's own figures only when both are non-zero; otherwise fall
-    // back to the national baseline so a card never renders "0 notices/vacancies".
-    states[s.slug] = own.notifications > 0 && own.vacancies > 0 ? own : national
+    states[s.slug] = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
   }
   for (const q of GOVT_QUALIFICATIONS) {
     qualifications[q.slug] = realStatsFromRows(active.filter(j => jobMatchesQualification(j, q.slug)))
