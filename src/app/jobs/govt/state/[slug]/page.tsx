@@ -36,7 +36,7 @@ export default async function GovtStatePage({ params, searchParams }: Props) {
   if (!state) notFound()
 
   const page = Number(sp.page || 1)
-  const r = await getGovtJobsFiltered({
+  let r = await getGovtJobsFiltered({
     state: slug,
     q: sp.q,
     qualification: sp.qualification,
@@ -45,6 +45,13 @@ export default async function GovtStatePage({ params, searchParams }: Props) {
     lastDate: sp.lastDate,
     page,
   })
+
+  // Never show an empty state page: when there are no state-specific
+  // recruitments, fall back to the NATIONAL (All-India) pool that this state's
+  // candidates are eligible for — clearly labelled as national, never relabelled
+  // as the state's own. Same cards/components, no layout change.
+  const usedFallback = r.total === 0
+  if (usedFallback) r = await getGovtJobsFiltered({ category: "all-india", q: sp.q, page })
 
   return (
     <GovtListingView
@@ -55,8 +62,12 @@ export default async function GovtStatePage({ params, searchParams }: Props) {
         { label: "State Govt Jobs", href: "/jobs/govt/category/state-govt" },
         { label: state.label },
       ]}
-      title={`${state.label} Government Jobs`}
-      description={`Latest ${state.label} government job notifications — state PSC, boards, police, teaching and departmental recruitment.`}
+      title={usedFallback
+        ? `National Government Jobs Eligible for ${state.label} Candidates`
+        : `${state.label} Government Jobs`}
+      description={usedFallback
+        ? `No ${state.label}-specific government jobs are currently available. Showing national (All-India) government jobs that ${state.label} candidates are eligible to apply for.`
+        : `Latest ${state.label} government job notifications — state PSC, boards, police, teaching and departmental recruitment.`}
       stateSlug={slug}
       items={r.items}
       facets={r.facets}

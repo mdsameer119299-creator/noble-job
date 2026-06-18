@@ -58,7 +58,7 @@ function AuthContent() {
             <>
               {role === 'employer' ? <EmployerLoginForm /> : <CandidateLoginForm />}
               <div style={{ marginTop: 20 }}>
-                <SocialLoginButtons />
+                <SocialLoginButtons role={role} />
               </div>
             </>
           )}

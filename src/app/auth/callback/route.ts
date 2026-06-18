@@ -72,7 +72,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/auth", requestUrl))
   }
 
-  const role = await provisionOAuthUser(user)
+  const intentRole = requestUrl.searchParams.get("role")
+  const role = await provisionOAuthUser(user, intentRole)
   const dest = DASHBOARD_BY_ROLE[role] ?? DASHBOARD_BY_ROLE.candidate
 
   const response = NextResponse.redirect(new URL(dest, requestUrl))

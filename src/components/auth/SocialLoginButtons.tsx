@@ -3,7 +3,7 @@ import { signInWithGoogle, signInWithLinkedIn } from '@/lib/auth/oauthProviders'
 import { useToast } from '@/hooks/useToast'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 
-export function SocialLoginButtons() {
+export function SocialLoginButtons({ role = 'candidate' }: { role?: 'employer' | 'candidate' }) {
   const toast = useToast()
   const configured = isSupabaseConfigured()
 
@@ -12,7 +12,7 @@ export function SocialLoginButtons() {
       toast.error('Login unavailable until authentication is configured')
       return
     }
-    const { error } = await signInWithGoogle()
+    const { error } = await signInWithGoogle(role)
     if (error) toast.error(error.message)
   }
   const handleLinkedIn = async () => {
@@ -20,7 +20,7 @@ export function SocialLoginButtons() {
       toast.error('Login unavailable until authentication is configured')
       return
     }
-    const { error } = await signInWithLinkedIn()
+    const { error } = await signInWithLinkedIn(role)
     if (error) toast.error(error.message)
   }
 

@@ -20,6 +20,10 @@ export interface RawNotification {
   salary?: string
   location?: string
   state?: string
+  /** Canonical state slug (e.g. "karnataka"). When set, it is authoritative —
+   * the engine won't re-derive it from the state name. Used by state-PSC
+   * adapters so coverage lands in the correct state deterministically. */
+  stateSlug?: string
   tab?: GovtJobTab
   officialUrl?: string
   notificationPdf?: string

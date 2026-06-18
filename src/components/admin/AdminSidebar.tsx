@@ -7,6 +7,7 @@ const NAV=[
   {href:'/admin/notifications',label:'Notifications',icon:'🔔'},
   {href:'/admin/approvals',label:'Approvals',icon:'✅'},
   {href:'/admin/jobs',label:'All Jobs',icon:'💼'},
+  {href:'/admin/govt-jobs',label:'Govt Jobs',icon:'🏛️'},
   {href:'/admin/employers',label:'Employers',icon:'🏢'},
   {href:'/admin/candidates',label:'Candidates',icon:'👥'},
   {href:'/admin/resume-bank',label:'Resume Bank',icon:'📄'},

@@ -12,6 +12,7 @@ import type { SourceAdapter, RawNotification } from "../types"
 import { employmentNewsAdapter } from "./employmentNews"
 import { ibpsAdapter } from "./ibps"
 import { makePdfFeedAdapter } from "./pdfFeed"
+import { STATE_PSC_ADAPTERS } from "./statePsc"
 
 // Official orgs that publish recruitment PDFs on a GET page (verified accessible).
 export const drdoRacAdapter = makePdfFeedAdapter({ id: "drdo-rac", label: "DRDO RAC", org: "DRDO (Recruitment & Assessment Centre)", listUrl: "https://rac.gov.in/", maxPdfs: 10 })
@@ -54,7 +55,9 @@ export const sbiAdapter            = stub("sbi", "SBI Careers", "spa_blocked")  
 export const rbiAdapter            = stub("rbi", "RBI", "html")                                        // Opportunities.aspx returns an error page; needs alt path
 export const rrbAdapter            = stub("rrb", "Railway RRB (zonal)", "html")                        // no central list — ~21 zonal sites + PDF
 export const sscAdapter            = stub("ssc", "SSC", "spa_blocked")                                 // JSON API gated to in-browser SPA (server fetch 500s)
-export const statePscAdapter       = stub("state-psc", "State PSCs", "manual")                         // ~28 separate sites — per-state adapters
+// State PSCs are now real per-state adapters (./statePsc) instead of one manual
+// stub: each tags its state authoritatively so coverage lands correctly. They
+// ship disabled pending per-source host verification — see statePsc.ts header.
 
 export const ALL_ADAPTERS: SourceAdapter[] = [
   employmentNewsAdapter,
@@ -71,5 +74,5 @@ export const ALL_ADAPTERS: SourceAdapter[] = [
   rbiAdapter,
   rrbAdapter,
   sscAdapter,
-  statePscAdapter,
+  ...STATE_PSC_ADAPTERS,
 ]
