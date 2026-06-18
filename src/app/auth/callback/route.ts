@@ -72,7 +72,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/auth", requestUrl))
   }
 
-  const intentRole = requestUrl.searchParams.get("role")
+  // Role intent: prefer the callback query param, fall back to the cookie set
+  // before the redirect (oauthProviders.rememberOAuthRole). The cookie covers the
+  // case where Supabase strips ?role= on a Site-URL fallback, so a brand-new
+  // employer is never provisioned as a candidate.
+  const intentRole = requestUrl.searchParams.get("role") || cookieStore.get("nj_oauth_role")?.value || null
   const role = await provisionOAuthUser(user, intentRole)
   const dest = DASHBOARD_BY_ROLE[role] ?? DASHBOARD_BY_ROLE.candidate
 
@@ -80,6 +84,8 @@ export async function GET(request: NextRequest) {
   sessionCookies.forEach(({ name, value, options }) => {
     response.cookies.set(name, value, options)
   })
+  // One-time intent cookie — clear it now that the role is resolved.
+  response.cookies.set("nj_oauth_role", "", { path: "/", maxAge: 0 })
 
   return response
 }

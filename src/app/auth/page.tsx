@@ -62,8 +62,14 @@ function AuthContent() {
               </div>
             </>
           )}
-          {tab === 'register' &&
-            (role === 'employer' ? <EmployerRegisterWizard /> : <CandidateRegisterWizard />)}
+          {tab === 'register' && (
+            <>
+              {role === 'employer' ? <EmployerRegisterWizard /> : <CandidateRegisterWizard />}
+              <div style={{ marginTop: 20 }}>
+                <SocialLoginButtons role={role} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
