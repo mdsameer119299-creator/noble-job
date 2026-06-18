@@ -6,10 +6,22 @@ function isUserRole(v: unknown): v is UserRole {
   return v === "admin" || v === "employer" || v === "candidate"
 }
 
-function roleFromMetadata(user: User, intentRole?: string | null): UserRole {
+/**
+ * The role a NEW user is provisioned with, derived only from low-trust intent
+ * signals (OAuth user_metadata + the ?role= callback query param). These may
+ * ONLY ever request a non-privileged role: "admin" is never mintable from
+ * intent — otherwise hitting /auth/callback?role=admin with a valid OAuth code
+ * would self-escalate to admin. admin is assigned solely from an existing DB
+ * row (the existing-role-wins branch in provisionOAuthUser).
+ */
+function isIntentRole(v: unknown): v is "employer" | "candidate" {
+  return v === "employer" || v === "candidate"
+}
+
+function roleFromIntent(user: User, intentRole?: string | null): UserRole {
   const meta = user.user_metadata?.role as string | undefined
-  if (isUserRole(meta)) return meta
-  if (isUserRole(intentRole)) return intentRole
+  if (isIntentRole(meta)) return meta
+  if (isIntentRole(intentRole)) return intentRole
   return "candidate"
 }
 
@@ -21,13 +33,23 @@ function roleFromMetadata(user: User, intentRole?: string | null): UserRole {
  * sign-ins never silently downgrade an employer to a candidate.
  */
 export async function provisionOAuthUser(user: User, intentRole?: string | null): Promise<UserRole> {
-  const { data: existingUser } = await supabaseAdmin
+  const { data: existingUser, error: lookupError } = await supabaseAdmin
     .from("users")
     .select("role")
     .eq("id", user.id)
     .maybeSingle()
   const existingRole = (existingUser as { role?: string } | null)?.role
-  const role: UserRole = isUserRole(existingRole) ? existingRole : roleFromMetadata(user, intentRole)
+
+  // An existing DB role ALWAYS wins (employer/candidate/admin) — repeat sign-ins
+  // never downgrade. Critically, if the lookup ERRORED we cannot prove the user
+  // is new, so we must NOT write a role here: doing so could clobber an existing
+  // employer/admin down to "candidate". Bail out, routing on best-known intent
+  // only and leaving the stored role untouched.
+  if (lookupError && !isUserRole(existingRole)) {
+    return roleFromIntent(user, intentRole)
+  }
+
+  const role: UserRole = isUserRole(existingRole) ? existingRole : roleFromIntent(user, intentRole)
   const email = user.email ?? ""
 
   await supabaseAdmin.from("users").upsert(

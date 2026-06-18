@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
-import { getApplicationsByEmployer, updateApplicationStatus } from "@/lib/services/applicationService"
+import { getApplicationsByEmployer } from "@/lib/services/applicationService"
 import { getEmployerAnalytics } from "@/lib/services/analyticsService"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
@@ -142,14 +142,61 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
   const sb = api.sb
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const { data: employer } = await sb.from("employers").select("id").eq("user_id", user.id).single()
+  const { data: employer } = await sb.from("employers").select("id, company_name").eq("user_id", user.id).single()
   if (!employer) return NextResponse.json({ error: "Employer not found" }, { status: 404 })
   const { params: p } = await params
   const route = p?.join("/") || ""
   const body = await req.json()
 
   if (route === "jobs") {
-    const { error, data } = await sb.from("jobs").insert({ ...body, employer_id: (employer as any).id, status: "pending" }).select().single()
+    // Validate + WHITELIST. Never spread the raw body: that allowed mass-assignment
+    // (a crafted request could set is_verified/is_featured/board/source/apply_url).
+    // We accept only these fields, enforce the required ones server-side (can't be
+    // bypassed by calling the API directly), and force ownership + the approval gate.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = body as Record<string, any>
+    const title = String(b.title ?? "").trim()
+    const location = String(b.location ?? "").trim()
+    const category = b.category ? String(b.category).trim() : ""
+    const description = b.description != null ? String(b.description) : ""
+    const jobType = String(b.job_type ?? b.jobType ?? "Full Time").trim()
+    const ALLOWED_TYPES = new Set(["Full Time", "Part Time", "Contract", "Internship", "Remote", "Freelance"])
+    const toInt = (v: unknown) => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : null)
+    const salaryMin = toInt(b.salary_min ?? b.salaryMin)
+    const salaryMax = toInt(b.salary_max ?? b.salaryMax)
+    const skills = (Array.isArray(b.skills)
+      ? b.skills
+      : typeof b.skills === "string"
+        ? b.skills.split(",")
+        : []
+    ).map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 30)
+
+    if (title.length < 5) return NextResponse.json({ error: "Job title must be at least 5 characters" }, { status: 400 })
+    if (location.length < 2) return NextResponse.json({ error: "Location is required" }, { status: 400 })
+    if (!category) return NextResponse.json({ error: "Category is required" }, { status: 400 })
+    if (description.length < 50) return NextResponse.json({ error: "Description must be at least 50 characters" }, { status: 400 })
+    if (!ALLOWED_TYPES.has(jobType)) return NextResponse.json({ error: "Invalid job type" }, { status: 400 })
+    if (salaryMin != null && salaryMax != null && salaryMax < salaryMin) {
+      return NextResponse.json({ error: "Maximum salary cannot be less than minimum" }, { status: 400 })
+    }
+
+    const insertRow = {
+      title,
+      location,
+      category,
+      description,
+      job_type: jobType,
+      skills,
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      experience_required: b.experience_required ? String(b.experience_required).slice(0, 120) : null,
+      company: b.company ? String(b.company).slice(0, 160) : ((employer as { company_name?: string }).company_name ?? null),
+      employer_id: (employer as { id: string }).id, // ownership — from session, never the body
+      board: "private",   // employer postings are always the private board
+      status: "pending",  // always enters the admin approval gate
+      source: "Employer",
+    }
+    const { error, data } = await sb.from("jobs").insert(insertRow as never).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
     const { alertAdmins } = await import("@/lib/services/adminNotifyService")
