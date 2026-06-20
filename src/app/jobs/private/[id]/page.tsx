@@ -1,14 +1,15 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { getJobById } from '@/lib/services/jobService'
-import { formatSalary, formatDate } from '@/lib/utils/formatters'
+import { getJobById, getJobs } from '@/lib/services/jobService'
+import { getGovtJobs } from '@/lib/services/govtJobService'
+import { formatSalary } from '@/lib/utils/formatters'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
 import { SaveJobButton } from '@/components/jobs/SaveJobButton'
-import { EmailAlertForm } from '@/components/jobs/EmailAlertForm'
-import { Breadcrumbs } from '@/components/shared/Breadcrumbs'
 import { PrivateJobJsonLd } from '@/components/seo/PrivateJobJsonLd'
+import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { buildJobContent } from '@/lib/seo/jobContent'
+import { detectCityLink } from '@/lib/seo/jobLinks'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -16,12 +17,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const job = await getJobById(id)
   if (!job) return { title: 'Job Not Found — Noble Job' }
-  const salary = job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)
+  const salary = job.salary || formatSalary((job as { salary_min?: number }).salary_min, (job as { salary_max?: number }).salary_max)
   return buildPageMetadata({
-    title: `${job.title} at ${job.company} — Private Jobs India`,
-    description: `Apply for ${job.title} at ${job.company} in ${job.location}. Salary: ${salary}. Private Jobs on Noble Job — Job Portal India.`,
+    title: `${job.title} at ${job.company} in ${job.location} — Private Jobs India`,
+    description: `Apply for ${job.title} at ${job.company}, ${job.location}. Salary ${salary}. Full job description, responsibilities, eligibility, skills, benefits, how to apply & FAQs on Noble Job.`,
     path: `/jobs/private/${id}`,
-    keywords: ['Private Jobs', job.company, job.location, 'Jobs in India'],
+    keywords: ['Private Jobs', job.company, job.location, job.cat, job.title, 'Jobs in India'],
     ogType: 'article',
   })
 }
@@ -31,70 +32,79 @@ export default async function JobDetailPage({ params }: Props) {
   const job = await getJobById(id)
   if (!job) notFound()
 
-  return (
-    <div style={{ background: '#f8faff', minHeight: '100vh' }}>
-      <PrivateJobJsonLd job={job} />
-      <div style={{ background: `linear-gradient(135deg,${(job as any).color || '#1847d4'},#0d1f4e)`, padding: '32px 0' }}>
-        <div className="wrap">
-          <Breadcrumbs
-            items={[
-              { label: 'Home', href: '/' },
-              { label: 'Private Jobs', href: '/jobs/private' },
-              { label: job.title },
-            ]}
-          />
-          <div className="job-detail-hero-row">
-            <div style={{ width: 64, height: 64, borderRadius: 14, background: 'rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 22, flexShrink: 0 }}>
-              {job.company?.slice(0, 2).toUpperCase()}
-            </div>
-            <div>
-              <h1 style={{ fontFamily: 'Playfair Display,serif', fontSize: 30, fontWeight: 900, color: '#fff', marginBottom: 6 }}>{job.title}</h1>
-              <p style={{ color: 'rgba(255,255,255,.8)', fontSize: 16, marginBottom: 14 }}>{job.company} · {job.location}</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {[
-                  (job as any).job_type || 'Full Time',
-                  (job as any).experience_required || job.exp || 'Any',
-                  job.salary || formatSalary((job as any).salary_min, (job as any).salary_max),
-                  formatDate((job as any).posted_at || ''),
-                ].map((v, i) => <span key={i} style={{ background: 'rgba(255,255,255,.15)', padding: '5px 12px', borderRadius: 18, fontSize: 13, color: '#fff', fontWeight: 600 }}>{v}</span>)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+  const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; job_type?: string; experience_required?: string; description?: string }
+  const salary = job.salary || formatSalary(row.salary_min, row.salary_max)
 
-      <div className="wrap" style={{ paddingTop: 28, paddingBottom: 40 }}>
-        <div className="jobs-layout-2col">
-          <div>
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '28px', marginBottom: 20 }}>
-              <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Job Description</h2>
-              <p style={{ color: '#374151', lineHeight: 1.8 }}>{(job as any).description || job.desc}</p>
-            </div>
-            {(job.skills || []).length > 0 && (
-              <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '28px' }}>
-                <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 14 }}>Required Skills</h3>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {job.skills.map((s: string) => <span key={s} style={{ background: '#eff6ff', color: '#1847d4', border: '1px solid #bfdbfe', padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600 }}>{s}</span>)}
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '24px' }}>
-              <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Apply for this Job</h3>
-              <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
-                <ApplyButton jobId={job.id} applyUrl={(job as any).apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)} />
-                <SaveJobButton jobId={job.id} board="private" />
-              </div>
-              <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 12 }}>Noble Job never charges candidates</p>
-            </div>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', padding: '20px' }}>
-              <h4 style={{ fontWeight: 800, color: '#0d1f4e', marginBottom: 12, fontSize: 14 }}>📬 Get Similar Job Alerts</h4>
-              <EmailAlertForm board="private" placeholder="Your email" />
-            </div>
-          </div>
+  const content = buildJobContent({
+    board: 'private',
+    title: job.title,
+    company: job.company,
+    category: job.cat,
+    location: job.location,
+    salary,
+    experience: row.experience_required || job.exp,
+    employmentType: row.job_type || job.type || 'Full Time',
+    skills: job.skills,
+    description: row.description || job.desc,
+    postedAt: row.posted_at || job.posted,
+  })
+
+  const [more, govt] = await Promise.all([
+    getJobs({ limit: 30 }),
+    getGovtJobs('latest'),
+  ])
+
+  const pool = more.jobs.filter(j => j.id !== job.id)
+  const related: JobLink[] = [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)]
+    .slice(0, 6)
+    .map(j => ({ href: `/jobs/private/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }))
+
+  const cityJobs = pool.filter(j => job.location && j.location?.includes(job.location.split(',')[0])).slice(0, 5)
+  const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
+    href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
+    title: g.title,
+    meta: `${g.org} · ${g.vacancies} posts`,
+  }))
+  const privateSuggestions: JobLink[] = related.slice(0, 5)
+  const cityLink = detectCityLink(job.location, 'private')
+
+  return (
+    <JobDetailTemplate
+      accent={(job as { color?: string }).color || '#1847d4'}
+      breadcrumb={[
+        { label: 'Home', href: '/' },
+        { label: 'Private Jobs', href: '/jobs/private' },
+        { label: job.title },
+      ]}
+      title={job.title}
+      subtitle={`${job.company} · ${job.location} · ${row.job_type || job.type || 'Full Time'}`}
+      badges={[`🏢 ${job.company}`, `📍 ${job.location}`, `💰 ${salary}`, `💼 ${row.job_type || job.type || 'Full Time'}`, `🧑‍💼 ${row.experience_required || job.exp || 'Any'}`]}
+      content={content}
+      jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
+      applySlot={
+        <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
+          <ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />
+          <SaveJobButton jobId={job.id} board="private" />
         </div>
-      </div>
-    </div>
+      }
+      internalLinks={{
+        list: { href: '/private-jobs', label: 'Private Jobs in India' },
+        category: { href: `/jobs/private?category=${encodeURIComponent(job.cat || '')}`, label: `More ${job.cat || 'Private'} Jobs` },
+        city: cityLink,
+        extra: [
+          { href: '/jobs/private', label: 'All Private Job Listings' },
+          { href: '/fresher-jobs', label: 'Fresher Jobs' },
+          { href: '/work-from-home-jobs', label: 'Work From Home Jobs' },
+        ],
+      }}
+      relatedTitle="Related Private Jobs"
+      relatedJobs={related}
+      govtSuggestions={govtSuggestions}
+      privateSuggestions={privateSuggestions}
+      citySuggestions={cityLink ? {
+        title: cityLink.label,
+        links: cityJobs.map(j => ({ href: `/jobs/private/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` })),
+      } : undefined}
+    />
   )
 }

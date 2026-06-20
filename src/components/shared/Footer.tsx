@@ -16,11 +16,28 @@ const EMPLOYERS = [
   { label: 'Employer Dashboard', href: '/employer/dashboard' },
   { label: 'Pricing Plans', href: '/employer/billing' },
 ]
+const POPULAR_SEARCHES = [
+  { label: 'Government Jobs', href: '/government-jobs' },
+  { label: 'Private Jobs', href: '/private-jobs' },
+  { label: 'Work From Home Jobs', href: '/work-from-home-jobs' },
+  { label: 'Jobs Abroad', href: '/jobs-abroad' },
+  { label: 'Fresher Jobs', href: '/fresher-jobs' },
+  { label: 'Jobs in Delhi', href: '/jobs-in-delhi' },
+  { label: 'Jobs in Gurgaon', href: '/jobs-in-gurgaon' },
+  { label: 'Jobs in Noida', href: '/jobs-in-noida' },
+  { label: 'Jobs in Mumbai', href: '/jobs-in-mumbai' },
+  { label: 'Jobs in Bangalore', href: '/jobs-in-bangalore' },
+  { label: 'Jobs in Hyderabad', href: '/jobs-in-hyderabad' },
+  { label: 'Jobs in Pune', href: '/jobs-in-pune' },
+  { label: 'Jobs in Chennai', href: '/jobs-in-chennai' },
+]
 const IMPORTANT = [
   { label: 'About Us', href: '/about' },
   { label: 'Contact Us', href: '/contact' },
-  { label: 'Privacy Policy', href: '/about#privacy' },
-  { label: 'Terms of Service', href: '/about#terms' },
+  { label: 'Editorial Policy', href: '/editorial-policy' },
+  { label: 'Job Verification', href: '/job-verification-policy' },
+  { label: 'Privacy Policy', href: '/privacy-policy' },
+  { label: 'Terms of Service', href: '/terms' },
 ]
 
 export function Footer() {
@@ -72,6 +89,14 @@ export function Footer() {
               <a href={CONTACT_INFO.emailTo} style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none', display: 'flex', gap: 8 }}>✉️ {CONTACT_INFO.email}</a>
               <p style={{ color: '#94a3b8', fontSize: 13, margin: 0, lineHeight: 1.6 }}>📍 {CONTACT_INFO.address}</p>
             </div>
+          </div>
+        </div>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,.10)', paddingTop: 24, marginTop: 8 }}>
+          <h4 style={{ color: '#fff', fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Popular Job Searches</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginBottom: 8 }}>
+            {POPULAR_SEARCHES.map(l => (
+              <Link key={l.href} href={l.href} style={{ color: '#94a3b8', fontSize: 12.5, textDecoration: 'none' }}>{l.label}</Link>
+            ))}
           </div>
         </div>
         <div style={{ borderTop: '1px solid rgba(255,255,255,.10)', padding: '24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>

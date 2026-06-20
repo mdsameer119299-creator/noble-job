@@ -9,11 +9,24 @@ export type JobPostingSchemaInput = {
   employmentType?: string
   organizationName: string
   organizationUrl?: string
+  organizationLogo?: string
   location: string
+  addressLocality?: string
+  addressRegion?: string
   addressCountry?: string
-  salary?: string
+  /** Set for fully remote roles — emits jobLocationType TELECOMMUTE. */
+  remote?: boolean
+  /** Country/ies a remote applicant may be located in. */
+  applicantCountry?: string
+  /** Structured pay (preferred). When present, a valid baseSalary is emitted. */
+  salaryMin?: number
+  salaryMax?: number
+  salaryCurrency?: string
+  salaryUnit?: "HOUR" | "DAY" | "WEEK" | "MONTH" | "YEAR"
   industry?: string
   qualifications?: string
+  educationRequirements?: string
+  experienceRequirements?: string
   identifier?: string
 }
 
@@ -64,42 +77,74 @@ export function websiteSchema() {
 
 export function jobPostingSchema(job: JobPostingSchemaInput) {
   const base = siteUrl()
+  const datePosted = job.datePosted || new Date().toISOString()
+  // Google strongly recommends validThrough; default to 30 days after posting.
+  const validThrough =
+    job.validThrough || new Date(new Date(datePosted).getTime() + 30 * 86400000).toISOString()
+
+  // baseSalary must be numeric for Google Rich Results — only emit when we have
+  // a parsed amount (an invalid string baseSalary is worse than none).
+  const baseSalary =
+    typeof job.salaryMin === "number" && Number.isFinite(job.salaryMin)
+      ? {
+          baseSalary: {
+            "@type": "MonetaryAmount",
+            currency: job.salaryCurrency || "INR",
+            value: {
+              "@type": "QuantitativeValue",
+              minValue: job.salaryMin,
+              maxValue: typeof job.salaryMax === "number" ? job.salaryMax : job.salaryMin,
+              unitText: job.salaryUnit || "MONTH",
+            },
+          },
+        }
+      : {}
+
+  // Remote roles: TELECOMMUTE + applicantLocationRequirements (Google requires
+  // this instead of a physical jobLocation for fully remote postings).
+  const remoteFields = job.remote
+    ? {
+        jobLocationType: "TELECOMMUTE",
+        applicantLocationRequirements: {
+          "@type": "Country",
+          name: job.applicantCountry || "India",
+        },
+      }
+    : {}
+
   return {
     "@context": "https://schema.org",
     "@type": "JobPosting",
     title: job.title,
     description: job.description.slice(0, 5000),
-    datePosted: job.datePosted || new Date().toISOString(),
-    ...(job.validThrough ? { validThrough: job.validThrough } : {}),
+    datePosted,
+    validThrough,
     employmentType: job.employmentType || "FULL_TIME",
     hiringOrganization: {
       "@type": "Organization",
       name: job.organizationName,
+      logo: job.organizationLogo || `${base}${ORG_LOGO}`,
       ...(job.organizationUrl ? { sameAs: job.organizationUrl } : {}),
     },
     jobLocation: {
       "@type": "Place",
       address: {
         "@type": "PostalAddress",
-        addressLocality: job.location,
+        ...(job.addressLocality || job.location ? { addressLocality: job.addressLocality || job.location } : {}),
+        ...(job.addressRegion ? { addressRegion: job.addressRegion } : {}),
         addressCountry: job.addressCountry || "IN",
       },
     },
-    ...(job.salary
-      ? {
-          baseSalary: {
-            "@type": "MonetaryAmount",
-            currency: "INR",
-            value: { "@type": "QuantitativeValue", value: job.salary, unitText: "YEAR" },
-          },
-        }
+    ...remoteFields,
+    ...baseSalary,
+    ...(job.identifier
+      ? { identifier: { "@type": "PropertyValue", name: job.organizationName, value: job.identifier } }
       : {}),
-    identifier: job.identifier
-      ? { "@type": "PropertyValue", name: job.organizationName, value: job.identifier }
-      : undefined,
     url: job.url.startsWith("http") ? job.url : `${base}${job.url}`,
-    industry: job.industry,
-    qualifications: job.qualifications,
+    ...(job.industry ? { industry: job.industry } : {}),
+    ...(job.qualifications ? { qualifications: job.qualifications } : {}),
+    ...(job.educationRequirements ? { educationRequirements: job.educationRequirements } : {}),
+    ...(job.experienceRequirements ? { experienceRequirements: job.experienceRequirements } : {}),
     directApply: true,
   }
 }
