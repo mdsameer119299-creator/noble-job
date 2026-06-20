@@ -1,6 +1,7 @@
 import { CATEGORY_LANDINGS } from "@/lib/data/landingCategories"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
 import { LANDING_CLOSINGS } from "@/lib/data/landingClosings"
+import { getHubGuides } from "@/lib/seo/articles"
 import { getGovtJobs } from "@/lib/services/govtJobService"
 import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobs } from "@/lib/services/wfhJobService"
@@ -54,6 +55,7 @@ export function buildLandingView(cfg: Landing): LandingView {
     faqs: cfg.faqs,
     relatedCategories,
     relatedCities,
+    relatedGuides: getHubGuides(cfg.slug),
     govtStateLink:
       cfg.kind === "city" && cfg.govtStateSlug
         ? { label: `${cfg.state} Government Jobs`, href: `/jobs/govt/state/${cfg.govtStateSlug}` }

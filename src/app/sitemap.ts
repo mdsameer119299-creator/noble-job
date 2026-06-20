@@ -6,6 +6,7 @@ import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getGovtJobsFiltered, getGovtContent } from "@/lib/services/govtJobService"
 import { WFH_INVENTORY, ABROAD_INVENTORY, PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
 import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
+import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 
 /**
@@ -64,6 +65,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
       changeFrequency: "daily" as const,
       priority: 0.85,
+    })),
+  ]
+
+  // Topical-authority guides — index + 10 article pages.
+  const guideRoutes: MetadataRoute.Sitemap = [
+    { url: `${base}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    ...ARTICLE_SLUGS.map(slug => ({
+      url: `${base}/guides/${slug}`,
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
     })),
   ]
 
@@ -179,6 +191,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const all = [
     ...staticRoutes,
     ...landingRoutes,
+    ...guideRoutes,
     ...govtCategoryRoutes,
     ...govtStateRoutes,
     ...govtQualRoutes,
