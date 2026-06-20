@@ -1,6 +1,22 @@
 import type { Metadata } from "next"
 import { DEFAULT_KEYWORDS, ORG_LOGO, SITE_NAME, siteUrl } from "./constants"
 
+/**
+ * Metadata overrides for paginated listing pages (?page=N). Page 1 keeps the
+ * page/layout defaults; page 2+ self-canonicalises and is noindex,follow — so
+ * Googlebot crawls the pagination links (discovering every job URL) without
+ * indexing thin paginated variants. Merge the result over the base metadata.
+ */
+export function paginationMeta(path: string, page: number): Metadata {
+  if (!page || page <= 1) return {}
+  const base = siteUrl()
+  const p = path.startsWith("/") ? path : `/${path}`
+  return {
+    alternates: { canonical: `${base}${p}?page=${page}` },
+    robots: { index: false, follow: true, googleBot: { index: false, follow: true } },
+  }
+}
+
 export type PageSeoInput = {
   title: string
   description: string
