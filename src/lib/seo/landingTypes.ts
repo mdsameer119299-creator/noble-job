@@ -82,6 +82,8 @@ export interface LandingView {
   faqs: FaqItem[]
   relatedCategories: { label: string; href: string }[]
   relatedCities: { label: string; href: string }[]
+  /** Reciprocal hub -> guide links (topical-authority silo). */
+  relatedGuides: { anchor: string; href: string }[]
   /** City pages: link to that state's government-jobs page. */
   govtStateLink?: { label: string; href: string }
   jobsHref: string

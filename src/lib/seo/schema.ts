@@ -149,6 +149,51 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
   }
 }
 
+export type ArticleSchemaInput = {
+  headline: string
+  description: string
+  url: string
+  datePublished: string
+  dateModified?: string
+  section?: string
+  /** Absolute or site-relative image URL. */
+  image?: string
+}
+
+/** Schema.org Article for guide/blog pages. */
+export function articleSchema(a: ArticleSchemaInput) {
+  const base = siteUrl()
+  const url = a.url.startsWith("http") ? a.url : `${base}${a.url}`
+  const image = a.image
+    ? a.image.startsWith("http")
+      ? a.image
+      : `${base}${a.image}`
+    : `${base}${ORG_LOGO}`
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: a.headline.slice(0, 110),
+    description: a.description,
+    image: [image],
+    datePublished: a.datePublished,
+    dateModified: a.dateModified || a.datePublished,
+    ...(a.section ? { articleSection: a.section } : {}),
+    inLanguage: "en-IN",
+    mainEntityOfPage: { "@type": "WebPage", "@id": url },
+    url,
+    author: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: base,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      logo: { "@type": "ImageObject", url: `${base}${ORG_LOGO}` },
+    },
+  }
+}
+
 export function breadcrumbSchema(items: { name: string; path?: string }[]) {
   const base = siteUrl()
   return {

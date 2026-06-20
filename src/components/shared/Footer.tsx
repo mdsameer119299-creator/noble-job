@@ -8,6 +8,7 @@ const JOB_SEEKERS = [
   { label: 'Government Jobs', href: '/jobs/govt' },
   { label: 'Work From Home', href: '/jobs/wfh' },
   { label: 'Abroad Jobs', href: '/jobs/abroad' },
+  { label: 'Career Guides', href: '/guides' },
   { label: 'Upload Your CV', href: '/auth?role=candidate&tab=register' },
 ]
 const EMPLOYERS = [

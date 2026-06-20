@@ -150,6 +150,26 @@ export function LandingPage({ view, jobs }: { view: LandingView; jobs: LandingJo
                 </div>
               </Card>
             </div>
+
+            {/* Related Guides — reciprocal hub -> guide links (topical-authority silo) */}
+            {view.relatedGuides.length > 0 && (
+              <Card>
+                <H2 icon="📚">Related Guides &amp; Career Advice</H2>
+                <p style={{ ...para, marginBottom: 12 }}>
+                  Go deeper with our free, expert guides for this category:
+                </p>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {view.relatedGuides.map((g, i) => (
+                    <li key={i}>
+                      <Link href={g.href} style={{ color: "#1847d4", fontWeight: 700, fontSize: 14.5, textDecoration: "none", display: "inline-flex", gap: 6 }}>
+                        <span aria-hidden>→</span> {g.anchor}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/guides" style={{ display: "inline-block", marginTop: 12, color: "#6b7280", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>Browse all career &amp; job guides →</Link>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
