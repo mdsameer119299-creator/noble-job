@@ -2,30 +2,34 @@ import { JsonLd } from "@/components/seo/JsonLd"
 import { jobPostingSchema } from "@/lib/seo/schema"
 import { siteUrl } from "@/lib/seo/constants"
 import type { Job } from "@/types/job"
+import type { JobContent } from "@/lib/seo/jobContent"
 
-export function PrivateJobJsonLd({ job }: { job: Job }) {
+export function PrivateJobJsonLd({ job, content }: { job: Job; content: JobContent }) {
   const base = siteUrl()
   const url = `${base}/jobs/private/${job.id}`
-  const row = job as Job & {
-    description?: string
-    posted_at?: string
-    job_type?: string
-    experience_required?: string
-  }
+  const row = job as Job & { posted_at?: string; job_type?: string; experience_required?: string }
+  const s = content.parsedSalary
 
-  const schema = jobPostingSchema({
-    title: job.title,
-    description: row.description || job.desc || `${job.title} at ${job.company}`,
-    url,
-    datePosted: row.posted_at || job.posted || new Date().toISOString(),
-    employmentType: (row.job_type || job.type || "FULL_TIME").replace(/\s+/g, "_").toUpperCase(),
-    organizationName: job.company,
-    location: job.location || "India",
-    salary: job.salary,
-    industry: job.cat || "Private Sector",
-    qualifications: row.experience_required || job.exp,
-    identifier: job.id,
-  })
-
-  return <JsonLd data={schema} />
+  return (
+    <JsonLd
+      data={jobPostingSchema({
+        title: job.title,
+        description: content.schemaDescriptionHtml,
+        url,
+        datePosted: row.posted_at || job.posted || new Date().toISOString(),
+        validThrough: content.validThrough,
+        employmentType: (row.job_type || job.type || "FULL_TIME").replace(/\s+/g, "_").toUpperCase(),
+        organizationName: job.company,
+        organizationUrl: row.apply_url || job.applyUrl,
+        location: job.location || "India",
+        addressLocality: job.location,
+        addressCountry: "IN",
+        ...(s ? { salaryMin: s.minValue, salaryMax: s.maxValue, salaryCurrency: s.currency, salaryUnit: s.unitText } : {}),
+        industry: job.cat || "Private Sector",
+        qualifications: row.experience_required || job.exp,
+        experienceRequirements: row.experience_required || job.exp,
+        identifier: job.id,
+      })}
+    />
+  )
 }

@@ -15,6 +15,7 @@ import { GovtJobJsonLd } from "@/components/govt/GovtJobJsonLd"
 import { RelatedGovtJobs } from "@/components/govt/RelatedGovtJobs"
 import { GovtHowToApply } from "@/components/govt/GovtHowToApply"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
+import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -64,6 +65,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
   const stateLabel = job.stateSlug ? getStateBySlug(job.stateSlug)?.label : undefined
 
   const links = buildGovtJobLinkButtons(job)
+  const isExpired = job.status === "expired" || isGovtJobExpired(job.lastDate)
 
   const quickFacts = [
     { l: "Organisation", v: job.org },
@@ -106,6 +108,17 @@ export default async function GovtJobDetailPage({ params }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 24, alignItems: "flex-start" }} className="max-lg:!grid-cols-1">
           {/* Main */}
           <div>
+            {isExpired && (
+              <div style={{ background: "#fef3c7", border: "1.5px solid #fcd34d", borderRadius: 14, padding: "18px 22px", marginBottom: 16 }}>
+                <div style={{ fontFamily: "Playfair Display,serif", fontWeight: 900, color: "#92400e", fontSize: 18, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>⛔</span> Applications Closed
+                </div>
+                <p style={{ color: "#78350f", fontSize: 14.5, lineHeight: 1.7, margin: 0 }}>
+                  This recruitment has expired. The information is being maintained for reference purposes.
+                  See <strong>Related Active Government Jobs</strong> below for current openings.
+                </p>
+              </div>
+            )}
             <Section id="overview" title="Overview" icon="📋">
               <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.overview}</p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginTop: 16 }}>
@@ -276,7 +289,17 @@ export default async function GovtJobDetailPage({ params }: Props) {
             <RelatedGovtJobs title="Related Government Jobs" jobs={related} icon="🔗" />
             <RelatedGovtJobs title={stateLabel ? `More Jobs in ${stateLabel}` : "State-wise Jobs"} jobs={stateRelated} icon="🗺️" />
             <RelatedGovtJobs title={`Jobs for ${job.qualification?.slice(0, 24) || "Your Qualification"}`} jobs={qualRelated} icon="🎓" />
-            <Link href="/jobs/govt" style={{ textAlign: "center", color: "#1847d4", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>← Back to all Govt Jobs</Link>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", padding: "16px" }}>
+              <h3 style={{ fontWeight: 800, color: "#0d1f4e", fontSize: 14, marginBottom: 10 }}>🔎 Explore More</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Link href="/government-jobs" style={{ color: "#1847d4", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>→ Government Jobs 2026 Guide</Link>
+                <Link href="/jobs/govt" style={{ color: "#1847d4", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>→ All Government Job Listings</Link>
+                {job.stateSlug && (
+                  <Link href={`/jobs/govt/state/${job.stateSlug}`} style={{ color: "#1847d4", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>→ {stateLabel || "State"} Govt Jobs</Link>
+                )}
+                <Link href="/fresher-jobs" style={{ color: "#1847d4", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>→ Fresher Jobs</Link>
+              </div>
+            </div>
           </aside>
         </div>
       </div>

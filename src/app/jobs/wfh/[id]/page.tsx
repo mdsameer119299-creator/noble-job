@@ -1,11 +1,14 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { getWfhJobById } from '@/lib/services/wfhJobService'
-import Link from 'next/link'
-import { Breadcrumbs } from '@/components/shared/Breadcrumbs'
-import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
+import { getWfhJobById, getWfhJobs } from '@/lib/services/wfhJobService'
+import { getGovtJobs } from '@/lib/services/govtJobService'
+import { getJobs } from '@/lib/services/jobService'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
+import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
+import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { buildJobContent } from '@/lib/seo/jobContent'
+import { describeSalary } from '@/lib/seo/salary'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -15,9 +18,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!job) return { title: 'WFH Job Not Found — Noble Job' }
   return buildPageMetadata({
     title: `${job.title} at ${job.company} — Work From Home Jobs India`,
-    description: `Apply for ${job.title} (${job.cat}) at ${job.company}. Salary: ${job.salary}. Remote WFH job on Noble Job — Job Portal India.`,
+    description: `Apply for ${job.title} (${job.cat}) — a remote work-from-home role at ${job.company}. Salary ${job.salary}. Eligibility, skills, salary, benefits, how to apply & FAQs on Noble Job.`,
     path: `/jobs/wfh/${id}`,
-    keywords: ['Work From Home Jobs', 'WFH Jobs', job.company, job.cat, 'Jobs in India'],
+    keywords: ['Work From Home Jobs', 'WFH Jobs', 'remote jobs India', job.company, job.cat, job.title],
     ogType: 'article',
   })
 }
@@ -27,35 +30,73 @@ export default async function WfhJobDetailPage({ params }: Props) {
   const job = await getWfhJobById(id)
   if (!job) notFound()
 
+  const content = buildJobContent({
+    board: 'wfh',
+    title: job.title,
+    company: job.company,
+    category: job.cat,
+    location: 'Remote',
+    salary: job.salary,
+    experience: job.experience,
+    qualification: job.qualification,
+    employmentType: job.type || 'Full Time Remote',
+    skills: job.skills,
+    description: job.description,
+    postedAt: job.posted_at,
+    remote: true,
+  })
+
+  const [allWfh, govt, priv] = await Promise.all([
+    getWfhJobs(),
+    getGovtJobs('latest'),
+    getJobs({ limit: 5 }),
+  ])
+
+  const pool = allWfh.filter(j => j.id !== job.id)
+  const related: JobLink[] = [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)]
+    .slice(0, 6)
+    .map(j => ({ href: `/jobs/wfh/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.cat} · ${j.salary}` }))
+
+  const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
+    href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
+    title: g.title,
+    meta: `${g.org} · ${g.vacancies} posts`,
+  }))
+
+  const privateSuggestions: JobLink[] = priv.jobs.slice(0, 5).map(p => ({
+    href: `/jobs/private/${p.id}`,
+    title: `${p.title} — ${p.company}`,
+    meta: `${p.location} · ${p.salary}`,
+  }))
+
+  const salaryBadge = content.parsedSalary ? describeSalary(content.parsedSalary) : job.salary
+
   return (
-    <div style={{ background: '#f8faff', minHeight: '100vh' }}>
-      <WfhJobJsonLd job={job} />
-      <div style={{ background: `linear-gradient(135deg,${job.color || '#7c3aed'},#0d1f4e)`, padding: '32px 0' }}>
-        <div className="wrap">
-          <Breadcrumbs
-            items={[
-              { label: 'Home', href: '/' },
-              { label: 'Work From Home', href: '/jobs/wfh' },
-              { label: job.title },
-            ]}
-          />
-          <h1 style={{ fontFamily: 'Playfair Display,serif', fontSize: 30, fontWeight: 900, color: '#fff', marginBottom: 6 }}>{job.title}</h1>
-          <p style={{ color: 'rgba(255,255,255,.8)', fontSize: 16 }}>{job.company} · {job.cat} · {job.salary}</p>
-        </div>
-      </div>
-      <div className="wrap" style={{ paddingTop: 28, paddingBottom: 40 }}>
-        <div className="jobs-layout-2col">
-          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '28px' }}>
-            <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Job Description</h2>
-            <p style={{ color: '#374151', lineHeight: 1.8 }}>{job.description}</p>
-          </div>
-          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '24px' }}>
-            <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', marginBottom: 16 }}>Apply Now</h3>
-            <ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />
-            <p style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Noble Job never charges candidates · your application stays on Noble Job</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <JobDetailTemplate
+      accent={job.color || '#7c3aed'}
+      breadcrumb={[
+        { label: 'Home', href: '/' },
+        { label: 'Work From Home Jobs', href: '/jobs/wfh' },
+        { label: job.title },
+      ]}
+      title={job.title}
+      subtitle={`${job.company} · ${job.cat} · Remote (Work From Home)`}
+      badges={['🏠 Work From Home', `💼 ${job.type || 'Full Time'}`, `💰 ${salaryBadge}`, `🎓 ${job.qualification || 'Any Graduate'}`, `📅 ${job.experience || 'Freshers'}`]}
+      content={content}
+      jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
+      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />}
+      internalLinks={{
+        list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },
+        category: { href: '/work-from-home-jobs', label: 'Work From Home Jobs Guide' },
+        extra: [
+          { href: '/jobs/wfh', label: `More ${job.cat} Remote Jobs` },
+          { href: '/private-jobs', label: 'Private Jobs in India' },
+        ],
+      }}
+      relatedTitle="Related WFH Jobs"
+      relatedJobs={related}
+      govtSuggestions={govtSuggestions}
+      privateSuggestions={privateSuggestions}
+    />
   )
 }
