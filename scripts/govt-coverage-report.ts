@@ -21,6 +21,14 @@ if (fs.existsSync(envPath)) {
     if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "")
   }
 }
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_URL) {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.SUPABASE_URL
+}
+
+const SUMMARY = process.env.GITHUB_STEP_SUMMARY
+function summary(md: string) {
+  if (SUMMARY) fs.appendFileSync(SUMMARY, md + "\n")
+}
 
 async function main() {
   const { createClient } = await import("@supabase/supabase-js")
@@ -66,8 +74,29 @@ async function main() {
   console.log("  " + missing.map(s => s.label).join(", "))
 
   console.log(`\n----- Source-wise counts -----`)
-  for (const [src, n] of [...bySource].sort((a, b) => b[1] - a[1])) console.log(`  ${src.padEnd(24)} ${n}`)
+  const sources = [...bySource].sort((a, b) => b[1] - a[1])
+  for (const [src, n] of sources) console.log(`  ${src.padEnd(24)} ${n}`)
   console.log("")
+
+  // GitHub Actions step summary (Markdown).
+  summary(`## 📊 Govt Jobs Coverage — ${new Date().toISOString().slice(0, 10)}`)
+  summary("")
+  summary(`- **Total active jobs:** ${rows.length}`)
+  summary(`- **National (All-India):** ${national.length}`)
+  summary(`- **State-tagged:** ${stateRows.length} across ${byState.size} states/UTs`)
+  summary("")
+  summary(`### State-wise counts`)
+  summary("| State / UT | Jobs |")
+  summary("|---|--:|")
+  for (const { s, n } of present) summary(`| ${s.label} | ${n} |`)
+  summary("")
+  summary(`### Missing (${missing.length} states/UTs, zero own jobs)`)
+  summary(missing.map(s => s.label).join(", ") || "_none — full coverage_")
+  summary("")
+  summary(`### Source-wise counts`)
+  summary("| Source | Jobs |")
+  summary("|---|--:|")
+  for (const [src, n] of sources) summary(`| ${src} | ${n} |`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })

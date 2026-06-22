@@ -1,0 +1,46 @@
+name: Govt Jobs Coverage Report
+
+# Weekly read-only snapshot of govt-jobs coverage: total / national / state-wise
+# counts, missing states, and source-wise counts. Written to the run's Step
+# Summary and uploaded as an artifact. Does NOT mutate the database.
+#
+# Required GitHub repo Secrets:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  schedule:
+    - cron: "30 2 * * 1" # Mondays 08:00 IST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate coverage report
+        run: npx tsx scripts/govt-coverage-report.ts | tee coverage-report.txt
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: govt-coverage-report
+          path: coverage-report.txt
+          retention-days: 90

@@ -1,0 +1,91 @@
+name: Govt Jobs Ingestion
+
+# Runs the full government-jobs ingestion every 6 hours from a GitHub-hosted
+# Ubuntu runner and writes to Supabase. Independent of any local machine.
+#
+# Working adapters exercised each run (all enabled adapters are polled):
+#   Employment News · IBPS · DRDO RAC · Delhi High Court · TNPSC
+#   UPPSC · MPPSC · HPSC · GPSC · UKSSSC · UP-Police · KPSC (via curl) · AAI · JNU
+#
+# Required GitHub repo Secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL                — your Supabase project URL
+#   SUPABASE_SERVICE_ROLE_KEY   — service-role key (server-only; never client)
+# Optional:
+#   SLACK_WEBHOOK_URL           — Incoming Webhook for failure pings
+#   CRON_SECRET                 — only needed if you switch to hitting the
+#                                 /api/cron/govt-jobs endpoint instead of the
+#                                 script; the script path below does NOT need it.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+  workflow_dispatch: {} # manual "Run workflow" button
+
+concurrency:
+  group: govt-ingestion
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write # to open a failure-tracking issue
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Preflight — required secrets present
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY repo secrets."
+            exit 1
+          fi
+
+      - name: Run ingestion
+        run: npx tsx scripts/run-ingestion.ts
+
+      - name: Slack failure notification (optional)
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ Noble Job govt ingestion FAILED — run ${GITHUB_RUN_ID} on ${GITHUB_REF_NAME}. See https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "$SLACK_WEBHOOK_URL" || true
+
+      - name: Open/append failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "🔴 Govt ingestion failing";
+            const body = `Ingestion run [#${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) failed at ${new Date().toISOString()}.`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "ingestion-failure",
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["ingestion-failure"],
+              });
+            }
