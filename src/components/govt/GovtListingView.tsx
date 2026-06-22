@@ -1,7 +1,9 @@
+import type { ReactNode } from "react"
 import { Breadcrumbs, type Crumb } from "@/components/shared/Breadcrumbs"
 import { CategoryHero } from "@/components/heroes/CategoryHero"
 import { govtSlugToHeroVariant } from "@/lib/config/categoryHeroThemes"
 import { GovtScopeHero } from "@/components/govt/GovtScopeHero"
+import { JsonLd } from "@/components/seo/JsonLd"
 import { GovtJobListCard } from "./GovtJobListCard"
 import { GovtContentCard } from "./GovtContentCard"
 import { GovtFilterBar } from "./GovtFilterBar"
@@ -24,6 +26,10 @@ interface BaseProps {
   totalPages: number
   basePath: string
   query: Record<string, string | undefined>
+  /** Optional Schema.org JSON-LD (Breadcrumb / FAQPage / ItemList). */
+  jsonLd?: Record<string, unknown>[]
+  /** Optional editorial block rendered above the listings (e.g. state intro). */
+  introContent?: ReactNode
 }
 
 interface JobsProps extends BaseProps {
@@ -39,12 +45,13 @@ interface ContentProps extends BaseProps {
 }
 
 export function GovtListingView(props: JobsProps | ContentProps) {
-  const { crumbs, title, description, categorySlug, stateSlug, qualificationSlug, total, vacanciesTotal, page, totalPages, basePath, query } = props
+  const { crumbs, title, description, categorySlug, stateSlug, qualificationSlug, total, vacanciesTotal, page, totalPages, basePath, query, jsonLd, introContent } = props
   const heroStats = vacanciesTotal != null ? { notifications: total, vacancies: vacanciesTotal } : undefined
   const heroVariant = categorySlug ? govtSlugToHeroVariant(categorySlug) : null
 
   return (
     <div style={{ background: "#f8faff", minHeight: "100vh" }}>
+      {jsonLd && jsonLd.length > 0 && <JsonLd data={jsonLd} />}
       {heroVariant ? (
         <CategoryHero variant={heroVariant} govtSlug={categorySlug} />
       ) : categorySlug || stateSlug || qualificationSlug ? (
@@ -61,6 +68,7 @@ export function GovtListingView(props: JobsProps | ContentProps) {
 
       <div className="wrap" style={{ paddingTop: 22, paddingBottom: 48 }} id="govt-jobs">
         {heroVariant && <Breadcrumbs items={crumbs} />}
+        {introContent}
         {props.kind === "jobs" && (
           <GovtFilterBar hide={props.hideFilters} departments={props.facets.departments} experiences={props.facets.experiences} />
         )}
