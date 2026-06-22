@@ -40,9 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22 (LTS) ships a native global WebSocket, which @supabase/realtime-js
+      # requires; the ws polyfill in scripts/setupWebSocket.ts covers Node < 22 too.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

@@ -10,6 +10,8 @@
  * Read-only — safe to run anytime.
  *   npx tsx scripts/govt-coverage-report.ts
  */
+// MUST be first: polyfill WebSocket for supabase-js on Node 20 (GitHub Actions).
+import "./setupWebSocket"
 import fs from "node:fs"
 import path from "node:path"
 
