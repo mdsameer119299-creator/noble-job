@@ -14,6 +14,7 @@
  */
 import https from "node:https"
 import http from "node:http"
+import { execFile } from "node:child_process"
 
 /** Browser UA — many gov portals serve a stub/blocked page to unknown bots. */
 export const BROWSER_UA =
@@ -63,8 +64,32 @@ function legacyGet(url: string, timeoutMs: number): Promise<string> {
 }
 
 /**
- * Fetch a page as text. Fast path: global fetch + browser UA. On undici-level
- * protocol/TLS rejection, retry with the tolerant legacy client.
+ * Last-resort fetch via the system `curl` binary. Some gov servers (e.g. KPSC)
+ * emit HTTP headers that Node's llhttp parser rejects even with
+ * insecureHTTPParser, but OpenSSL/curl tolerates. Available on GitHub Actions,
+ * any VPS, and local dev; absent on Vercel's serverless sandbox (the spawn
+ * simply fails there and the original error surfaces).
+ */
+function curlGet(url: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "curl",
+      ["-sSL", "--max-time", String(Math.ceil(timeoutMs / 1000)), "-A", BROWSER_UA, url],
+      { maxBuffer: 20 * 1024 * 1024, timeout: timeoutMs + 2000 },
+      (err, stdout) => {
+        if (err) return reject(err)
+        if (!stdout || stdout.length < 50) return reject(new Error("curl empty body"))
+        resolve(stdout.toString())
+      },
+    )
+  })
+}
+
+/**
+ * Fetch a page as text. Escalating fallbacks for stubborn gov portals:
+ *   1) global fetch (undici) + browser UA          — fast path
+ *   2) node:https legacy client (insecureHTTPParser, relaxed TLS) — header/TLS quirks
+ *   3) system curl                                  — headers even llhttp rejects
  */
 export async function fetchHtml(url: string, timeoutMs = DEFAULT_TIMEOUT): Promise<string> {
   try {
@@ -78,9 +103,14 @@ export async function fetchHtml(url: string, timeoutMs = DEFAULT_TIMEOUT): Promi
     return await res.text()
   } catch (e) {
     const msg = (e as Error & { cause?: { code?: string; message?: string } }).cause?.message || (e as Error).message
-    // Retry with the legacy client for the quirks it specifically handles.
-    if (/Invalid header token|HTTP\/1\.1 protocol|certificate|TLS|SSL|ERR_SSL|self-signed|unable to verify/i.test(msg || "")) {
-      return legacyGet(url, timeoutMs)
+    const quirk = /Invalid header token|HTTP\/1\.1 protocol|header|parse|certificate|TLS|SSL|ERR_SSL|self-signed|unable to verify/i.test(msg || "")
+    if (quirk) {
+      try {
+        return await legacyGet(url, timeoutMs)
+      } catch {
+        // llhttp rejects it too → curl is the only client that can parse it.
+        return curlGet(url, timeoutMs)
+      }
     }
     throw e
   }

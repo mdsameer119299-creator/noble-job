@@ -14,7 +14,9 @@ import { ibpsAdapter } from "./ibps"
 import { makePdfFeedAdapter } from "./pdfFeed"
 import { STATE_PSC_ADAPTERS } from "./statePsc"
 import { STATE_SECTOR_ADAPTERS } from "./stateSectors"
+import { STATE_LIST_ADAPTERS } from "./stateListSources"
 import { uppscAdapter } from "./uppsc"
+import { rpscPlaywrightAdapter } from "./rpscPlaywright"
 
 // Official orgs that publish recruitment PDFs on a GET page (verified accessible).
 export const drdoRacAdapter = makePdfFeedAdapter({ id: "drdo-rac", label: "DRDO RAC", org: "DRDO (Recruitment & Assessment Centre)", listUrl: "https://rac.gov.in/", maxPdfs: 10 })
@@ -76,7 +78,9 @@ export const ALL_ADAPTERS: SourceAdapter[] = [
   rbiAdapter,
   rrbAdapter,
   sscAdapter,
-  uppscAdapter, // dedicated HTML parser (Open_PDF.aspx list) — supersedes the PDF-feed uppsc
+  uppscAdapter,           // UPPSC HTML parser (Open_PDF.aspx list)
+  rpscPlaywrightAdapter,  // RPSC headless (only active when INGEST_PLAYWRIGHT=1)
+  ...STATE_LIST_ADAPTERS, // MPPSC / HPSC / KPSC / UP-Police title-trusting HTML lists
   ...STATE_PSC_ADAPTERS,
   // State Police / University / Health recruiters (ship disabled — see header
   // of ./stateSectors.ts; verify each from the deploy host before enabling).

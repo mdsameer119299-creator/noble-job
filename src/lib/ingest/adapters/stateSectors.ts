@@ -19,7 +19,8 @@ import { makeStatePscAdapter } from "./statePsc"
 
 /** State Police / Uniformed-services recruitment boards. */
 export const STATE_POLICE_ADAPTERS: SourceAdapter[] = [
-  makeStatePscAdapter({ id: "up-police",   label: "UP Police (UPPRPB)",         org: "UP Police Recruitment & Promotion Board",      stateSlug: "uttar-pradesh", stateName: "Uttar Pradesh", listUrl: "https://uppbpb.gov.in/" }),
+  // UP Police now has a working title-trusting list adapter in ./stateListSources.ts
+  // (enabled). Not duplicated here to avoid an id collision in the registry.
   makeStatePscAdapter({ id: "raj-police",  label: "Rajasthan Police",            org: "Rajasthan Police",                              stateSlug: "rajasthan",     stateName: "Rajasthan",     listUrl: "https://police.rajasthan.gov.in/" }),
   makeStatePscAdapter({ id: "mh-police",   label: "Maharashtra Police",          org: "Maharashtra Police",                            stateSlug: "maharashtra",   stateName: "Maharashtra",   listUrl: "https://mahapolice.gov.in/" }),
   makeStatePscAdapter({ id: "bihar-csbc",  label: "Bihar Police (CSBC)",         org: "Central Selection Board of Constable, Bihar",   stateSlug: "bihar",         stateName: "Bihar",         listUrl: "https://csbc.bih.nic.in/" }),

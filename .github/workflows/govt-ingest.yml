@@ -1,0 +1,54 @@
+name: Govt Jobs Ingestion (SPA + curl portals)
+
+# Runs the full ingestion from a GitHub-hosted Ubuntu runner, which (unlike
+# Vercel's serverless sandbox) has: a real `curl` binary (fixes KPSC's
+# llhttp-incompatible headers) and a headless Chromium via Playwright (fixes
+# JS-rendered portals like RPSC). INGEST_PLAYWRIGHT=1 activates the headless
+# adapters; everything writes to the same Supabase DB as the Vercel cron.
+#
+# Required repo secrets:
+#   NEXT_PUBLIC_SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  schedule:
+    - cron: "30 1 * * *" # 07:00 IST daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: govt-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium (for SPA portals: RPSC)
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run ingestion (curl + headless enabled)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INGEST_PLAYWRIGHT: "1"
+        run: npx tsx scripts/run-ingestion.ts
+
+      - name: Coverage report
+        if: always()
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/govt-coverage-report.ts

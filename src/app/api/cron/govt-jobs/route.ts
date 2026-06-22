@@ -12,6 +12,12 @@ import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
  *   { "crons": [{ "path": "/api/cron/govt-jobs", "schedule": "0 6 * * *" }] }
  */
 export const dynamic = "force-dynamic"
+// Run from Mumbai so adapter fetches egress from an India IP (several gov
+// portals block/timeout non-India clouds). Raise maxDuration to 300 on Vercel
+// Pro; 60 is the Hobby ceiling. Headless/curl-only portals (RPSC, KPSC, BPSC)
+// run in GitHub Actions instead — see .github/workflows/govt-ingest.yml.
+export const preferredRegion = "bom1"
+export const maxDuration = 60
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env[SCHEDULER_CONFIG.secretEnvVar]
