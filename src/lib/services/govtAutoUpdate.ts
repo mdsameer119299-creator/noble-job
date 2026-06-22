@@ -14,7 +14,7 @@ import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { enrichGovtJob } from "@/lib/data/govtData"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
-import { slugify } from "@/lib/config/govtTaxonomy"
+import { slugify, deriveStateSlugFromText } from "@/lib/config/govtTaxonomy"
 import { ADAPTERS, enabledAdapters } from "@/lib/ingest/registry"
 import type { SourceAdapter, RawNotification } from "@/lib/ingest/types"
 import type { GovtJob } from "@/types/govtJob"
@@ -46,6 +46,15 @@ function contentHash(raw: RawNotification): string {
  */
 function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
   const stableId = `${adapter.id}:${slugify(raw.externalId || raw.title) || String(Date.now())}`
+  // State resolution priority:
+  //   1. Adapter-supplied canonical slug (state-PSC sources) — authoritative.
+  //   2. Conservative derivation from org/title for untagged sources (Employment
+  //      News etc.) so state-PSC / state-police / state-university recruitments
+  //      land under the right state instead of all collapsing to "All India".
+  // Central bodies named after a state are excluded by deriveStateSlugFromText.
+  const derived = raw.stateSlug ? undefined : deriveStateSlugFromText(raw.org, raw.title, raw.post)
+  const resolvedStateSlug = raw.stateSlug ?? derived?.slug
+  const resolvedStateName = raw.state ?? derived?.label ?? "All India"
   const base: GovtJobRow = {
     id: stableId,
     title: raw.title || "Untitled Notification",
@@ -61,11 +70,11 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
     fee: raw.fee || "-",
     startDate: raw.startDate,
     salary: raw.salary || "-",
-    location: raw.location || raw.state || "All India",
-    state: raw.state || "All India",
-    // When an adapter supplies a canonical slug (state-PSC sources) it is
-    // authoritative; enrichGovtJob only fills stateSlug when it's still unset.
-    stateSlug: raw.stateSlug,
+    location: raw.location || resolvedStateName,
+    state: resolvedStateName,
+    // Authoritative adapter slug, else conservative org/title derivation (see
+    // above). enrichGovtJob only backfills stateSlug when it's still unset.
+    stateSlug: resolvedStateSlug,
     tab: raw.tab || "latest",
     department: raw.org || adapter.label,
     color: "#1e3a8a",

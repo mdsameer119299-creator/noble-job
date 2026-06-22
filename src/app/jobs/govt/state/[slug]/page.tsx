@@ -4,6 +4,9 @@ import { buildPageMetadata } from "@/lib/seo/metadata"
 import { INDIAN_STATES, getStateBySlug } from "@/lib/config/govtTaxonomy"
 import { getGovtJobsFiltered } from "@/lib/services/govtJobService"
 import { GovtListingView } from "@/components/govt/GovtListingView"
+import { GovtStateContent } from "@/components/govt/GovtStateContent"
+import { getStateIntro } from "@/lib/data/govtStateContent"
+import { breadcrumbSchema, faqPageSchema, itemListSchema } from "@/lib/seo/schema"
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -53,15 +56,30 @@ export default async function GovtStatePage({ params, searchParams }: Props) {
   const usedFallback = r.total === 0
   if (usedFallback) r = await getGovtJobsFiltered({ category: "all-india", q: sp.q, page })
 
+  const crumbs = [
+    { label: "Home", href: "/" },
+    { label: "Govt Jobs", href: "/jobs/govt" },
+    { label: "State Govt Jobs", href: "/jobs/govt/category/state-govt" },
+    { label: state.label },
+  ]
+
+  // Unique editorial content + structured data for this state.
+  const intro = getStateIntro(slug, { notifications: r.total, usedNationalFallback: usedFallback })
+  const jsonLd = [
+    breadcrumbSchema(crumbs.map(c => ({ name: c.label, path: c.href }))),
+    faqPageSchema(intro.faqs),
+    itemListSchema(
+      r.items.map(j => ({ name: j.title, url: `/jobs/govt/${j.slug || j.id}` })),
+      `${state.label} Government Jobs`,
+    ),
+  ]
+
   return (
     <GovtListingView
       kind="jobs"
-      crumbs={[
-        { label: "Home", href: "/" },
-        { label: "Govt Jobs", href: "/jobs/govt" },
-        { label: "State Govt Jobs", href: "/jobs/govt/category/state-govt" },
-        { label: state.label },
-      ]}
+      jsonLd={jsonLd}
+      introContent={<GovtStateContent intro={intro} heading={`${state.label} Government Jobs 2026`} />}
+      crumbs={crumbs}
       title={usedFallback
         ? `National Government Jobs Eligible for ${state.label} Candidates`
         : `${state.label} Government Jobs`}

@@ -129,3 +129,39 @@ export function stateSlugFromName(name?: string): string | undefined {
   const s = slugify(name)
   return INDIAN_STATES.find(r => r.slug === s || r.label.toLowerCase() === name.toLowerCase())?.slug
 }
+
+/**
+ * Central/pan-India markers. When an org/title contains any of these it is a
+ * national recruitment even if a state NAME also appears (e.g. "National
+ * Institute of Technology Karnataka", "AIIMS Bhopal", "IIT Madras" are central).
+ * Guards deriveStateSlugFromText against mis-tagging central bodies as state.
+ */
+const CENTRAL_MARKERS = [
+  "all india", "national", "central", "union public service", "upsc", "ssc",
+  "staff selection", "iit", "iim", "nit ", "iiit", "aiims", "iisc", "drdo",
+  "isro", "ongc", "ntpc", "bhel", "gail", "sail", "iocl", "ibps", "rbi",
+  "sbi", "lic", "railway", "rrb", "rrc", "crpf", "bsf", "cisf", "itbp",
+  "indian army", "indian navy", "air force", "coast guard", "esic", "epfo",
+]
+
+/**
+ * Derive a canonical state slug from an org/title when the row is otherwise
+ * untagged. Conservative: matches an Indian state/UT NAME appearing as a whole
+ * word, but only if no central marker is present (so central institutions named
+ * after a city/state are never relabelled as that state's own recruitment).
+ *
+ * Used at ingestion to recover state coverage from sources like Employment News
+ * that list state-PSC / state-police / state-university recruitments but never
+ * populate a structured state field.
+ */
+export function deriveStateSlugFromText(...parts: (string | undefined)[]): { slug: string; label: string } | undefined {
+  const hay = parts.filter(Boolean).join(" ").toLowerCase()
+  if (!hay) return undefined
+  if (CENTRAL_MARKERS.some(m => hay.includes(m))) return undefined
+  for (const r of INDIAN_STATES) {
+    const name = r.label.split(" (")[0].toLowerCase() // strip "(NCT)" etc.
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+    if (re.test(hay)) return { slug: r.slug, label: name.replace(/\b\w/g, c => c.toUpperCase()) }
+  }
+  return undefined
+}

@@ -208,6 +208,26 @@ export function breadcrumbSchema(items: { name: string; path?: string }[]) {
   }
 }
 
+/**
+ * ItemList schema for a listing/collection page (e.g. a state's job listings).
+ * `url` may be site-relative; it is absolutised. Position is 1-based.
+ */
+export function itemListSchema(items: { name: string; url: string }[], name?: string) {
+  const base = siteUrl()
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    ...(name ? { name } : {}),
+    numberOfItems: items.length,
+    itemListElement: items.map((it, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: it.name,
+      url: it.url.startsWith("http") ? it.url : `${base}${it.url}`,
+    })),
+  }
+}
+
 export function faqPageSchema(faqs: { question: string; answer: string }[]) {
   return {
     "@context": "https://schema.org",

@@ -53,19 +53,42 @@ export async function GovtNavGrids() {
       <div className="govt-nav-state-grid">
         {INDIAN_STATES.map(s => {
           const stat = states[s.slug] ?? { notifications: 0, vacancies: 0, national: { notifications: 0, vacancies: 0 }, opportunities: { notifications: 0, vacancies: 0 } }
+          const hasState = stat.notifications > 0
           return (
-            <Link key={s.slug} href={`/jobs/govt/state/${s.slug}`} className="govt-nav-state-card">
-              <div className="govt-nav-state-card__name">{s.label}</div>
-              <div className="govt-nav-state-card__lines">
-                <span className="govt-nav-state-card__line">
-                  <strong>{fmt(stat.notifications)}</strong> state {stat.notifications === 1 ? "job" : "jobs"}
-                </span>
-                <span className="govt-nav-state-card__line">
-                  <strong>{fmt(stat.national.notifications)}</strong> national {stat.national.notifications === 1 ? "job" : "jobs"}
-                </span>
+            <Link
+              key={s.slug}
+              href={`/jobs/govt/state/${s.slug}`}
+              className={`govt-nav-state-card${hasState ? " govt-nav-state-card--active" : ""}`}
+            >
+              <div className="govt-nav-state-card__head">
+                <span className="govt-nav-state-card__name">{s.label}</span>
+                {hasState && (
+                  <span className="govt-nav-state-card__badge">{fmt(stat.notifications)} live</span>
+                )}
               </div>
-              <div className="govt-nav-state-card__opps">
-                {fmt(stat.opportunities.notifications)} {stat.opportunities.notifications === 1 ? "opportunity" : "opportunities"} available
+
+              {hasState ? (
+                <div className="govt-nav-state-card__lines">
+                  <span className="govt-nav-state-card__line">
+                    <strong>{fmt(stat.notifications)}</strong> state {stat.notifications === 1 ? "job" : "jobs"}
+                  </span>
+                  <span className="govt-nav-state-card__line govt-nav-state-card__line--muted">
+                    <strong>{fmt(stat.national.notifications)}</strong> national {stat.national.notifications === 1 ? "job" : "jobs"}
+                  </span>
+                </div>
+              ) : (
+                <div className="govt-nav-state-card__lines">
+                  <span className="govt-nav-state-card__hint">No state-specific jobs currently</span>
+                  <span className="govt-nav-state-card__line">
+                    <strong>{fmt(stat.national.notifications)}</strong> national government {stat.national.notifications === 1 ? "job" : "jobs"} available
+                  </span>
+                </div>
+              )}
+
+              <div className="govt-nav-state-card__cta">
+                {hasState
+                  ? `${fmt(stat.opportunities.notifications)} total ${stat.opportunities.notifications === 1 ? "opportunity" : "opportunities"}`
+                  : "View eligible jobs →"}
               </div>
             </Link>
           )

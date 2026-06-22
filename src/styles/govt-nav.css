@@ -107,18 +107,47 @@
 }
 
 .govt-nav-state-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   text-decoration: none;
-  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  overflow: hidden;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+/* Subtle left accent rail — brighter for states that have live recruitments. */
+.govt-nav-state-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #e2e8f0;
+  transition: background 0.2s;
+}
+
+.govt-nav-state-card--active::before {
+  background: linear-gradient(180deg, #1847d4, #4f7cff);
 }
 
 .govt-nav-state-card:hover {
   border-color: #1847d4;
   background: #f8faff;
   transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(24, 71, 212, 0.1);
+}
+
+.govt-nav-state-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 7px;
 }
 
 .govt-nav-state-card__name {
@@ -126,19 +155,24 @@
   color: #0d1f4e;
   font-size: 12.5px;
   line-height: 1.3;
-  margin-bottom: 6px;
 }
 
-.govt-nav-state-card__stats {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #64748b;
+.govt-nav-state-card__badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #047857;
+  background: #ecfdf5;
+  border-radius: 999px;
+  padding: 2px 7px;
 }
 
 .govt-nav-state-card__lines {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   font-size: 10.5px;
   font-weight: 600;
   color: #64748b;
@@ -149,9 +183,25 @@
   font-weight: 800;
 }
 
-.govt-nav-state-card__opps {
-  margin-top: 6px;
-  padding-top: 5px;
+.govt-nav-state-card__line--muted {
+  color: #94a3b8;
+}
+
+.govt-nav-state-card__line--muted strong {
+  color: #475569;
+}
+
+/* Friendly empty-state copy — never the bald "0 state jobs". */
+.govt-nav-state-card__hint {
+  font-size: 10px;
+  font-weight: 600;
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.govt-nav-state-card__cta {
+  margin-top: 7px;
+  padding-top: 6px;
   border-top: 1px solid #eef2f9;
   font-size: 10.5px;
   font-weight: 800;

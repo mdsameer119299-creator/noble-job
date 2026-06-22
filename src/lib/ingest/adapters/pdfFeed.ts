@@ -8,8 +8,7 @@
  */
 import type { SourceAdapter, RawNotification } from "../types"
 import { extractPdfText, isRecruitmentPdf, parseRecruitmentFields } from "../pdf"
-
-const UA = "Mozilla/5.0 (compatible; NobleJobBot/1.0; +https://www.noblejob.in)"
+import { fetchHtml } from "../http"
 
 export interface PdfFeedConfig {
   id: string
@@ -25,7 +24,8 @@ export interface PdfFeedConfig {
 }
 
 function abs(href: string, base: string): string | null {
-  try { return new URL(href, base).href } catch { return null }
+  // Encode stray spaces (KPSC names PDFs "steno typists.pdf") so the URL is valid.
+  try { return new URL(href.replace(/ /g, "%20"), base).href } catch { return null }
 }
 
 function decode(s: string): string {
@@ -41,9 +41,9 @@ export function makePdfFeedAdapter(cfg: PdfFeedConfig): SourceAdapter {
     kind: "pdf",
     enabled: cfg.enabled ?? true,
     async fetch(): Promise<RawNotification[]> {
-      const res = await fetch(cfg.listUrl, { headers: { "User-Agent": UA, Accept: "text/html" }, signal: AbortSignal.timeout(18000), cache: "no-store" })
-      if (!res.ok) throw new Error(`list HTTP ${res.status}`)
-      const html = await res.text()
+      // Resilient fetch: browser UA + legacy-client fallback for portals whose
+      // non-standard headers/TLS undici rejects (e.g. KPSC).
+      const html = await fetchHtml(cfg.listUrl, 18000)
 
       const candidates: { url: string; anchor: string }[] = []
       const seen = new Set<string>()

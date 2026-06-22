@@ -65,17 +65,24 @@ export function makeStatePscAdapter(cfg: StatePscConfig): SourceAdapter {
  * all ship disabled pending per-source host verification (see header).
  */
 export const STATE_PSC_ADAPTERS: SourceAdapter[] = [
-  makeStatePscAdapter({ id: "kpsc",  label: "KPSC (Karnataka)",        org: "Karnataka Public Service Commission",        stateSlug: "karnataka",       stateName: "Karnataka",       listUrl: "https://www.kpsc.kar.nic.in/" }),
-  makeStatePscAdapter({ id: "uppsc", label: "UPPSC (Uttar Pradesh)",   org: "Uttar Pradesh Public Service Commission",    stateSlug: "uttar-pradesh",   stateName: "Uttar Pradesh",   listUrl: "https://uppsc.up.nic.in/" }),
-  makeStatePscAdapter({ id: "bpsc",  label: "BPSC (Bihar)",            org: "Bihar Public Service Commission",            stateSlug: "bihar",           stateName: "Bihar",           listUrl: "https://www.bpsc.bih.nic.in/" }),
+  // SUPERSEDED by dedicated adapters (kept disabled to avoid double-running an id):
+  //   uppsc → ./uppsc.ts (Open_PDF.aspx HTML list)
+  //   kpsc, mppsc, hpsc → ./stateListSources.ts (title-trusting HTML list)
+  //   rpsc → ./rpscPlaywright.ts (JS-rendered; needs headless, GitHub Actions)
+  // BPSC is connection-blocked from non-India egress (curl + Node both time out)
+  // → disabled until run from an India IP (GitHub Actions proxy / VPS).
+  makeStatePscAdapter({ id: "kpsc-pdf",  label: "KPSC (PDF feed, unused)",  org: "Karnataka Public Service Commission",        stateSlug: "karnataka",       stateName: "Karnataka",       listUrl: "https://www.kpsc.kar.nic.in/", enabled: false }),
+  makeStatePscAdapter({ id: "uppsc-pdf", label: "UPPSC (PDF feed, unused)", org: "Uttar Pradesh Public Service Commission", stateSlug: "uttar-pradesh", stateName: "Uttar Pradesh", listUrl: "https://uppsc.up.nic.in/", enabled: false }),
+  makeStatePscAdapter({ id: "bpsc",  label: "BPSC (Bihar)",            org: "Bihar Public Service Commission",            stateSlug: "bihar",           stateName: "Bihar",           listUrl: "https://www.bpsc.bih.nic.in/", enabled: false }),
   makeStatePscAdapter({ id: "mpsc",  label: "MPSC (Maharashtra)",      org: "Maharashtra Public Service Commission",      stateSlug: "maharashtra",     stateName: "Maharashtra",     listUrl: "https://mpsc.gov.in/" }),
-  makeStatePscAdapter({ id: "rpsc",  label: "RPSC (Rajasthan)",        org: "Rajasthan Public Service Commission",        stateSlug: "rajasthan",       stateName: "Rajasthan",       listUrl: "https://rpsc.rajasthan.gov.in/" }),
+  makeStatePscAdapter({ id: "rpsc-pdf",  label: "RPSC (PDF feed, unused)", org: "Rajasthan Public Service Commission",     stateSlug: "rajasthan",       stateName: "Rajasthan",       listUrl: "https://rpsc.rajasthan.gov.in/", enabled: false }),
+  makeStatePscAdapter({ id: "hpsc-pdf",  label: "HPSC (PDF feed, unused)", org: "Haryana Public Service Commission",       stateSlug: "haryana",         stateName: "Haryana",         listUrl: "https://hpsc.gov.in/", enabled: false }),
   makeStatePscAdapter({ id: "tspsc", label: "TGPSC/TSPSC (Telangana)", org: "Telangana Public Service Commission",        stateSlug: "telangana",       stateName: "Telangana",       listUrl: "https://www.tspsc.gov.in/" }),
   makeStatePscAdapter({ id: "appsc", label: "APPSC (Andhra Pradesh)",  org: "Andhra Pradesh Public Service Commission",   stateSlug: "andhra-pradesh",  stateName: "Andhra Pradesh",  listUrl: "https://psc.ap.gov.in/" }),
   makeStatePscAdapter({ id: "ukpsc", label: "UKPSC (Uttarakhand)",     org: "Uttarakhand Public Service Commission",      stateSlug: "uttarakhand",     stateName: "Uttarakhand",     listUrl: "https://ukpsc.gov.in/" }),
   makeStatePscAdapter({ id: "hppsc", label: "HPPSC (Himachal Pradesh)",org: "Himachal Pradesh Public Service Commission", stateSlug: "himachal-pradesh",stateName: "Himachal Pradesh",listUrl: "https://www.hppsc.hp.gov.in/hppsc/" }),
-  makeStatePscAdapter({ id: "gpsc",  label: "GPSC (Gujarat)",          org: "Gujarat Public Service Commission",          stateSlug: "gujarat",         stateName: "Gujarat",         listUrl: "https://gpsc.gujarat.gov.in/" }),
-  makeStatePscAdapter({ id: "mppsc", label: "MPPSC (Madhya Pradesh)",  org: "Madhya Pradesh Public Service Commission",   stateSlug: "madhya-pradesh",  stateName: "Madhya Pradesh",  listUrl: "https://mppsc.mp.gov.in/" }),
+  // gpsc → superseded by ./stateListSources.ts (title-trusting HTML list).
+  makeStatePscAdapter({ id: "gpsc-pdf", label: "GPSC (PDF feed, unused)",  org: "Gujarat Public Service Commission",          stateSlug: "gujarat",         stateName: "Gujarat",         listUrl: "https://gpsc.gujarat.gov.in/", enabled: false }),
   makeStatePscAdapter({ id: "wbpsc", label: "WBPSC (West Bengal)",     org: "West Bengal Public Service Commission",      stateSlug: "west-bengal",     stateName: "West Bengal",     listUrl: "https://wbpsc.gov.in/" }),
   // ENABLED: live audit (2026-06-18) confirmed tnpsc.gov.in serves recruitment
   // PDFs over a plain GET and the adapter extracted a genuine notification.
