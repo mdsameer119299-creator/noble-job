@@ -13,6 +13,8 @@
  * jobs were published while adapters were enabled) so GitHub flags genuine
  * breakage — routine single-portal hiccups are reported but don't fail the job.
  */
+// MUST be first: polyfill WebSocket for supabase-js on Node 20 (GitHub Actions).
+import "./setupWebSocket"
 import fs from "node:fs"
 import path from "node:path"
 
