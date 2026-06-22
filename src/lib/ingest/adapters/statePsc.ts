@@ -70,7 +70,10 @@ export const STATE_PSC_ADAPTERS: SourceAdapter[] = [
   // scripts/verify-state-adapters.ts). Re-confirm from the DEPLOY host after
   // ship; if a portal hardens against server fetch, set enabled:false again.
   makeStatePscAdapter({ id: "kpsc",  label: "KPSC (Karnataka)",        org: "Karnataka Public Service Commission",        stateSlug: "karnataka",       stateName: "Karnataka",       listUrl: "https://www.kpsc.kar.nic.in/", enabled: true }),
-  makeStatePscAdapter({ id: "uppsc", label: "UPPSC (Uttar Pradesh)",   org: "Uttar Pradesh Public Service Commission",    stateSlug: "uttar-pradesh",   stateName: "Uttar Pradesh",   listUrl: "https://uppsc.up.nic.in/", enabled: true }),
+  // UPPSC is AngularJS (no .pdf anchors) — handled by the dedicated HTML adapter
+  // in ./uppsc.ts that parses the Open_PDF.aspx notification list. Keep this
+  // PDF-feed entry disabled so the two don't double-run under the same id.
+  makeStatePscAdapter({ id: "uppsc-pdf", label: "UPPSC (PDF feed, unused)", org: "Uttar Pradesh Public Service Commission", stateSlug: "uttar-pradesh", stateName: "Uttar Pradesh", listUrl: "https://uppsc.up.nic.in/", enabled: false }),
   makeStatePscAdapter({ id: "bpsc",  label: "BPSC (Bihar)",            org: "Bihar Public Service Commission",            stateSlug: "bihar",           stateName: "Bihar",           listUrl: "https://www.bpsc.bih.nic.in/", enabled: true }),
   makeStatePscAdapter({ id: "mpsc",  label: "MPSC (Maharashtra)",      org: "Maharashtra Public Service Commission",      stateSlug: "maharashtra",     stateName: "Maharashtra",     listUrl: "https://mpsc.gov.in/" }),
   makeStatePscAdapter({ id: "rpsc",  label: "RPSC (Rajasthan)",        org: "Rajasthan Public Service Commission",        stateSlug: "rajasthan",       stateName: "Rajasthan",       listUrl: "https://rpsc.rajasthan.gov.in/", enabled: true }),
