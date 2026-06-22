@@ -38,9 +38,41 @@ function summary(md: string) {
   if (SUMMARY) fs.appendFileSync(SUMMARY, md + "\n")
 }
 
+function adminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  return { url, key }
+}
+
+/**
+ * Fail fast with an actionable message if the DB credentials are missing or
+ * rejected ("Invalid API key"), BEFORE polling 14 adapters. Without this the run
+ * scrapes everything and then silently writes nothing.
+ */
+async function preflight(): Promise<void> {
+  const { url, key } = adminClient()
+  if (!url || !key) {
+    throw new Error("Missing DB secrets: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
+  }
+  const { createClient } = await import("@supabase/supabase-js")
+  const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error } = await db.from("govt_jobs").select("id", { count: "exact", head: true })
+  if (error) {
+    const host = (() => { try { return new URL(url).host } catch { return "(invalid URL)" } })()
+    console.error(`❌ DB preflight failed: ${error.message || "(empty error — almost always a bad apikey)"}`)
+    console.error(`   URL host: ${host}`)
+    console.error(`   service key length: ${key.length} (legacy keys start with "eyJ"; new ones with "sb_secret_")`)
+    console.error("   Fix the GitHub secrets (Settings → Secrets and variables → Actions):")
+    console.error("     • SUPABASE_SERVICE_ROLE_KEY = the project's service_role key (Supabase → Settings → API)")
+    console.error("       — NOT the anon key, NOT the JWT secret; no quotes / spaces / line breaks")
+    console.error("     • SUPABASE_URL must belong to the SAME project as that key")
+    throw new Error(`DB preflight failed: ${error.message || "Invalid API key"}`)
+  }
+  console.log(`✓ DB preflight OK (${(() => { try { return new URL(url).host } catch { return url } })()})`)
+}
+
 async function rowCount(): Promise<number | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const { url, key } = adminClient()
   if (!url || !key) return null
   const { createClient } = await import("@supabase/supabase-js")
   const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -49,6 +81,7 @@ async function rowCount(): Promise<number | null> {
 }
 
 async function main() {
+  await preflight() // fail fast on bad/missing DB credentials before scraping
   const { runGovtAutoUpdate } = await import("@/lib/services/govtAutoUpdate")
   console.log("Running full ingestion pass (writes to Supabase)…\n")
 

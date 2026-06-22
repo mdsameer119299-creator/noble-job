@@ -15,8 +15,11 @@ import type { Database } from "@/types/supabase"
 // Fall back to valid-looking placeholders so importing this module never throws
 // when env vars are missing (e.g. local dev without a DB). Callers must guard
 // real usage with isSupabaseConfigured(); the placeholder client is never queried.
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co"
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder-service-role-key"
+// .trim() defends against a very common deploy mistake: a secret pasted with a
+// trailing newline/space (CI secret managers often add one), which makes the
+// apikey header invalid and yields Supabase "Invalid API key" at query time.
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "https://placeholder.supabase.co"
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "placeholder-service-role-key"
 
 export const supabaseAdmin = createClient<Database>(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
