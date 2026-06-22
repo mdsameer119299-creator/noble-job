@@ -11,7 +11,7 @@
  */
 import { createHash } from "crypto"
 import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
-import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { isSupabaseAdminConfigured } from "@/lib/supabase/config"
 import { enrichGovtJob } from "@/lib/data/govtData"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { slugify, deriveStateSlugFromText } from "@/lib/config/govtTaxonomy"
@@ -92,7 +92,7 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
 
 /** Idempotent upsert (onConflict:"id") with provenance + content hash. */
 async function persist(entries: PersistEntry[]): Promise<number> {
-  if (!isSupabaseConfigured() || entries.length === 0) return 0
+  if (!isSupabaseAdminConfigured() || entries.length === 0) return 0
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const rows = entries.map(({ job: j, sourceId, hash }) => ({
@@ -121,7 +121,7 @@ async function persist(entries: PersistEntry[]): Promise<number> {
  * Safe to run repeatedly.
  */
 async function expireStaleJobs(): Promise<number> {
-  if (!isSupabaseConfigured()) return 0
+  if (!isSupabaseAdminConfigured()) return 0
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const { data, error } = await supabaseAdmin
@@ -149,7 +149,7 @@ async function expireStaleJobs(): Promise<number> {
  * so the gap is visible in deploy logs instead of being swallowed.
  */
 async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, durationMs: number): Promise<void> {
-  if (!isSupabaseConfigured()) return
+  if (!isSupabaseAdminConfigured()) return
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const status = result.failedSources.length ? (result.totalPublished ? "partial" : "error") : "success"
@@ -231,7 +231,7 @@ export async function getGovtIngestMetrics(): Promise<GovtIngestMetrics> {
   const empty: GovtIngestMetrics = {
     activeJobs: 0, expiredJobs: 0, addedToday: 0, lastSync: null, failedSources: [], sourcesChecked: ADAPTERS.length,
   }
-  if (!isSupabaseConfigured()) return empty
+  if (!isSupabaseAdminConfigured()) return empty
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const startOfToday = new Date()
