@@ -13,6 +13,7 @@
  *   Preview:  npx tsx scripts/backfill-state-slugs.ts
  *   Execute:  npx tsx scripts/backfill-state-slugs.ts --apply
  */
+import "./setupWebSocket"
 import fs from "node:fs"
 import path from "node:path"
 
