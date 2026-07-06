@@ -77,5 +77,32 @@ ok(exp("As per norms") === undefined, "non-numeric non-fresher experience omitte
   ok(!("baseSalary" in s), "no salary input -> baseSalary omitted")
 }
 
+// jobLocation.address ---------------------------------------------------------
+type Addr = { streetAddress?: string; addressLocality?: string; addressRegion?: string; postalCode?: string; addressCountry?: string }
+const addr = (extra: Partial<typeof base> & Record<string, unknown> = {}) =>
+  ((jobPostingSchema({ ...base, ...extra }) as { jobLocation: { address: Addr } }).jobLocation.address)
+{
+  const a = addr()
+  ok(a.addressCountry === "IN", "addressCountry defaults to IN")
+  ok(!("streetAddress" in a), "no streetAddress input -> omitted (never fabricated)")
+  ok(!("postalCode" in a), "no postalCode input -> omitted (never fabricated)")
+  ok(!("addressRegion" in a), "no addressRegion input -> omitted")
+  ok(!("addressLocality" in a), "raw location no longer leaks as addressLocality (explicit-only)")
+}
+{
+  const a = addr({ addressLocality: "New Delhi" })
+  ok(a.addressLocality === "New Delhi", "addressLocality emitted when a real city is supplied")
+}
+{
+  const a = addr({ addressRegion: "Maharashtra" })
+  ok(a.addressRegion === "Maharashtra", "addressRegion emitted when state known")
+  ok(a.addressCountry === "IN", "addressCountry stays IN when region present")
+}
+{
+  const a = addr({ streetAddress: "Plot 5, Sector 62", postalCode: "201301" })
+  ok(a.streetAddress === "Plot 5, Sector 62", "streetAddress emitted only when real data supplied")
+  ok(a.postalCode === "201301", "postalCode emitted only when real data supplied")
+}
+
 console.log(failed === 0 ? "\nALL SCHEMA ASSERTIONS PASSED" : `\n${failed} ASSERTION(S) FAILED`)
 process.exit(failed === 0 ? 0 : 1)

@@ -14,6 +14,10 @@ export type JobPostingSchemaInput = {
   addressLocality?: string
   addressRegion?: string
   addressCountry?: string
+  /** Only pass when a real street address exists — never fabricate. */
+  streetAddress?: string
+  /** Only pass when a real postal/PIN code exists — never fabricate. */
+  postalCode?: string
   /** Set for fully remote roles — emits jobLocationType TELECOMMUTE. */
   remote?: boolean
   /** Country/ies a remote applicant may be located in. */
@@ -189,8 +193,16 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
       "@type": "Place",
       address: {
         "@type": "PostalAddress",
-        ...(job.addressLocality || job.location ? { addressLocality: job.addressLocality || job.location } : {}),
+        // streetAddress / postalCode are emitted only when the caller supplies
+        // real data — Google treats them as recommended, and a fabricated value
+        // is worse than an omitted one.
+        ...(job.streetAddress ? { streetAddress: job.streetAddress } : {}),
+        // addressLocality is emitted only when the caller supplies a real city.
+        // We no longer fall back to the raw `location` string, which could be a
+        // state or a national placeholder ("All India") and is not a locality.
+        ...(job.addressLocality ? { addressLocality: job.addressLocality } : {}),
         ...(job.addressRegion ? { addressRegion: job.addressRegion } : {}),
+        ...(job.postalCode ? { postalCode: job.postalCode } : {}),
         addressCountry: job.addressCountry || "IN",
       },
     },
