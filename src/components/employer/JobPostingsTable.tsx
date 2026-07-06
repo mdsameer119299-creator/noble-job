@@ -3,11 +3,20 @@ import Link from 'next/link'
 import { useEffect, useState, useCallback } from 'react'
 import { useToast } from '@/hooks/useToast'
 import { formatDate } from '@/lib/utils/formatters'
+import { EMPLOYER_TRANSITIONS, JOB_STATUS_COLOR, type JobLifecycleStatus } from '@/lib/services/jobLifecycle'
 
 type Job = { id: string; title: string; status: string; posted_at?: string; location?: string; job_type?: string }
 
-const statusColor: Record<string, string> = {
-  active: '#15803d', pending: '#f07020', rejected: '#dc2626', closed: '#64748b',
+const statusColor = JOB_STATUS_COLOR
+
+// Employer-facing label for each transition target.
+const ACTION_LABEL: Record<string, string> = {
+  pending: 'Submit for approval',
+  draft: 'Move to draft',
+  active: 'Reopen',
+  paused: 'Pause',
+  closed: 'Close',
+  archived: 'Archive',
 }
 
 export function JobPostingsTable() {
@@ -39,15 +48,16 @@ export function JobPostingsTable() {
     } finally { setBusy(null) }
   }
 
-  const close = async (id: string) => {
+  const transition = async (id: string, status: string) => {
     setBusy(id)
     try {
-      const res = await fetch(`/api/employer/jobs/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'closed' }),
+      const res = await fetch(`/api/employer/jobs/${id}/status`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
       })
-      if (res.ok) { toast.success('Job closed'); load() }
-      else toast.error('Could not close job')
+      const d = await res.json().catch(() => ({}))
+      if (res.ok) { toast.success(`${ACTION_LABEL[status] || 'Updated'} ✓`); load() }
+      else toast.error(d.error || 'Could not update job')
     } finally { setBusy(null) }
   }
 
@@ -83,15 +93,17 @@ export function JobPostingsTable() {
               <td style={{ padding: 12, fontWeight: 700, color: '#0d1f4e' }}>{j.title}</td>
               <td style={{ padding: 12, color: '#6b7280' }}>{j.location || '—'}</td>
               <td style={{ padding: 12 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: statusColor[j.status] || '#64748b' }}>{j.status}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'capitalize', color: statusColor[j.status] || '#64748b' }}>{j.status}</span>
               </td>
               <td style={{ padding: 12, color: '#6b7280' }}>{j.posted_at ? formatDate(j.posted_at) : '—'}</td>
               <td style={{ padding: 12 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Link href={`/employer/jobs/${j.id}/edit`} style={{ fontSize: 12, fontWeight: 700, color: '#1847d4', textDecoration: 'none' }}>Edit</Link>
-                  {j.status !== 'closed' && (
-                    <button type="button" onClick={() => close(j.id)} disabled={busy === j.id} style={linkBtn('#64748b')}>Close</button>
-                  )}
+                  {(EMPLOYER_TRANSITIONS[j.status as JobLifecycleStatus] || []).map(t => (
+                    <button key={t} type="button" onClick={() => transition(j.id, t)} disabled={busy === j.id} style={linkBtn(statusColor[t] || '#64748b')}>
+                      {ACTION_LABEL[t] || t}
+                    </button>
+                  ))}
                   <button type="button" onClick={() => remove(j.id)} disabled={busy === j.id} style={linkBtn('#dc2626')}>Delete</button>
                 </div>
               </td>
