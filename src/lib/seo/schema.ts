@@ -32,6 +32,13 @@ export type JobPostingSchemaInput = {
   educationRequirements?: string
   experienceRequirements?: string
   identifier?: string
+  /**
+   * Emit `directApply`. Only pass true for a genuine posting whose apply URL
+   * leads directly to this specific role's application. Defaults to true because
+   * every caller gates on the publication predicates in
+   * `src/lib/jobs/provenance.ts` before rendering JobPosting schema.
+   */
+  directApply?: boolean
 }
 
 export function organizationSchema() {
@@ -218,7 +225,7 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     ...(expMonths !== undefined
       ? { experienceRequirements: { "@type": "OccupationalExperienceRequirements", monthsOfExperience: expMonths } }
       : {}),
-    directApply: true,
+    directApply: job.directApply ?? true,
   }
 }
 

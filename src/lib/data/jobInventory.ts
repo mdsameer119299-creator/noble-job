@@ -8,6 +8,7 @@
  */
 import { FALLBACK_PRIVATE_JOBS, FALLBACK_WFH_JOBS, FALLBACK_ABROAD_JOBS } from "./fallbackJobs"
 import { countByStatus } from "./inventoryPagination"
+import { isCountableAsGenuine, isPublishableAsOpen } from "@/lib/jobs/provenance"
 import type { Job, JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
@@ -120,13 +121,17 @@ function buildPrivateJob(i: number, status: JobStatus): Job {
     cat,
     skills: PRIVATE_SKILLS[cat] || [],
     jobStatus: status,
+    // Generated demo inventory — never a real opening (see provenance.ts).
+    provenance: "SYNTHETIC",
     applyUrl: status === "ARCHIVED_JOB" ? "#" : `https://careers.example.com/${prefix}-${i + 1}`,
     desc: `${role} at ${company} (${loc}).`,
     posted: status === "ARCHIVED_JOB" ? "Archived" : `${(i % 14) + 1} days ago`,
-    verified: status === "VERIFIED_JOB",
+    // Synthetic rows are never "verified" — that badge is reserved for genuine jobs.
+    verified: false,
     source: status === "ARCHIVED_JOB" ? "Archived Inventory" : status === "LIVE_JOB" ? "Live Feed" : company as string,
     board: "private",
-    badge: status === "LIVE_JOB" && i % 7 === 0 ? "Hot" : status === "VERIFIED_JOB" ? "Verified" : undefined,
+    // Neutral "Sample" marker — no "Verified"/"Hot" trust claim on demo content.
+    badge: status === "ARCHIVED_JOB" ? undefined : "Sample",
   }
 }
 
@@ -134,6 +139,9 @@ function generatePrivateInventory(): Job[] {
   const seed = FALLBACK_PRIVATE_JOBS.map((j, i) => ({
     ...j,
     jobStatus: (i % 3 === 0 ? "LIVE_JOB" : i % 3 === 1 ? "VERIFIED_JOB" : "LIVE_JOB") as JobStatus,
+    // Curated demo seed rows are showcase content, not verified live openings.
+    provenance: "SYNTHETIC" as const,
+    verified: false,
     cat: j.cat || "Software",
   }))
   const live = Array.from({ length: PRIVATE_LIVE_COUNT }, (_, i) => buildPrivateJob(i, "LIVE_JOB"))
@@ -185,14 +193,16 @@ function buildWfhJob(i: number, status: JobStatus, cat: string): WfhJob {
     cat,
     qualification: "Graduate",
     skills: ["Communication", "Remote Tools"],
-    badge: status === "ARCHIVED_JOB" ? "Archived" : status === "LIVE_JOB" && i % 5 === 0 ? "Hot" : "New",
-    badge_type: status === "ARCHIVED_JOB" ? "archived" : i % 5 === 0 ? "hot" : "new",
+    badge: status === "ARCHIVED_JOB" ? "Archived" : "Sample",
+    badge_type: status === "ARCHIVED_JOB" ? "archived" : "new",
     applicants: 50 + (i % 400),
     description: `Remote ${role} at ${company}.`,
     apply_url: status === "ARCHIVED_JOB" ? "#" : "https://careers.example.com/wfh",
     posted_at: new Date(Date.now() - (i % 30) * 86400000).toISOString(),
     status: "active",
     jobStatus: status,
+    // Generated demo inventory — never a real opening (see provenance.ts).
+    provenance: "SYNTHETIC",
   }
 }
 
@@ -201,6 +211,8 @@ function generateWfhInventory(): WfhJob[] {
     ...j,
     cat: WFH_CATEGORY_LIST.includes(j.cat as typeof WFH_CATEGORY_LIST[number]) ? j.cat : "IT",
     jobStatus: (i % 2 === 0 ? "LIVE_JOB" : "VERIFIED_JOB") as JobStatus,
+    // Curated demo seed rows are showcase content, not verified live openings.
+    provenance: "SYNTHETIC" as const,
   }))
   const live: WfhJob[] = []
   const verified: WfhJob[] = []
@@ -268,10 +280,12 @@ function buildAbroadJob(globalIdx: number, country: string, status: JobStatus): 
     description: `${role} opportunity with ${company} in ${country}.`,
     apply_url: status === "ARCHIVED_JOB" ? "#" : "https://careers.example.com/abroad",
     skills: ["Communication", "English"],
-    badge: status === "ARCHIVED_JOB" ? "Archived" : globalIdx % 6 === 0 ? "Hot" : "New",
+    badge: status === "ARCHIVED_JOB" ? "Archived" : "Sample",
     status: "active",
     posted_at: new Date(Date.now() - (globalIdx % 20) * 86400000).toISOString(),
     jobStatus: status,
+    // Generated demo inventory — never a real opening (see provenance.ts).
+    provenance: "SYNTHETIC",
   }
 }
 
@@ -328,7 +342,12 @@ export function getAbroadCountryCounts() {
   }))
 }
 
-/** Homepage / cross-board totals (private + wfh + abroad only). */
+/**
+ * CATALOG totals (private + wfh + abroad) — the full browsable inventory,
+ * including generated demo content. These are a "roles to explore" figure and
+ * MUST NOT be presented as a count of genuine/live/verified opportunities.
+ * For truthful trust counters use {@link getGenuineTotals}.
+ */
 export function getMarketplaceTotals() {
   const p = getPrivateInventoryCounts()
   const w = getWfhInventoryCounts()
@@ -342,6 +361,20 @@ export function getMarketplaceTotals() {
     wfh: w,
     abroad: a,
   }
+}
+
+/**
+ * GENUINE totals from the local inventory — only rows that pass the publication
+ * gate (real provenance + real apply URL). With the current demo inventory this
+ * is 0 by construction; real live/verified numbers come from the DB + external
+ * APIs. Kept as a first-class helper so counters never silently pad trust
+ * figures with synthetic content.
+ */
+export function getGenuineTotals() {
+  const all = [...PRIVATE_INVENTORY, ...WFH_INVENTORY, ...ABROAD_INVENTORY]
+  const genuine = all.filter(isCountableAsGenuine)
+  const live = genuine.filter(isPublishableAsOpen).length
+  return { opportunities: genuine.length, liveJobs: live }
 }
 
 export function getInventoryCounts() {

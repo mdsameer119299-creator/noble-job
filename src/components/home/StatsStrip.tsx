@@ -4,7 +4,7 @@
 import { Fragment } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
-import { JOB_STRATEGY_PHASE, formatCounter } from '@/lib/config/jobStrategy'
+import { formatCounter } from '@/lib/config/jobStrategy'
 import { getMarketplaceTotals } from '@/lib/data/jobInventory'
 
 const STAT_ICONS = {
@@ -26,33 +26,36 @@ const STAT_ICONS = {
 }
 
 export async function StatsStrip() {
+  // TWO HONEST BUCKETS (see src/lib/jobs/provenance.ts):
+  //  • "Roles to Explore" = the full browsable catalog (includes demo showcase
+  //    inventory). It is a browse figure, NOT a claim of genuine live openings.
+  //  • "Live Jobs" / "Verified Employers" = GENUINE only, counted from the DB
+  //    (real employer + govt rows). Never padded with synthetic targets.
   const marketplace = getMarketplaceTotals()
-  // Counters reflect actual seeded inventory (private + WFH + abroad). Archived
-  // jobs are included in "Opportunities" but never in "Live Jobs".
-  let opportunities = marketplace.opportunities
-  let liveJobs = marketplace.liveJobs
-  let employers = JOB_STRATEGY_PHASE.targets.verifiedEmployers
+  const catalogRoles = marketplace.opportunities
+  let liveJobs = 0
+  let employers = 0
   if (isSupabaseConfigured()) {
     try {
       const sb = await createClient()
       if (!sb) throw new Error('skip')
-      const [active, verified, emp] = await Promise.all([
+      const [active, govt, wfh, abroad, verified] = await Promise.all([
         sb.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+        sb.from('govt_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+        sb.from('wfh_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+        sb.from('abroad_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
         sb.from('employers').select('id', { count: 'exact', head: true }).eq('verified', true),
-        sb.from('employers').select('id', { count: 'exact', head: true }),
       ])
-      const dbLive = active.count || 0
-      if (dbLive > liveJobs) liveJobs = dbLive
-      opportunities = Math.max(opportunities, dbLive + marketplace.archivedJobs)
-      employers = Math.max(employers, verified.count || emp.count || 0)
+      liveJobs = (active.count || 0) + (govt.count || 0) + (wfh.count || 0) + (abroad.count || 0)
+      employers = verified.count || 0
     } catch {}
   }
 
   const items = [
-    { key: 'opportunities', num: formatCounter(opportunities), label: 'Opportunities',     icon: STAT_ICONS.jobs       },
-    { key: 'live',          num: formatCounter(liveJobs),      label: 'Live Jobs',          icon: STAT_ICONS.companies  },
-    { key: 'govt',          num: 'Daily',                      label: 'Govt Updates',       icon: STAT_ICONS.govt       },
-    { key: 'employers',     num: formatCounter(employers),     label: 'Verified Employers', icon: STAT_ICONS.candidates },
+    { key: 'catalog',   num: formatCounter(catalogRoles),                        label: 'Roles to Explore',   icon: STAT_ICONS.jobs       },
+    { key: 'live',      num: liveJobs > 0 ? formatCounter(liveJobs) : 'Daily',   label: 'Live Jobs',          icon: STAT_ICONS.companies  },
+    { key: 'govt',      num: 'Daily',                                            label: 'Govt Updates',       icon: STAT_ICONS.govt       },
+    { key: 'employers', num: employers > 0 ? formatCounter(employers) : 'Growing', label: 'Verified Employers', icon: STAT_ICONS.candidates },
   ]
 
   return (

@@ -1,7 +1,10 @@
 /**
- * Unified vacancy counts for homepage category cards.
- * Govt sectors use sumGovtVacancies (same pipeline as /jobs/govt hub).
- * Private sectors use live+verified inventory with a consistent multiplier.
+ * Unified counts for homepage category cards, framed honestly as "roles to
+ * explore" (a browsable-catalog figure) — NEVER as genuine/verified vacancies.
+ * Govt sectors contribute real vacancies (sumRealVacancies over active rows);
+ * private/WFH/abroad sectors contribute their actual catalog listing counts.
+ * There is no fabricated multiplier or invented floor: synthetic demo content
+ * is countable only as "roles to explore", never as a genuine open vacancy.
  */
 import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
@@ -25,11 +28,8 @@ const BADGES: Partial<Record<CategoryIllustrationSlug, CategoryBadge>> = {
   banking: { emoji: "🆕", label: "Updated Today" },
 }
 
-/** Active private/WFH roles → displayed vacancy scale (enterprise-style totals). */
-const PRIVATE_VACANCY_PER_ROLE = 14
-
-function fmtVacancies(n: number): string {
-  return `${n.toLocaleString("en-IN")} Vacancies`
+function fmtRoles(n: number): string {
+  return `${n.toLocaleString("en-IN")} Roles to Explore`
 }
 
 function matchesCat(jobCat: string, needles: string[]): boolean {
@@ -37,25 +37,25 @@ function matchesCat(jobCat: string, needles: string[]): boolean {
   return needles.some(n => hay.includes(n.toLowerCase()))
 }
 
-function privateVacancies(needles: string[]): number {
-  const active = PRIVATE_INVENTORY.filter(
+/** Actual count of browsable (non-archived) private catalog listings in a category. */
+function privateRoles(needles: string[]): number {
+  return PRIVATE_INVENTORY.filter(
     j =>
-      (j.jobStatus === "LIVE_JOB" || j.jobStatus === "VERIFIED_JOB") &&
+      j.jobStatus !== "ARCHIVED_JOB" &&
       matchesCat(j.cat || j.category || "", needles),
   ).length
-  return Math.max(active * PRIVATE_VACANCY_PER_ROLE, active > 0 ? 1_200 : 0)
 }
 
-function wfhVacancies(needles: string[]): number {
-  const active = WFH_INVENTORY.filter(j => matchesCat(j.cat, needles)).length
-  return Math.max(active * PRIVATE_VACANCY_PER_ROLE, active > 0 ? 900 : 0)
+function wfhRoles(needles: string[]): number {
+  return WFH_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB" && matchesCat(j.cat, needles)).length
 }
 
-function abroadVacancies(needles: string[]): number {
-  const active = ABROAD_INVENTORY.filter(
-    j => matchesCat(j.category || "", needles) || needles.some(n => (j.country || "").toLowerCase().includes(n)),
+function abroadRoles(needles: string[]): number {
+  return ABROAD_INVENTORY.filter(
+    j =>
+      j.jobStatus !== "ARCHIVED_JOB" &&
+      (matchesCat(j.category || "", needles) || needles.some(n => (j.country || "").toLowerCase().includes(n))),
   ).length
-  return Math.max(active * PRIVATE_VACANCY_PER_ROLE * 2, active > 0 ? 2_400 : 0)
 }
 
 /** Single source of truth for all category card vacancy numbers. DB-first for govt. */
@@ -66,27 +66,27 @@ export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplace
     return sumRealVacancies(jobs.filter(isVacancyBearingJob))
   }
   const stats: { slug: CategoryIllustrationSlug; vacancies: number }[] = [
-    { slug: "it-software", vacancies: privateVacancies(["software", "it", "developer", "devops"]) },
+    { slug: "it-software", vacancies: privateRoles(["software", "it", "developer", "devops"]) },
     {
       slug: "banking",
-      vacancies: govtVacancies("banking") + privateVacancies(["bank", "finance"]),
+      vacancies: govtVacancies("banking") + privateRoles(["bank", "finance"]),
     },
     {
       slug: "teaching",
-      vacancies: govtVacancies("teaching") + privateVacancies(["education", "teach"]),
+      vacancies: govtVacancies("teaching") + privateRoles(["education", "teach"]),
     },
     {
       slug: "engineering",
-      vacancies: govtVacancies("engineering") + govtVacancies("psu") + privateVacancies(["engineer", "manufacturing"]),
+      vacancies: govtVacancies("engineering") + govtVacancies("psu") + privateRoles(["engineer", "manufacturing"]),
     },
-    { slug: "healthcare", vacancies: privateVacancies(["health", "nurse", "medical"]) + 45_000 },
-    { slug: "sales-marketing", vacancies: privateVacancies(["sales", "marketing"]) },
+    { slug: "healthcare", vacancies: privateRoles(["health", "nurse", "medical"]) },
+    { slug: "sales-marketing", vacancies: privateRoles(["sales", "marketing"]) },
     { slug: "government-jobs", vacancies: govtVacancies() },
-    { slug: "work-from-home", vacancies: wfhVacancies(["it", "software", "content", "customer", "data", "design", "finance", "hr", "health", "sales", "teach"]) },
+    { slug: "work-from-home", vacancies: wfhRoles(["it", "software", "content", "customer", "data", "design", "finance", "hr", "health", "sales", "teach"]) },
     { slug: "defence", vacancies: govtVacancies("defence") },
     { slug: "railway", vacancies: govtVacancies("railway") },
-    { slug: "aviation", vacancies: abroadVacancies(["uae", "qatar", "saudi", "aviation", "cabin"]) },
-    { slug: "hospitality", vacancies: privateVacancies(["hospitality", "hotel", "retail"]) + 28_000 },
+    { slug: "aviation", vacancies: abroadRoles(["uae", "qatar", "saudi", "aviation", "cabin"]) },
+    { slug: "hospitality", vacancies: privateRoles(["hospitality", "hotel", "retail"]) },
   ]
 
   return stats.map(s => ({
@@ -121,7 +121,7 @@ export async function buildPremiumCategoryCards(): Promise<(CategoryCardConfig &
     const stat = bySlug[meta.slug]
     return {
       ...meta,
-      count: fmtVacancies(stat?.vacancies ?? 0),
+      count: fmtRoles(stat?.vacancies ?? 0),
       badge: stat?.badge,
     }
   })

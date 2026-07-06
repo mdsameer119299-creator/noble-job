@@ -49,12 +49,11 @@ export async function CategoryHero({ variant, govtSlug }: CategoryHeroProps) {
   const base = getHeroTheme(variant)
   const stats = await getHeroStats(variant, { govtSlug })
   const theme = { ...base, bullets: buildDynamicBullets(variant, stats, govtSlug) }
-  const showEmployers =
-    variant === 'private'
-      ? Math.max(getVerifiedEmployerCount(), stats.counters.find(c => c.key === 'verified')?.value ?? 0)
-      : variant === 'wfh'
-        ? Math.max(200, stats.counters.find(c => c.key === 'verified')?.value ?? 0)
-        : undefined
+  // Only show a verified-employer stat when there is a genuine DB count to show.
+  // Never pad it with a synthetic catalog figure or a fabricated marketing target.
+  const genuineEmployers =
+    variant === 'private' || variant === 'wfh' ? await getVerifiedEmployerCount() : 0
+  const showEmployers = genuineEmployers > 0 ? genuineEmployers : undefined
 
   return (
     <CategoryHeroView

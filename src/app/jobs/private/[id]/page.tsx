@@ -10,6 +10,8 @@ import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemp
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
+import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
+import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -24,6 +26,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     path: `/jobs/private/${id}`,
     keywords: ['Private Jobs', job.company, job.location, job.cat, job.title, 'Jobs in India'],
     ogType: 'article',
+    // Synthetic/demo or filled roles are browsable but must not be indexed.
+    noIndex: !isIndexable(job),
   })
 }
 
@@ -83,7 +87,9 @@ export default async function JobDetailPage({ params }: Props) {
       jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
       applySlot={
         <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
-          <ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />
+          {isGenuine(job)
+            ? <ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />
+            : <SampleListingNotice />}
           <SaveJobButton jobId={job.id} board="private" />
         </div>
       }

@@ -75,6 +75,8 @@ export function GovtJobJsonLd({ job }: { job: GovtJob }) {
     qualifications: job.qualification,
     educationRequirements: job.qualification,
     identifier: job.id,
+    // Government applications are made on the official portal, not on-site.
+    directApply: false,
   })
 
   const schemas: Record<string, unknown>[] = [posting]

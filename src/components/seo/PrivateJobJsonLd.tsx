@@ -1,10 +1,13 @@
 import { JsonLd } from "@/components/seo/JsonLd"
 import { jobPostingSchema } from "@/lib/seo/schema"
 import { siteUrl } from "@/lib/seo/constants"
+import { isSchemaEligible } from "@/lib/jobs/provenance"
 import type { Job } from "@/types/job"
 import type { JobContent } from "@/lib/seo/jobContent"
 
 export function PrivateJobJsonLd({ job, content }: { job: Job; content: JobContent }) {
+  // Synthetic/demo or non-open rows never carry JobPosting schema.
+  if (!isSchemaEligible(job)) return null
   const base = siteUrl()
   const url = `${base}/jobs/private/${job.id}`
   const row = job as Job & { posted_at?: string; job_type?: string; experience_required?: string }

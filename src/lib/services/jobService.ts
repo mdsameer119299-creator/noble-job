@@ -3,7 +3,8 @@ import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useL
 import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
-import type { Job, JobFilter, JobSearchResult } from "@/types/job"
+import { classifyProvenance } from "@/lib/jobs/provenance"
+import type { Job, JobFilter, JobSearchResult, Provenance } from "@/types/job"
 
 async function getSupabaseClient() {
   const { createClient } = await import("@/lib/supabase/server")
@@ -58,6 +59,18 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
         skills: (r.skills as string[]) || [],
         badge: r.badge as string | undefined,
         jobStatus: (r.job_status as Job["jobStatus"]) || (r.is_verified ? "VERIFIED_JOB" : "LIVE_JOB"),
+        // A stored `provenance` wins; otherwise classify defensively so every
+        // read is gate-ready. Real DB rows resolve to EMPLOYER/AGGREGATED/CURATED.
+        provenance:
+          (r.provenance as Provenance) ||
+          classifyProvenance({
+            id: String(r.id),
+            board: "private",
+            source: r.source as string | undefined,
+            apply_url: r.apply_url as string | undefined,
+            employer_id: r.employer_id as string | undefined,
+            job_status: r.job_status as string | undefined,
+          }),
         applyUrl: String(r.apply_url || "#"),
         desc: String(r.description || ""),
         posted: String(r.posted_at || ""),

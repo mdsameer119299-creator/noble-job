@@ -9,7 +9,7 @@ import {
   ABROAD_COUNTRY_COUNT,
 } from "@/lib/data/jobInventory"
 import { getGovtHubStats } from "@/lib/services/govtHubStats"
-import { JOB_STRATEGY_PHASE } from "@/lib/config/jobStrategy"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
 
 export type HeroVariant =
   | "govt"
@@ -126,11 +126,13 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
   switch (variant) {
     case "private": {
       const c = getPrivateInventoryCounts()
+      // These counts are the browsable demo catalog, not genuine openings, so
+      // the labels deliberately avoid any "live"/"verified" trust claim.
       return {
         counters: [
-          { key: "all", label: "Opportunities", value: c.all },
-          { key: "live", label: "Live Jobs", value: c.live },
-          { key: "verified", label: "Verified Jobs", value: c.verified },
+          { key: "all", label: "Roles to Explore", value: c.all },
+          { key: "live", label: "Sample Openings", value: c.live },
+          { key: "verified", label: "Sample (Demo)", value: c.verified },
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         floatingCards: [
@@ -145,11 +147,12 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
     }
     case "wfh": {
       const c = getWfhInventoryCounts()
+      // Demo catalog counts — labels avoid any "live"/"verified" trust claim.
       return {
         counters: [
-          { key: "all", label: "WFH Opportunities", value: c.all },
-          { key: "live", label: "Live Remote Jobs", value: c.live },
-          { key: "verified", label: "Verified Employers", value: c.verified },
+          { key: "all", label: "Remote Roles to Explore", value: c.all },
+          { key: "live", label: "Sample Openings", value: c.live },
+          { key: "verified", label: "Sample (Demo)", value: c.verified },
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         floatingCards: [
@@ -164,11 +167,12 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       const c = getAbroadInventoryCounts()
       const allCountries = getAbroadCountryCounts()
       const topByJobs = [...allCountries].sort((a, b) => b.jobs - a.jobs)
+      // Demo catalog counts — labels avoid any "live"/"verified" trust claim.
       return {
         counters: [
-          { key: "all", label: "Global Opportunities", value: c.all },
-          { key: "live", label: "Live Openings", value: c.live },
-          { key: "verified", label: "Verified", value: c.verified },
+          { key: "all", label: "Roles to Explore", value: c.all },
+          { key: "live", label: "Sample Openings", value: c.live },
+          { key: "verified", label: "Sample (Demo)", value: c.verified },
           { key: "countries", label: "Countries", value: ABROAD_COUNTRY_COUNT },
         ],
         floatingCards: topByJobs.slice(0, 8).map(co => ({
@@ -198,7 +202,24 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
   }
 }
 
-/** Verified employer count shown on private hero. */
-export function getVerifiedEmployerCount(): number {
-  return JOB_STRATEGY_PHASE.targets.verifiedEmployers
+/**
+ * Genuine verified-employer count for the private/WFH hero. Returns the real
+ * number of employers marked `verified` in the DB, or 0 when unavailable — we
+ * never fall back to the fabricated marketing target. Callers should hide the
+ * stat when this is 0 rather than invent a figure.
+ */
+export async function getVerifiedEmployerCount(): Promise<number> {
+  if (!isSupabaseConfigured()) return 0
+  try {
+    const { createClient } = await import("@/lib/supabase/server")
+    const sb = await createClient()
+    if (!sb) return 0
+    const { count } = await sb
+      .from("employers")
+      .select("id", { count: "exact", head: true })
+      .eq("verified", true)
+    return count || 0
+  } catch {
+    return 0
+  }
 }

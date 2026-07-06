@@ -1,4 +1,4 @@
-import type { JobStatus } from './job'
+import type { JobStatus, Provenance } from './job'
 
 export interface AbroadJob {
   id: string; title: string; company: string; logo: string; country: string
@@ -6,4 +6,6 @@ export interface AbroadJob {
   category: string; description: string; apply_url: string
   skills: string[]; badge?: string; status: 'active' | 'closed'; posted_at: string
   jobStatus?: JobStatus
+  /** Real sourced opportunity vs generated demo content. See provenance.ts. */
+  provenance?: Provenance
 }
