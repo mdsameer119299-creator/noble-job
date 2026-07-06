@@ -180,6 +180,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
       return NextResponse.json({ error: "Maximum salary cannot be less than minimum" }, { status: 400 })
     }
 
+    // Employers may save a draft or submit for approval. Both stay behind the
+    // admin gate — neither can produce an 'active' job (only admin approval does).
+    const asDraft = b.saveAsDraft === true || b.status === "draft"
+
     const insertRow = {
       title,
       location,
@@ -193,19 +197,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
       company: b.company ? String(b.company).slice(0, 160) : ((employer as { company_name?: string }).company_name ?? null),
       employer_id: (employer as { id: string }).id, // ownership — from session, never the body
       board: "private",   // employer postings are always the private board
-      status: "pending",  // always enters the admin approval gate
+      status: asDraft ? "draft" : "pending",  // draft, or enter the admin approval gate
       source: "Employer",
     }
     const { error, data } = await sb.from("jobs").insert(insertRow as never).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-    const { alertAdmins } = await import("@/lib/services/adminNotifyService")
-    await alertAdmins({
-      type: "job_pending",
-      title: "New job pending approval",
-      message: `"${(data as { title?: string })?.title ?? "A job"}" was submitted and is awaiting approval.`,
-      email: true,
-    })
+    if (!asDraft) {
+      const { alertAdmins } = await import("@/lib/services/adminNotifyService")
+      await alertAdmins({
+        type: "job_pending",
+        title: "New job pending approval",
+        message: `"${(data as { title?: string })?.title ?? "A job"}" was submitted and is awaiting approval.`,
+        email: true,
+      })
+    }
 
     return NextResponse.json({ data })
   }
@@ -234,13 +240,56 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ success: !error })
   }
 
-  // Update an employer's own job: PUT /api/employer/jobs/{id}
+  // Update an employer's own job content: PUT /api/employer/jobs/{id}
+  // Moderation/ownership fields (status, job_status, is_verified, board, …) are
+  // stripped so a content edit can never bypass the admin approval gate.
+  // Status changes go through PATCH /api/employer/jobs/{id}/status instead.
   if (p?.[0] === "jobs" && p?.[1]) {
     const eid = (employer as any)?.id
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { id: _omitId, employer_id: _omitEid, ...safe } = body as any
-    const { error } = await sb.from("jobs").update(safe).eq("id", p[1]).eq("employer_id", eid)
+    const { stripProtectedJobFields } = await import("@/lib/services/jobLifecycle")
+    const safe = stripProtectedJobFields(body as Record<string, unknown>)
+    const { error } = await sb.from("jobs").update(safe as never).eq("id", p[1]).eq("employer_id", eid)
     return NextResponse.json({ success: !error })
+  }
+
+  return NextResponse.json({ error: "Not found" }, { status: 404 })
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
+  const api = await requireApiSupabase()
+  if (api.error) return api.error
+  const sb = api.sb
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const { data: employer } = await sb.from("employers").select("id").eq("user_id", user.id).single()
+  if (!employer) return NextResponse.json({ error: "Employer not found" }, { status: 404 })
+  const { params: p } = await params
+
+  // Employer job status transition: PATCH /api/employer/jobs/{id}/status { status }
+  if (p?.[0] === "jobs" && p?.[1] && p?.[2] === "status") {
+    const eid = (employer as { id: string }).id
+    const body = (await req.json().catch(() => ({}))) as { status?: string }
+    const target = String(body.status || "")
+    const { canEmployerTransition } = await import("@/lib/services/jobLifecycle")
+
+    const { data: job } = await sb
+      .from("jobs")
+      .select("status")
+      .eq("id", p[1])
+      .eq("employer_id", eid)
+      .single()
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 })
+
+    const current = String((job as { status: string }).status)
+    if (!canEmployerTransition(current, target)) {
+      return NextResponse.json(
+        { error: `Cannot change status from '${current}' to '${target || "?"}'.` },
+        { status: 400 }
+      )
+    }
+    const { error } = await sb.from("jobs").update({ status: target }).eq("id", p[1]).eq("employer_id", eid)
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    return NextResponse.json({ success: true, status: target })
   }
 
   return NextResponse.json({ error: "Not found" }, { status: 404 })

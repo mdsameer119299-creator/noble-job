@@ -75,12 +75,71 @@ export function websiteSchema() {
   }
 }
 
+/** Normalize any date-ish string to ISO-8601; undefined when unparseable. */
+function toIsoOrUndefined(input?: string): string | undefined {
+  if (!input) return undefined
+  const d = new Date(input)
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+
+/**
+ * Map a free-text qualification to a Google-recognized credentialCategory.
+ * Google requires educationRequirements to be an EducationalOccupationalCredential
+ * (a plain string is flagged "invalid"). Rules are ordered most-specific first;
+ * returns undefined when no confident mapping exists so the caller omits the
+ * property rather than emitting a guessed/invalid value.
+ */
+const EDUCATION_CREDENTIAL_RULES: { re: RegExp; category: string }[] = [
+  { re: /\bph\.?\s?d\b|\bdoctorate\b|\bdoctoral\b/i, category: "postgraduate degree" },
+  { re: /\bpost[\s-]?grad|\bpg\b|\bmaster|\bm\.?\s?a\b|\bm\.?\s?sc|\bm\.?\s?com|\bm\.?\s?tech|\bm\.?\s?e\b|\bmba\b|\bmca\b|\bm\.?\s?phil|\bll\.?\s?m\b/i, category: "postgraduate degree" },
+  { re: /\bgraduat|\bbachelor|\bdegree|\bb\.?\s?a\b|\bb\.?\s?sc|\bb\.?\s?com|\bb\.?\s?tech|\bb\.?\s?e\b|\bbba\b|\bbca\b|\bll\.?\s?b\b|\bmbbs\b|\bb\.?\s?ed/i, category: "bachelor degree" },
+  { re: /\bdiploma|\bpolytechnic/i, category: "associate degree" },
+  { re: /\biti\b|\bcertificat/i, category: "professional certificate" },
+  { re: /\b12th|\b10th|\bmatric|\bsslc|\bhsc\b|\bintermediate|\bhigher secondary|\bsenior secondary|\bpuc\b|\bhigh school|\bsecondary/i, category: "high school" },
+]
+function educationCredential(q?: string) {
+  if (!q) return undefined
+  for (const rule of EDUCATION_CREDENTIAL_RULES) {
+    if (rule.re.test(q)) {
+      return { "@type": "EducationalOccupationalCredential", credentialCategory: rule.category }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Parse a free-text experience requirement to whole months for a valid
+ * OccupationalExperienceRequirements. Google flags a plain-string
+ * experienceRequirements as "invalid". Returns undefined when no number is
+ * present and the text isn't clearly fresher/entry-level, so the caller omits it.
+ */
+function experienceMonths(raw?: string): number | undefined {
+  if (!raw) return undefined
+  const s = raw.toLowerCase().trim()
+  if (!s) return undefined
+  const num = s.match(/\d+(?:\.\d+)?/)
+  if (!num) {
+    return /fresher|fresh\b|entry[\s-]?level|no experience/.test(s) ? 0 : undefined
+  }
+  const n = parseFloat(num[0])
+  if (!Number.isFinite(n)) return undefined
+  const months = /month|mos\b/.test(s) ? n : n * 12
+  const rounded = Math.round(months)
+  return rounded >= 0 && rounded <= 600 ? rounded : undefined
+}
+
 export function jobPostingSchema(job: JobPostingSchemaInput) {
   const base = siteUrl()
-  const datePosted = job.datePosted || new Date().toISOString()
+  // Always emit ISO-8601 — upstream sources sometimes carry display-format dates
+  // (e.g. "30 Jun 2026"), which Google rejects as an invalid datePosted.
+  const datePosted = toIsoOrUndefined(job.datePosted) || new Date().toISOString()
   // Google strongly recommends validThrough; default to 30 days after posting.
   const validThrough =
-    job.validThrough || new Date(new Date(datePosted).getTime() + 30 * 86400000).toISOString()
+    toIsoOrUndefined(job.validThrough) ||
+    new Date(new Date(datePosted).getTime() + 30 * 86400000).toISOString()
+
+  const educationCred = educationCredential(job.educationRequirements)
+  const expMonths = experienceMonths(job.experienceRequirements)
 
   // baseSalary must be numeric for Google Rich Results — only emit when we have
   // a parsed amount (an invalid string baseSalary is worse than none).
@@ -143,8 +202,10 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     url: job.url.startsWith("http") ? job.url : `${base}${job.url}`,
     ...(job.industry ? { industry: job.industry } : {}),
     ...(job.qualifications ? { qualifications: job.qualifications } : {}),
-    ...(job.educationRequirements ? { educationRequirements: job.educationRequirements } : {}),
-    ...(job.experienceRequirements ? { experienceRequirements: job.experienceRequirements } : {}),
+    ...(educationCred ? { educationRequirements: educationCred } : {}),
+    ...(expMonths !== undefined
+      ? { experienceRequirements: { "@type": "OccupationalExperienceRequirements", monthsOfExperience: expMonths } }
+      : {}),
     directApply: true,
   }
 }

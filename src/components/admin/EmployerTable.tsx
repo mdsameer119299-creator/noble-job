@@ -15,6 +15,7 @@ type Row = {
 export function EmployerTable() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
   const toast = useToast()
 
   const load = () => {
@@ -43,7 +44,21 @@ export function EmployerTable() {
 
   if (loading) return <p style={{ color: '#6b7280', fontSize: 13 }}>Loading employers…</p>
 
+  const needle = q.trim().toLowerCase()
+  const visible = needle
+    ? rows.filter(r =>
+        [r.company_name, r.city, r.industry, r.users?.email, r.status].filter(Boolean).join(' ').toLowerCase().includes(needle),
+      )
+    : rows
+
   return (
+    <div>
+      <input
+        value={q}
+        onChange={e => setQ(e.target.value)}
+        placeholder="Search employers by company, city or email…"
+        style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 12 }}
+      />
     <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', overflow: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
@@ -56,7 +71,7 @@ export function EmployerTable() {
           </tr>
         </thead>
         <tbody>
-          {rows.map(r => (
+          {visible.map(r => (
             <tr key={r.id} style={{ borderTop: '1px solid #f0f4ff' }}>
               <td style={{ padding: 12, fontWeight: 700 }}>
                 <Link href={`/admin/employers/${r.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{r.company_name}</Link>
@@ -77,6 +92,7 @@ export function EmployerTable() {
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }

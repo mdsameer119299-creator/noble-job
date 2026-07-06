@@ -34,8 +34,15 @@ export function buildPageMetadata(input: PageSeoInput): Metadata {
 
   const ogImage = `${base}${ORG_LOGO}`
 
+  // The root layout applies a `%s | Noble Job` title template. Some page configs
+  // (e.g. landing city/category metaTitle) already bake the brand suffix in,
+  // which the template would duplicate ("… | Noble Job | Noble Job"). When the
+  // brand is already present, emit an absolute title to bypass the template.
+  const titleHasBrand = /\|\s*noble job\s*$/i.test(input.title)
+  const title: Metadata["title"] = titleHasBrand ? { absolute: input.title } : input.title
+
   return {
-    title: input.title,
+    title,
     description: input.description,
     keywords,
     alternates: { canonical: url },

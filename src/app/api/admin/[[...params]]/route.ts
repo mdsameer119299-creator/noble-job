@@ -98,6 +98,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ data })
   }
 
+  // Per-job application counts: GET /api/admin/application-counts → { data: { jobId: n } }
+  if (route === "application-counts") {
+    const { data } = await supabaseAdmin.from("applications").select("job_id")
+    const counts: Record<string, number> = {}
+    for (const r of (data || []) as { job_id: string | null }[]) {
+      if (r.job_id) counts[r.job_id] = (counts[r.job_id] || 0) + 1
+    }
+    return NextResponse.json({ data: counts })
+  }
+
   if (route === "pending-jobs") {
     const { data } = await supabaseAdmin.from("jobs").select("*").eq("status", "pending").order("posted_at", { ascending: false })
     return NextResponse.json({ data: data || [] })
