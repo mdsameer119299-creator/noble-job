@@ -12,6 +12,7 @@ import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getStateBySlug } from "@/lib/config/govtTaxonomy"
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs"
 import { GovtJobJsonLd } from "@/components/govt/GovtJobJsonLd"
+import { govtClassifiable, isIndexable } from "@/lib/jobs/govtProvenance"
 import { RelatedGovtJobs } from "@/components/govt/RelatedGovtJobs"
 import { GovtHowToApply } from "@/components/govt/GovtHowToApply"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
@@ -38,6 +39,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     path: `/jobs/govt/${job.slug || job.id}`,
     keywords: [job.org, job.post, job.title, "government jobs", "sarkari naukri", job.qualification, ...(job.categoryTags || [])],
     ogType: "article",
+    // Fail closed: a govt row without a real official/notification URL is not a
+    // verified OFFICIAL opportunity, so it must not be indexed.
+    noIndex: !isIndexable(govtClassifiable(job)),
   })
 }
 

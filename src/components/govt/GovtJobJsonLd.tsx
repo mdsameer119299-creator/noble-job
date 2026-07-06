@@ -3,6 +3,7 @@ import { faqPageSchema, jobPostingSchema } from "@/lib/seo/schema"
 import { siteUrl } from "@/lib/seo/constants"
 import { parseSalary } from "@/lib/seo/salary"
 import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
+import { govtClassifiable, isSchemaEligible } from "@/lib/jobs/govtProvenance"
 import type { GovtJob } from "@/types/govtJob"
 
 /** Known Indian state/UT names (lowercased) — a state is never a city locality. */
@@ -50,6 +51,9 @@ function localityFor(location?: string, state?: string): string | undefined {
 
 /** Schema.org JobPosting + optional FAQ for a government vacancy. */
 export function GovtJobJsonLd({ job }: { job: GovtJob }) {
+  // Fail closed: emit JobPosting only for a genuine OFFICIAL row (real official
+  // or notification URL), never merely because it is on the government board.
+  if (!isSchemaEligible(govtClassifiable(job))) return null
   const base = siteUrl()
   const url = `${base}/jobs/govt/${job.slug || job.id}`
   const s = parseSalary(job.salary)

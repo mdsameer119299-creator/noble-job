@@ -9,6 +9,7 @@ import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
 import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 import { isIndexable } from "@/lib/jobs/provenance"
+import { govtClassifiable } from "@/lib/jobs/govtProvenance"
 
 /**
  * Sitemap policy: every emitted URL must resolve to HTTP 200 with real content
@@ -122,9 +123,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.75,
     }))
 
-  // ── Govt job detail pages — active rows, redirect sources removed ──
+  // ── Govt job detail pages — active rows that pass the fail-closed OFFICIAL
+  //    gate (real official/notification URL), redirect sources removed ──
   const govtRows = await getActiveGovtRows()
   const govtJobRoutes: MetadataRoute.Sitemap = govtRows
+    .filter(j => isIndexable(govtClassifiable(j)))
     .map(j => `/jobs/govt/${j.slug || j.id}`)
     .filter(path => !REDIRECT_SOURCE_PATHS.has(path))
     .map(path => ({
@@ -165,20 +168,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (supabase) {
         const { data: jobs } = await supabase
           .from("jobs")
-          .select("id, posted_at, provenance, apply_url, employer_id, job_status")
+          .select("id, posted_at, provenance, apply_url, employer_id, is_verified, job_status")
           .eq("status", "active")
           .limit(PER_BOARD_LIMIT)
         privateJobRoutes = (jobs || [])
           .filter(job => {
             const r = job as Record<string, unknown>
             // Defense-in-depth: even an "active" DB row is only listed when it
-            // passes the genuine-provenance publication gate.
+            // passes the genuine-provenance publication gate (fail closed).
             return isIndexable({
               id: String(r.id),
               board: "private",
               provenance: r.provenance as string | undefined,
               apply_url: r.apply_url as string | undefined,
               employer_id: r.employer_id as string | undefined,
+              is_verified: Boolean(r.is_verified),
               jobStatus: (r.job_status as string | undefined) ?? "LIVE_JOB",
             })
           })

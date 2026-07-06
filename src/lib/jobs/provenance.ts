@@ -4,24 +4,38 @@
  *
  * Provenance is ORTHOGONAL to openness (`jobStatus` LIVE/VERIFIED/ARCHIVED).
  * Openness answers "is this role currently open?"; provenance answers "is this a
- * real, sourced opportunity, or demo/showcase content?".
+ * real, sourced opportunity, or something we cannot vouch for?".
  *
- *   GENUINE  → EMPLOYER  (posted by a verified employer via the DB)
- *              AGGREGATED (pulled from a real external API — e.g. Himalayas)
- *              CURATED    (a real opening entered by an admin with a real source)
- *              OFFICIAL   (a government notification from ingestion)
- *   SYNTHETIC → generated demo/showcase inventory. Populates the site so pages
- *              feel full, but must NEVER be represented as a genuine, verified,
- *              indexable, schema-bearing, countable, or distributable opportunity.
+ *   GENUINE  → EMPLOYER   (posted by an owning employer via the portal)
+ *              AGGREGATED (pulled from a recognized trusted API + real apply URL)
+ *              CURATED    (admin-entered with explicit editorial/source evidence
+ *                          + real apply URL)
+ *              OFFICIAL   (government ingestion WITH a real official/notification
+ *                          URL — never just because board === "govt")
+ *   NON-GENUINE →
+ *              SYNTHETIC     (generated demo/showcase inventory)
+ *              UNCLASSIFIED  (unknown / legacy / insufficient evidence)
+ *
+ * FAIL CLOSED: anything we cannot positively justify as genuine is
+ * `UNCLASSIFIED`, which is treated exactly like synthetic — non-genuine,
+ * non-indexable, non-schema-eligible, non-distributable, non-verified, and
+ * non-countable. Genuineness must be *earned* with evidence, never assumed from
+ * the absence of a marker.
  *
  * Every trust surface (sitemap, JobPosting JSON-LD, "verified" badges, public
  * counters, and outbound distribution) routes its decision through the
- * predicates below so synthetic content can never leak through as genuine.
+ * predicates below.
  */
 
-export type Provenance = "EMPLOYER" | "AGGREGATED" | "CURATED" | "OFFICIAL" | "SYNTHETIC"
+export type Provenance =
+  | "EMPLOYER"
+  | "AGGREGATED"
+  | "CURATED"
+  | "OFFICIAL"
+  | "SYNTHETIC"
+  | "UNCLASSIFIED"
 
-/** Every provenance that represents a real opportunity (i.e. not demo content). */
+/** Every provenance that represents a real, vouched-for opportunity. */
 export const GENUINE_PROVENANCE: ReadonlySet<Provenance> = new Set<Provenance>([
   "EMPLOYER",
   "AGGREGATED",
@@ -29,7 +43,19 @@ export const GENUINE_PROVENANCE: ReadonlySet<Provenance> = new Set<Provenance>([
   "OFFICIAL",
 ])
 
-const ALL_PROVENANCE: ReadonlySet<string> = new Set<string>([...GENUINE_PROVENANCE, "SYNTHETIC"])
+/** All values the column/type may legally hold (genuine + non-genuine). */
+export const KNOWN_PROVENANCE: ReadonlySet<string> = new Set<string>([
+  ...GENUINE_PROVENANCE,
+  "SYNTHETIC",
+  "UNCLASSIFIED",
+])
+
+/**
+ * Recognized trusted aggregator source identifiers (lowercased substrings). A
+ * row is only AGGREGATED when its `source` matches one of these AND it has a
+ * real apply URL. Add new aggregators here as they are vetted.
+ */
+const TRUSTED_AGGREGATOR_SOURCES: readonly string[] = ["himalayas"]
 
 /**
  * Loose shape accepted from any board (Job / WfhJob / AbroadJob / GovtJob or a
@@ -46,9 +72,17 @@ export interface Classifiable {
   applyUrl?: string | null
   apply_url?: string | null
   employer_id?: string | null
+  /** Verification evidence for employer ownership. */
+  is_verified?: boolean | null
+  employer_verified?: boolean | null
+  verified?: boolean | null
+  /** Government official / notification URLs (any casing / board). */
   officialUrl?: string | null
   official_url?: string | null
-  verified?: boolean | null
+  notificationUrl?: string | null
+  notification_url?: string | null
+  notificationPdf?: string | null
+  notification_pdf?: string | null
 }
 
 // Generated demo inventory ids look like `live-priv-1`, `ver-wfh-7`,
@@ -61,9 +95,27 @@ function applyUrlOf(j: Classifiable): string {
   return (j.applyUrl ?? j.apply_url ?? "").toString().trim()
 }
 
+function officialUrlOf(j: Classifiable): string {
+  return (
+    j.officialUrl ??
+    j.official_url ??
+    j.notificationUrl ??
+    j.notification_url ??
+    j.notificationPdf ??
+    j.notification_pdf ??
+    ""
+  )
+    .toString()
+    .trim()
+}
+
+function sourceOf(j: Classifiable): string {
+  return (j.source ?? "").toString().trim().toLowerCase()
+}
+
 /**
- * True when an apply URL points to a real external application destination.
- * A missing URL, a bare "#", or any example.* placeholder is not real.
+ * True when a URL points to a real external destination. A missing URL, a bare
+ * "#", or any example.* placeholder is not real.
  */
 export function hasRealApplyUrl(url?: string | null): boolean {
   const u = (url ?? "").trim()
@@ -72,43 +124,83 @@ export function hasRealApplyUrl(url?: string | null): boolean {
   return /^https?:\/\//i.test(u)
 }
 
+/** Real official/notification URL evidence (government). */
+function hasRealOfficialUrl(j: Classifiable): boolean {
+  return hasRealApplyUrl(officialUrlOf(j))
+}
+
+/** Trusted employer ownership + verification evidence. */
+function hasEmployerEvidence(j: Classifiable): boolean {
+  return Boolean(j.employer_id) && (j.is_verified === true || j.employer_verified === true || j.verified === true)
+}
+
+function isTrustedAggregatorSource(source: string): boolean {
+  return TRUSTED_AGGREGATOR_SOURCES.some(t => source.includes(t))
+}
+
+/** Explicit editorial/curation evidence in the free-text source. */
+function hasEditorialEvidence(source: string): boolean {
+  return /\bcurated\b|\beditorial\b/.test(source)
+}
+
 /**
- * Resolve provenance for any job-like object. An explicit, valid `provenance`
- * wins (so honestly-stamped rows are authoritative); otherwise infer defensively
- * so legacy / unstamped rows are still classified correctly.
+ * Resolve provenance for any job-like object. FAIL CLOSED:
+ *  1. An explicit, KNOWN provenance value wins (incl. SYNTHETIC / UNCLASSIFIED).
+ *  2. Clear demo-inventory / placeholder markers → SYNTHETIC.
+ *  3. Genuine classes are only inferred when their specific EVIDENCE is present.
+ *  4. Everything else (unknown / legacy / insufficient evidence) → UNCLASSIFIED.
+ *     We NEVER default an unrecognized row to a genuine class.
  */
 export function classifyProvenance(j: Classifiable): Provenance {
   const explicit = typeof j.provenance === "string" ? j.provenance.toUpperCase() : ""
-  if (ALL_PROVENANCE.has(explicit)) return explicit as Provenance
+  if (KNOWN_PROVENANCE.has(explicit)) return explicit as Provenance
 
   const id = (j.id ?? "").toString()
-  const source = (j.source ?? "").toString().trim().toLowerCase()
+  const source = sourceOf(j)
   const url = applyUrlOf(j)
 
-  // ── Clearly generated demo inventory ──────────────────────────────────
+  // ── Clearly generated demo inventory / placeholder ────────────────────
   if (SYNTHETIC_ID_PREFIX.test(id)) return "SYNTHETIC"
   if (SYNTHETIC_SOURCES.has(source)) return "SYNTHETIC"
-  // A placeholder/example apply URL is never a genuine opening.
+  // A present-but-placeholder apply URL is never a genuine opening.
   if (url && !hasRealApplyUrl(url)) return "SYNTHETIC"
 
-  // ── Genuine sources ───────────────────────────────────────────────────
-  if (j.board === "govt" || j.officialUrl || j.official_url) return "OFFICIAL"
-  if (source.includes("himalayas")) return "AGGREGATED"
-  if (j.employer_id) return "EMPLOYER"
-  return "CURATED"
+  // ── Genuine classes — inferred ONLY with positive evidence ────────────
+  // Government: never OFFICIAL from board alone; require a real official URL.
+  if (j.board === "govt") {
+    return hasRealOfficialUrl(j) ? "OFFICIAL" : "UNCLASSIFIED"
+  }
+  // A real official/notification URL on a non-govt row still signals government.
+  if (hasRealOfficialUrl(j)) return "OFFICIAL"
+  if (isTrustedAggregatorSource(source) && hasRealApplyUrl(url)) return "AGGREGATED"
+  if (hasEmployerEvidence(j)) return "EMPLOYER"
+  if (hasEditorialEvidence(source) && hasRealApplyUrl(url)) return "CURATED"
+
+  // ── Fail closed ───────────────────────────────────────────────────────
+  return "UNCLASSIFIED"
 }
 
-/** True when the row represents a real, sourced opportunity (not demo content). */
+/**
+ * True when the row represents a real, sourced opportunity. Re-validates the
+ * minimal evidence for the classified provenance so that even an explicitly
+ * stamped-but-malformed row cannot pass as genuine (defense in depth).
+ */
 export function isGenuine(j: Classifiable): boolean {
   const p = classifyProvenance(j)
   if (!GENUINE_PROVENANCE.has(p)) return false
-  // Government notifications carry an official notification URL, not an apply URL.
-  if (p === "OFFICIAL") return Boolean(j.officialUrl || j.official_url || j.board === "govt")
-  // Verified employer postings use the on-site internal application flow, so an
-  // external apply URL is optional for them.
-  if (p === "EMPLOYER") return true
-  // Aggregated (external API) and curated rows must lead to a real application.
-  return hasRealApplyUrl(applyUrlOf(j))
+  switch (p) {
+    case "OFFICIAL":
+      return hasRealOfficialUrl(j)
+    case "EMPLOYER":
+      // Employer postings use the on-site internal application flow, so an
+      // external apply URL is optional — but ownership must be present.
+      return Boolean(j.employer_id)
+    case "AGGREGATED":
+    case "CURATED":
+      return hasRealApplyUrl(applyUrlOf(j))
+    default:
+      return false
+  }
 }
 
 /** Openness axis: an ARCHIVED role is not an open position. */
@@ -137,8 +229,9 @@ export function isCountableAsGenuine(j: Classifiable): boolean {
 }
 
 /**
- * May we present a "Verified" trust badge? Never for synthetic content, even
- * when its legacy `jobStatus` is VERIFIED_JOB or a stale `verified` flag is set.
+ * May we present a "Verified" trust badge? Never for synthetic / unclassified
+ * content, even when a legacy `jobStatus` is VERIFIED_JOB or a stale `verified`
+ * flag is set.
  */
 export function hasVerifiedTrust(j: Classifiable): boolean {
   if (!isGenuine(j)) return false

@@ -199,6 +199,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
       board: "private",   // employer postings are always the private board
       status: asDraft ? "draft" : "pending",  // draft, or enter the admin approval gate
       source: "Employer",
+      // Provenance is decided here (server-side), never taken from the body: an
+      // authenticated employer posting is genuine EMPLOYER content.
+      provenance: "EMPLOYER",
     }
     const { error, data } = await sb.from("jobs").insert(insertRow as never).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
