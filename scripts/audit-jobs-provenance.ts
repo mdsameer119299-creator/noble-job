@@ -30,6 +30,8 @@ if (fs.existsSync(envPath)) {
 
 type JobRow = {
   id: string
+  title: string | null
+  company: string | null
   provenance: string | null
   source: string | null
   board: string | null
@@ -65,24 +67,41 @@ async function main() {
   const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
   // READ-ONLY: a single paged SELECT. No insert/update/delete anywhere.
+  // Pre-migration the `provenance` column does not exist yet — that is the
+  // normal case for this audit, so fall back to a column list without it.
   const PAGE = 1000
   const rows: JobRow[] = []
+  let hasProvenanceColumn = true
+  const columns = (withProv: boolean) =>
+    `id, title, company, ${withProv ? "provenance, " : ""}source, board, apply_url, employer_id, is_verified, job_status, status`
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from("jobs")
-      .select("id, provenance, source, board, apply_url, employer_id, is_verified, job_status, status")
+      .select(columns(hasProvenanceColumn))
       .range(from, from + PAGE - 1)
+    if (error && hasProvenanceColumn && /provenance/.test(error.message)) {
+      hasProvenanceColumn = false
+      ;({ data, error } = await sb
+        .from("jobs")
+        .select(columns(false))
+        .range(from, from + PAGE - 1))
+    }
     if (error) {
       console.error("✗ Query failed:", error.message)
       process.exitCode = 1
       return
     }
-    const batch = (data || []) as JobRow[]
+    const batch = (data || []) as unknown as JobRow[]
     rows.push(...batch)
     if (batch.length < PAGE) break
   }
+  if (!hasProvenanceColumn) {
+    console.log("ℹ jobs.provenance column does not exist yet (migration not applied) — auditing pre-migration state.")
+  }
 
   const projected = new Map<Provenance, string[]>(BUCKETS.map(b => [b, []]))
+  const label = (r: JobRow) =>
+    `${r.id}${r.title ? ` — ${String(r.title).slice(0, 48)}` : ""}${r.company ? ` (${String(r.company).slice(0, 32)})` : ""}`
   const storedCounts = new Map<string, number>()
   let genuineCount = 0
   let activeGenuine = 0
@@ -102,7 +121,7 @@ async function main() {
       is_verified: r.is_verified,
       job_status: r.job_status,
     })
-    projected.get(p)!.push(r.id)
+    projected.get(p)!.push(label(r))
 
     const genuine = isGenuine({
       id: r.id,
@@ -133,8 +152,8 @@ async function main() {
   for (const b of BUCKETS) {
     const ids = projected.get(b)!
     const pct = total ? ((ids.length / total) * 100).toFixed(1) : "0.0"
-    const sample = ids.slice(0, 5).join(", ")
-    console.log(`  ${b.padEnd(14)} ${String(ids.length).padStart(6)}  (${pct}%)${sample ? `  e.g. ${sample}` : ""}`)
+    console.log(`  ${b.padEnd(14)} ${String(ids.length).padStart(6)}  (${pct}%)`)
+    for (const s of ids.slice(0, 5)) console.log(`      · ${s}`)
   }
 
   const uncl = projected.get("UNCLASSIFIED")!.length
