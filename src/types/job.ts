@@ -14,6 +14,14 @@
  */
 export type JobStatus = "LIVE_JOB" | "VERIFIED_JOB" | "ARCHIVED_JOB"
 
+/**
+ * Provenance is ORTHOGONAL to `jobStatus`: it records whether a row is a real
+ * sourced opportunity or generated demo/showcase content. See
+ * `src/lib/jobs/provenance.ts` for the classifier + publication gate.
+ */
+import type { Provenance } from "@/lib/jobs/provenance"
+export type { Provenance }
+
 /** Sort priority: live first, verified second, archived last. */
 export const JOB_STATUS_PRIORITY: Record<JobStatus, number> = {
   LIVE_JOB: 0,
@@ -36,6 +44,10 @@ export interface Job {
   skills:      string[]
   badge?:      string
   jobStatus?:  JobStatus
+  /** Real sourced opportunity vs generated demo content. See provenance.ts. */
+  provenance?: Provenance
+  /** Owning employer id — evidence for EMPLOYER provenance genuineness checks. */
+  employer_id?: string
   applyUrl:    string
   desc:        string
   posted:      string

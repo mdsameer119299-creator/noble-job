@@ -3,7 +3,8 @@ import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useL
 import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
-import type { Job, JobFilter, JobSearchResult } from "@/types/job"
+import { classifyProvenance, KNOWN_PROVENANCE } from "@/lib/jobs/provenance"
+import type { Job, JobFilter, JobSearchResult, Provenance } from "@/types/job"
 
 async function getSupabaseClient() {
   const { createClient } = await import("@/lib/supabase/server")
@@ -58,6 +59,24 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
         skills: (r.skills as string[]) || [],
         badge: r.badge as string | undefined,
         jobStatus: (r.job_status as Job["jobStatus"]) || (r.is_verified ? "VERIFIED_JOB" : "LIVE_JOB"),
+        // A stored `provenance` wins; otherwise classify defensively (fail
+        // closed) so every read is gate-ready. Legacy rows without sufficient
+        // evidence resolve to UNCLASSIFIED, not a genuine class.
+        provenance:
+          (KNOWN_PROVENANCE.has(String(r.provenance || "").toUpperCase())
+            ? (r.provenance as Provenance)
+            : undefined) ||
+          classifyProvenance({
+            id: String(r.id),
+            board: "private",
+            source: r.source as string | undefined,
+            apply_url: r.apply_url as string | undefined,
+            employer_id: r.employer_id as string | undefined,
+            is_verified: Boolean(r.is_verified),
+            job_status: r.job_status as string | undefined,
+          }),
+        // Ownership evidence carried through for downstream genuineness checks.
+        employer_id: r.employer_id ? String(r.employer_id) : undefined,
         applyUrl: String(r.apply_url || "#"),
         desc: String(r.description || ""),
         posted: String(r.posted_at || ""),

@@ -9,6 +9,8 @@ import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemp
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
+import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
+import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -22,6 +24,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     path: `/jobs/wfh/${id}`,
     keywords: ['Work From Home Jobs', 'WFH Jobs', 'remote jobs India', job.company, job.cat, job.title],
     ogType: 'article',
+    // Synthetic/demo or filled roles are browsable but must not be indexed.
+    noIndex: !isIndexable(job),
   })
 }
 
@@ -84,7 +88,9 @@ export default async function WfhJobDetailPage({ params }: Props) {
       badges={['🏠 Work From Home', `💼 ${job.type || 'Full Time'}`, `💰 ${salaryBadge}`, `🎓 ${job.qualification || 'Any Graduate'}`, `📅 ${job.experience || 'Freshers'}`]}
       content={content}
       jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />}
+      applySlot={isGenuine(job)
+        ? <ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />
+        : <SampleListingNotice />}
       internalLinks={{
         list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },
         category: { href: '/work-from-home-jobs', label: 'Work From Home Jobs Guide' },

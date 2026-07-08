@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdminApi } from "@/lib/auth/verifyAdminApi"
 import { getAdminStats, approveJob, rejectJob, toggleEmployerStatus } from "@/lib/services/adminService"
+import { hasRealApplyUrl } from "@/lib/jobs/provenance"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   const auth = await requireAdminApi()
@@ -200,7 +201,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
     // Respect the requested status (draft → pending, publish → active, close → closed).
     const ALLOWED = new Set(["active", "pending", "closed"])
     const status = ALLOWED.has(body.status) ? body.status : "active"
-    const { data, error } = await supabaseAdmin.from("jobs").insert({ ...body, status }).select().single()
+    // Provenance is decided server-side from evidence, never trusted from the
+    // body: an admin-curated job is CURATED only when it captures an explicit
+    // source AND a real apply URL; otherwise it stays UNCLASSIFIED (fail closed).
+    const source = typeof body.source === "string" ? body.source.trim() : ""
+    const applyUrl = body.apply_url ?? body.applyUrl
+    const provenance = source && hasRealApplyUrl(applyUrl) ? "CURATED" : "UNCLASSIFIED"
+    const { data, error } = await supabaseAdmin
+      .from("jobs")
+      .insert({ ...body, status, provenance })
+      .select()
+      .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
     return NextResponse.json({ data })
   }

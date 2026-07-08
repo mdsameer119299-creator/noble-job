@@ -4,17 +4,21 @@ import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { GOVT_TOP_CATEGORIES, INDIAN_STATES, GOVT_QUALIFICATIONS } from "@/lib/config/govtTaxonomy"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getGovtJobsFiltered, getGovtContent } from "@/lib/services/govtJobService"
-import { WFH_INVENTORY, ABROAD_INVENTORY, PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
+import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
 import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
 import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
+import { isIndexable } from "@/lib/jobs/provenance"
+import { govtClassifiable } from "@/lib/jobs/govtProvenance"
 
 /**
- * Sitemap policy: every emitted URL must resolve to HTTP 200 with real content.
- * We therefore:
- *   • only list job URLs whose IDs actually resolve in the detail route's data
- *     source (live/verified inventory + active govt rows + active DB jobs);
- *   • exclude ARCHIVED demo vacancies (200 but "position filled" → soft 404);
+ * Sitemap policy: every emitted URL must resolve to HTTP 200 with real content
+ * AND represent a genuine opportunity. We therefore:
+ *   • only list job URLs that pass the publication gate `isIndexable`
+ *     (`src/lib/jobs/provenance.ts`): genuine provenance + currently open. This
+ *     excludes ALL synthetic/demo inventory (private/WFH/abroad showcase rows)
+ *     and any ARCHIVED (filled) role — their detail pages still return 200 for
+ *     on-site browsing but are unlisted and noindex;
  *   • gate every govt category/qualification URL on a real result count so we
  *     never submit an empty listing (soft 404). State pages are always safe
  *     because the route falls back to the national pool;
@@ -27,8 +31,6 @@ const REDIRECT_SOURCE_PATHS = new Set<string>([
   "/jobs",
   "/jobs/govt/rrb-ntpc-graduate-level-recruitment-2026",
 ])
-
-const isIndexable = (j: { jobStatus?: string }) => j.jobStatus !== "ARCHIVED_JOB"
 
 // Safety cap per board so a single sitemap stays well within the 50k-URL limit.
 const PER_BOARD_LIMIT = 2000
@@ -121,9 +123,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.75,
     }))
 
-  // ── Govt job detail pages — active rows, redirect sources removed ──
+  // ── Govt job detail pages — active rows that pass the fail-closed OFFICIAL
+  //    gate (real official/notification URL), redirect sources removed ──
   const govtRows = await getActiveGovtRows()
   const govtJobRoutes: MetadataRoute.Sitemap = govtRows
+    .filter(j => isIndexable(govtClassifiable(j)))
     .map(j => `/jobs/govt/${j.slug || j.id}`)
     .filter(path => !REDIRECT_SOURCE_PATHS.has(path))
     .map(path => ({
@@ -133,8 +137,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }))
 
-  // ── WFH / Abroad — generated inventory IDs always resolve (DB → local
-  //    fallback). Archived demo vacancies excluded. ──
+  // ── WFH / Abroad — only genuine, currently-open rows are listed. The current
+  //    inventory is synthetic showcase content, so these resolve to empty until
+  //    real WFH/abroad sources are wired; their detail pages still 200 on-site. ──
   const wfhJobRoutes: MetadataRoute.Sitemap = WFH_INVENTORY.filter(isIndexable)
     .slice(0, PER_BOARD_LIMIT)
     .map(j => ({
@@ -153,8 +158,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }))
 
-  // ── Private — prefer active DB rows; fall back to live/verified inventory
-  //    so the sitemap is never empty and every ID resolves to 200. ──
+  // ── Private — only genuine active DB rows are listed. Synthetic inventory is
+  //    NOT a fallback here: demo rows must never be submitted to search engines.
+  //    (Detail pages still 200 for on-site browsing; they're just unlisted.) ──
   let privateJobRoutes: MetadataRoute.Sitemap = []
   if (isSupabaseConfigured()) {
     try {
@@ -162,29 +168,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (supabase) {
         const { data: jobs } = await supabase
           .from("jobs")
-          .select("id, posted_at")
+          .select("id, posted_at, provenance, apply_url, employer_id, is_verified, job_status")
           .eq("status", "active")
           .limit(PER_BOARD_LIMIT)
-        privateJobRoutes = (jobs || []).map(job => ({
-          url: `${base}/jobs/private/${(job as { id: string }).id}`,
-          lastModified: new Date((job as { posted_at: string }).posted_at || now),
-          changeFrequency: "weekly",
-          priority: 0.8,
-        }))
+        privateJobRoutes = (jobs || [])
+          .filter(job => {
+            const r = job as Record<string, unknown>
+            // Defense-in-depth: even an "active" DB row is only listed when it
+            // passes the genuine-provenance publication gate (fail closed).
+            return isIndexable({
+              id: String(r.id),
+              board: "private",
+              provenance: r.provenance as string | undefined,
+              apply_url: r.apply_url as string | undefined,
+              employer_id: r.employer_id as string | undefined,
+              is_verified: Boolean(r.is_verified),
+              jobStatus: (r.job_status as string | undefined) ?? "LIVE_JOB",
+            })
+          })
+          .map(job => ({
+            url: `${base}/jobs/private/${(job as { id: string }).id}`,
+            lastModified: new Date((job as { posted_at: string }).posted_at || now),
+            changeFrequency: "weekly" as const,
+            priority: 0.8,
+          }))
       }
     } catch {
-      /* fall through to inventory */
+      /* no private job URLs when the DB is unreachable */
     }
-  }
-  if (privateJobRoutes.length === 0) {
-    privateJobRoutes = PRIVATE_INVENTORY.filter(isIndexable)
-      .slice(0, PER_BOARD_LIMIT)
-      .map(j => ({
-        url: `${base}/jobs/private/${j.id}`,
-        lastModified: now,
-        changeFrequency: "weekly" as const,
-        priority: 0.75,
-      }))
   }
 
   // De-duplicate by URL (defensive — a govt slug could echo a taxonomy path).

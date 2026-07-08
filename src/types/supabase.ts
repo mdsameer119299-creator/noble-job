@@ -65,6 +65,7 @@ export interface Database {
           experience_required: string | null
           status: string
           job_status: string | null
+          provenance: string | null
           board: string
           source: string | null
           apply_url: string | null
@@ -89,6 +90,7 @@ export interface Database {
           experience_required?: string | null
           status?: string
           job_status?: string | null
+          provenance?: string | null
           board?: string
           source?: string | null
           apply_url?: string | null
@@ -113,6 +115,7 @@ export interface Database {
           experience_required?: string | null
           status?: string
           job_status?: string | null
+          provenance?: string | null
           board?: string
           source?: string | null
           apply_url?: string | null

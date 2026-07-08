@@ -7,6 +7,8 @@ import { AbroadJobJsonLd } from '@/components/seo/AbroadJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
+import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
+import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -20,6 +22,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     path: `/jobs/abroad/${id}`,
     keywords: ['Abroad Jobs', 'overseas jobs India', `jobs in ${job.country}`, job.company, job.category, job.title],
     ogType: 'article',
+    // Synthetic/demo or filled roles are browsable but must not be indexed.
+    noIndex: !isIndexable(job),
   })
 }
 
@@ -79,11 +83,13 @@ export default async function AbroadJobDetailPage({ params }: Props) {
       badges={[`🌍 ${job.country}`, `🏢 ${job.company}`, `💰 ${job.salary}`, `💼 ${job.type || 'Full Time'}`, `🧑‍💼 ${job.experience || 'Any'}`]}
       content={content}
       jsonLdSlot={<AbroadJobJsonLd job={job} content={content} />}
-      applySlot={
-        <a href={job.apply_url || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block', background: 'linear-gradient(135deg,#0369a1,#0d1f4e)', color: '#fff', padding: '13px', borderRadius: 10, fontWeight: 900, textDecoration: 'none', textAlign: 'center', fontSize: 15 }}>
-          Apply on Official Site →
-        </a>
-      }
+      applySlot={isGenuine(job)
+        ? (
+          <a href={job.apply_url || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block', background: 'linear-gradient(135deg,#0369a1,#0d1f4e)', color: '#fff', padding: '13px', borderRadius: 10, fontWeight: 900, textDecoration: 'none', textAlign: 'center', fontSize: 15 }}>
+            Apply on Official Site →
+          </a>
+        )
+        : <SampleListingNotice />}
       internalLinks={{
         list: { href: '/jobs-abroad', label: 'Jobs Abroad Guide' },
         category: { href: '/jobs/abroad', label: `More Jobs in ${job.country}` },

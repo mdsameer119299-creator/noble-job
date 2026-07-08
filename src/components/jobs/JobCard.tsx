@@ -5,6 +5,7 @@ import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL } from '@/lib/config/jobStrategy'
+import { isGenuine } from '@/lib/jobs/provenance'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
 
@@ -13,7 +14,9 @@ interface JobCardProps { job: Job; onSave?: (id: string) => void }
 export function JobCard({ job, onSave }: JobCardProps) {
   const initials = job.company?.slice(0, 2).toUpperCase() || 'NJ'
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
-  const isActive = isActiveStatus(job.jobStatus)
+  const genuine = isGenuine(job)
+  // Only a genuine, currently-open role may present a live "Apply Now" action.
+  const canApply = genuine && isActiveStatus(job.jobStatus)
   const [applyOpen, setApplyOpen] = useState(false)
   const [applied, setApplied] = useState(false)
   return (
@@ -35,10 +38,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
               {job.jobStatus && (
                 <JobStatusBadge
                   status={job.jobStatus}
+                  synthetic={!genuine}
                   label={isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0 ? ARCHIVED_ALT_LABEL : undefined}
                 />
               )}
-              {!isArchived && job.badge && <Badge variant={job.badge === 'Hot' ? 'hot' : 'new'}>{job.badge}</Badge>}
+              {!isArchived && genuine && job.badge && <Badge variant={job.badge === 'Hot' ? 'hot' : 'new'}>{job.badge}</Badge>}
             </div>
           </div>
           <div style={{ fontSize: 13.5, color: '#374151', fontWeight: 600, marginTop: 2 }}>{job.company}</div>
@@ -67,13 +71,15 @@ export function JobCard({ job, onSave }: JobCardProps) {
         <span style={{ fontSize: 12, color: '#9ca3af' }}>
           {isArchived
             ? `🗄 Archived Vacancy · ${job.source || 'Reference'}`
-            : `${job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (job.source || 'Verified')} · ${formatDate((job as any).posted_at || job.posted || '')}`}
+            : !genuine
+              ? '🧪 Sample listing · Demo data'
+              : `${job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (job.source || 'Verified')} · ${formatDate((job as any).posted_at || job.posted || '')}`}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           {onSave && (
             <button onClick={() => onSave(job.id)} style={{ background: 'transparent', border: '1.5px solid #e2e8f0', color: '#6b7280', padding: '7px 12px', borderRadius: 9, fontSize: 18, cursor: 'pointer' }}>🔖</button>
           )}
-          {isActive ? (
+          {canApply ? (
             <button type="button" onClick={() => setApplyOpen(true)} disabled={applied}
               style={{ background: applied ? '#15803d' : '#1847d4', color: '#fff', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, border: 'none', cursor: applied ? 'not-allowed' : 'pointer', display: 'inline-block' }}>
               {applied ? 'Applied ✓' : 'Apply Now →'}

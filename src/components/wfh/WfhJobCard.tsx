@@ -4,6 +4,7 @@ import type { WfhJob } from '@/types/wfhJob'
 import { WfhSkillTags } from './WfhSkillTags'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { ARCHIVED_ALT_LABEL } from '@/lib/config/jobStrategy'
+import { isGenuine } from '@/lib/jobs/provenance'
 
 interface WfhJobCardProps {
   job: WfhJob
@@ -12,6 +13,7 @@ interface WfhJobCardProps {
 
 export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
+  const genuine = isGenuine(job)
 
   return (
     <article className="wfh-job-card" onClick={() => onClick(job)} role="button" tabIndex={0}
@@ -27,6 +29,7 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
               {job.jobStatus && (
                 <JobStatusBadge
                   status={job.jobStatus}
+                  synthetic={!genuine}
                   label={
                     isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
                       ? ARCHIVED_ALT_LABEL
@@ -34,7 +37,7 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
                   }
                 />
               )}
-              {!isArchived && job.badge && (
+              {!isArchived && genuine && job.badge && (
                 <span
                   style={{
                     background: job.badge_type === 'hot' ? '#ef4444' : '#1847d4',
@@ -71,7 +74,11 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
 
       <div className="wfh-job-card__footer">
         <span className="wfh-job-card__applicants">
-          {isArchived ? '🗄 Archived Vacancy' : `👤 ${job.applicants} applicants · Verified`}
+          {isArchived
+            ? '🗄 Archived Vacancy'
+            : !genuine
+              ? '🧪 Sample listing · Demo data'
+              : `👤 ${job.applicants} applicants · Verified`}
         </span>
         <button
           type="button"

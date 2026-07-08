@@ -1,16 +1,20 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { getInventoryCounts } from "@/lib/data/jobInventory"
-import { JOB_STRATEGY_PHASE } from "@/lib/config/jobStrategy"
 import { notifyUser } from "@/lib/services/adminNotifyService"
 import type { AdminStats } from "@/types/admin"
 
-/** Fallback analytics from the in-memory inventory when no DB is connected. */
+/**
+ * Fallback analytics from the in-memory demo inventory when no DB is connected
+ * (local dev only). Job counts reflect the demo catalog; employer/candidate/etc.
+ * are 0 because there are no genuine records without a DB — we never fabricate a
+ * marketing target here.
+ */
 function fallbackStats(): AdminStats {
   const c = getInventoryCounts()
   return {
     totalJobs: c.live + c.verified, pendingJobs: 0,
-    totalEmployers: JOB_STRATEGY_PHASE.targets.verifiedEmployers,
+    totalEmployers: 0,
     totalCandidates: 0, totalApplications: 0, totalMessages: 0,
     liveJobs: c.live, verifiedJobs: c.verified, archivedJobs: c.archived,
   }

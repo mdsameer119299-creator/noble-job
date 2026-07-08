@@ -1,16 +1,24 @@
 /**
- * jobStrategy.ts — single source of truth for the hybrid job-data strategy.
+ * jobStrategy.ts — the OPENNESS axis of the hybrid job-data strategy.
  *
- * Three job types power the portal:
- *   LIVE_JOB     → real, currently active (APIs, employers, DB). Green badge.
- *   VERIFIED_JOB → manually verified opening. Blue badge.
- *   ARCHIVED_JOB → demo/reference vacancy. Gray badge, shown as "Position Filled".
- *                  Searchable & visible (UX + SEO) but NEVER presented as open.
+ * `jobStatus` answers only "is this role currently open?":
+ *   LIVE_JOB     → open, currently active. Green badge.
+ *   VERIFIED_JOB → open, manually verified opening. Blue badge.
+ *   ARCHIVED_JOB → not open ("Position Filled"). Gray badge. Searchable/visible
+ *                  for UX but NEVER presented as an open role.
+ *
+ * IMPORTANT: `jobStatus` is NOT a genuineness signal. Whether a row is a real
+ * sourced opportunity or generated demo/showcase content is the separate
+ * PROVENANCE axis (see src/lib/jobs/provenance.ts). A row may be LIVE_JOB and
+ * still be SYNTHETIC — in which case it is populated for browsing but must never
+ * be indexed, schema-bearing, counted as genuine, distributed, or badged
+ * "Verified". A "VERIFIED_JOB" label alone does NOT confer verified trust;
+ * `hasVerifiedTrust()` requires genuine provenance.
  *
  * Long-term plan:
- *   Phase 1 → 1,000+ live, 7,000+ archived (current).
- *   Phase 2 → grow live jobs every month.
- *   Phase 3 → archived gradually replaced until the portal is mostly live.
+ *   Phase 1 → seed the catalog with demo inventory + real govt ingestion.
+ *   Phase 2 → grow genuine (employer/API/curated) live jobs every month.
+ *   Phase 3 → synthetic catalog gradually replaced until the portal is mostly genuine.
  */
 import type { JobStatus } from "@/types/job"
 
