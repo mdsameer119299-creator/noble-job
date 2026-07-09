@@ -67,15 +67,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   // Consolidated Candidate Intelligence payload for the AI dashboard.
   if (route === "intelligence") {
     const c = candidate as any
-    // Verification flags live on the users table.
-    const { data: urow } = await sb.from("users").select("email_verified, phone_verified").eq("id", user.id).single()
-    const u = (urow as any) || {}
 
     const completion = profileCompletion({
-      first_name: c.first_name, last_name: c.last_name, city: c.city, category: c.category,
-      experience_years: c.experience_years, expected_salary: c.expected_salary, skills: c.skills,
-      resume_url: c.resume_url, email_verified: u.email_verified, phone_verified: u.phone_verified,
-      availability_status: c.availability_status,
+      first_name: c.first_name, last_name: c.last_name, phone: c.phone, city: c.city,
+      category: c.category, experience_years: c.experience_years, skills: c.skills,
+      resume_url: c.resume_url, availability_status: c.availability_status,
     })
 
     // VERIFIED job recommendations only — genuine + linkable active jobs.
@@ -178,23 +174,31 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ para
   const route = p?.join("/") || "profile"
 
   if (route === "profile") {
+    // Profile is candidate data — surface a real error if the write fails
+    // (never report success on a failed persist).
     const { error } = await sb.from("candidates").update(body).eq("user_id", user.id)
-    return NextResponse.json({ success: !error })
+    if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ success: true })
   }
 
   if (route === "status") {
+    // Availability is CANDIDATE-CONTROLLED and explicit — never inferred.
     if (!isCandidateStatus(body?.status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 })
     }
     const { data: cand } = await sb.from("candidates").select("id").eq("user_id", user.id).single()
     const cid = (cand as { id: string } | null)?.id
-    let ok = false
-    try {
-      const { error } = await sb.from("candidates").update({ availability_status: body.status }).eq("user_id", user.id)
-      ok = !error
-    } catch { ok = false }
-    if (ok && cid) await logCandidateActivity(sb, cid, "status", `Status set to ${statusMeta(body.status).label}`, { status: body.status })
-    return NextResponse.json({ success: ok })
+    const { error } = await sb.from("candidates").update({ availability_status: body.status }).eq("user_id", user.id)
+    if (error) {
+      // Must NOT silently succeed when persistence failed (e.g. migration not applied).
+      return NextResponse.json(
+        { success: false, error: "Could not save your status. Please try again." },
+        { status: 500 },
+      )
+    }
+    // Activity logging is best-effort (analytics-like) — may fail silently.
+    if (cid) await logCandidateActivity(sb, cid, "status", `Status set to ${statusMeta(body.status).label}`, { status: body.status })
+    return NextResponse.json({ success: true })
   }
 
   return NextResponse.json({ success: true })
@@ -250,15 +254,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
     try {
       const { data: fresh } = await sb
         .from("candidates")
-        .select("id, resume_url, skills")
+        .select("id, resume_url, skills, career_score")
         .eq("user_id", user.id)
         .single()
       if (fresh) {
         await logCandidateActivity(sb, (fresh as { id: string }).id, "resume", "Uploaded a new resume")
-        await persistCareerScore(sb, fresh as { id: string; resume_url?: string | null; skills?: string[] | null })
+        await persistCareerScore(sb, fresh as { id: string; resume_url?: string | null; skills?: string[] | null; career_score?: number | null })
       }
     } catch {
-      /* score/skills persistence is best-effort */
+      /* on upload, score/skills persistence is best-effort — the upload itself succeeded */
     }
 
     const url = await createResumeSignedUrl(sb, path)
@@ -268,13 +272,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
   if (route === "career-score") {
     const { data: cand } = await sb
       .from("candidates")
-      .select("id, resume_url, skills")
+      .select("id, resume_url, skills, career_score")
       .eq("user_id", user.id)
       .single()
     if (!cand) return NextResponse.json({ error: "Candidate not found" }, { status: 404 })
-    const result = await persistCareerScore(sb, cand as { id: string; resume_url?: string | null; skills?: string[] | null })
+    const result = await persistCareerScore(sb, cand as { id: string; resume_url?: string | null; skills?: string[] | null; career_score?: number | null })
     if (!result) {
       return NextResponse.json({ error: "No readable resume on file. Upload a resume first." }, { status: 400 })
+    }
+    // The Career Score is candidate data — do NOT report success if it did not
+    // actually persist (e.g. the candidate_intelligence migration is not applied).
+    if (!result.scorePersisted) {
+      return NextResponse.json(
+        { error: "Could not save your Career Score. Please try again later." },
+        { status: 500 },
+      )
     }
     return NextResponse.json({ data: { score: result.score, skills: result.mergedSkills } })
   }

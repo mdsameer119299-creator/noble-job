@@ -6,6 +6,7 @@ import assert from "node:assert/strict"
 import { profileCompletion } from "./profileCompletion"
 import { suggestSkills } from "./recommendations"
 import { isCandidateStatus, statusMeta, DEFAULT_CANDIDATE_STATUS } from "./status"
+import { careerScoreOutcome } from "../services/candidateIntelligence"
 
 let passed = 0
 let failed = 0
@@ -26,9 +27,9 @@ test("each item carries a benefit string", () => {
 })
 test("completion percent rises with fields and caps at 100", () => {
   const full = profileCompletion({
-    first_name: "A", last_name: "B", city: "Pune", category: "IT / Software",
-    experience_years: "2-4", expected_salary: 800000, skills: ["Java", "SQL", "React"],
-    resume_url: "cand/resume.pdf", email_verified: true, phone_verified: true, availability_status: "looking",
+    first_name: "A", last_name: "B", phone: "9999999999", city: "Pune", category: "IT / Software",
+    experience_years: "2-4", skills: ["Java", "SQL", "React"],
+    resume_url: "cand/resume.pdf", availability_status: "looking",
   })
   assert.equal(full.percent, 100)
   assert.equal(full.nextBest, null)
@@ -36,6 +37,10 @@ test("completion percent rises with fields and caps at 100", () => {
 test("partial profile is between 0 and 100", () => {
   const r = profileCompletion({ resume_url: "x", skills: ["Java"] })
   assert.ok(r.percent > 0 && r.percent < 100)
+})
+test("every completion item links to an existing candidate screen", () => {
+  const allowed = new Set(["/candidate/resume", "/candidate/profile", "/candidate/dashboard"])
+  for (const i of profileCompletion({}).items) assert.ok(allowed.has(i.href), `bad href ${i.href}`)
 })
 
 test("suggestSkills excludes skills already held and respects the field", () => {
@@ -53,6 +58,22 @@ test("status guard + meta", () => {
   assert.equal(isCandidateStatus("nonsense"), false)
   assert.equal(statusMeta("bad").value, DEFAULT_CANDIDATE_STATUS)
   assert.equal(statusMeta("hired").value, "hired")
+})
+
+// Career Score persistence outcome (idempotency + strict failure reporting)
+test("first score → persisted, changed, logs activity", () => {
+  const o = careerScoreOutcome(null, 72, true)
+  assert.deepEqual(o, { scorePersisted: true, changed: true, shouldLogActivity: true })
+})
+test("recompute with same score → idempotent, no duplicate activity", () => {
+  const o = careerScoreOutcome(72, 72, true)
+  assert.equal(o.changed, false)
+  assert.equal(o.shouldLogActivity, false)
+})
+test("failed DB write → NOT persisted and never logs a misleading event", () => {
+  const o = careerScoreOutcome(50, 72, false)
+  assert.equal(o.scorePersisted, false)
+  assert.equal(o.shouldLogActivity, false)
 })
 
 console.log(`\ncandidate-intelligence tests: ${passed} passed, ${failed} failed`)

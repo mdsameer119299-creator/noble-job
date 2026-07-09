@@ -12,10 +12,12 @@ export type ScoreBand = {
 }
 
 export function resumeScoreBand(score: number): ScoreBand {
+  // Blurbs describe RESUME QUALITY only — never a hiring outcome, employer
+  // verification, or guarantee of employment.
   const s = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0
-  if (s >= 85) return { label: "Excellent", color: "#15803d", blurb: "Recruiter-ready — start applying today." }
+  if (s >= 85) return { label: "Excellent", color: "#15803d", blurb: "Strong, well-structured resume." }
   if (s >= 70) return { label: "Strong", color: "#1847d4", blurb: "Solid resume — a few tweaks will make it shine." }
-  if (s >= 50) return { label: "Fair", color: "#b45309", blurb: "Good base — improve the flagged areas to stand out." }
+  if (s >= 50) return { label: "Fair", color: "#b45309", blurb: "Good base — improve the flagged areas below." }
   return { label: "Needs work", color: "#be123c", blurb: "Let's strengthen it — follow the tips below." }
 }
 

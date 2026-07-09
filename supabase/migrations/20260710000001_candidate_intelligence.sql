@@ -40,11 +40,19 @@ CREATE INDEX IF NOT EXISTS idx_candidate_activity_cand ON public.candidate_activ
 
 ALTER TABLE public.candidate_activity ENABLE ROW LEVEL SECURITY;
 
--- A candidate may read their own activity; writes go through the server (service
--- role / server client), matching the pattern used by other candidate tables.
+-- A candidate may read AND append ONLY their own activity. No UPDATE/DELETE
+-- policies exist, so rows are immutable and undeletable by candidates. Another
+-- candidate can neither read nor write these rows (both policies are scoped to
+-- auth.uid()'s own candidate row).
 DROP POLICY IF EXISTS candidate_activity_select_own ON public.candidate_activity;
 CREATE POLICY candidate_activity_select_own ON public.candidate_activity
-  FOR SELECT USING (
+  FOR SELECT TO authenticated USING (
+    candidate_id IN (SELECT id FROM public.candidates WHERE user_id = auth.uid())
+  );
+
+DROP POLICY IF EXISTS candidate_activity_insert_own ON public.candidate_activity;
+CREATE POLICY candidate_activity_insert_own ON public.candidate_activity
+  FOR INSERT TO authenticated WITH CHECK (
     candidate_id IN (SELECT id FROM public.candidates WHERE user_id = auth.uid())
   );
 

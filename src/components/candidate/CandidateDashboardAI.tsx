@@ -45,6 +45,7 @@ export function CandidateDashboardAI() {
   const [loading, setLoading] = useState(true)
   const [savingStatus, setSavingStatus] = useState(false)
   const [scoring, setScoring] = useState(false)
+  const [notice, setNotice] = useState<string>('')
 
   async function load() {
     const d = await fetch('/api/candidate/intelligence').then(r => (r.ok ? r.json() : null)).catch(() => null)
@@ -54,18 +55,32 @@ export function CandidateDashboardAI() {
   useEffect(() => { void load() }, [])
 
   async function setStatus(status: CandidateStatus) {
-    if (!data) return
+    if (!data || savingStatus) return
+    const prev = data.status
+    setNotice('')
     setSavingStatus(true)
     setData({ ...data, status }) // optimistic
-    await fetch('/api/candidate/status', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).catch(() => {})
+    const res = await fetch('/api/candidate/status', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).catch(() => null)
     setSavingStatus(false)
+    if (!res || !res.ok) {
+      // Persistence failed — revert the optimistic change and tell the user.
+      setData(d => (d ? { ...d, status: prev } : d))
+      setNotice('Could not save your status. Please try again.')
+      return
+    }
     void load()
   }
 
   async function recompute() {
+    if (scoring) return
+    setNotice('')
     setScoring(true)
-    await fetch('/api/candidate/career-score', { method: 'POST' }).catch(() => {})
+    const res = await fetch('/api/candidate/career-score', { method: 'POST' }).catch(() => null)
     setScoring(false)
+    if (!res || !res.ok) {
+      setNotice('Could not update your Career Score. Please try again.')
+      return
+    }
     void load()
   }
 
@@ -77,6 +92,12 @@ export function CandidateDashboardAI() {
   const band = score != null ? resumeScoreBand(score) : null
 
   return (
+    <>
+    {notice && (
+      <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 14 }}>
+        {notice}
+      </div>
+    )}
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 18 }} className="cand-ai-grid">
       {/* LEFT column */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -104,6 +125,9 @@ export function CandidateDashboardAI() {
               <Link href="/candidate/resume" style={{ display: 'inline-block', background: '#1847d4', color: '#fff', borderRadius: 9, padding: '9px 16px', fontWeight: 800, fontSize: 13, textDecoration: 'none' }}>Upload Resume →</Link>
             </div>
           )}
+          <p style={{ color: '#94a3b8', fontSize: 11, marginTop: 12, marginBottom: 0, lineHeight: 1.5 }}>
+            Your Career Score is a Noble Job guidance score to help you strengthen your resume. It is <strong>not</strong> an employer verification, a hiring probability, or a guarantee of employment.
+          </p>
         </div>
 
         {/* AI Recommendations */}
@@ -179,7 +203,8 @@ export function CandidateDashboardAI() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* Availability status */}
         <div style={card}>
-          <h3 style={h3}>Your availability</h3>
+          <h3 style={{ ...h3, marginBottom: 4 }}>Your availability</h3>
+          <p style={{ color: '#94a3b8', fontSize: 11, margin: '0 0 12px' }}>You control this — Noble Job never sets it automatically.</p>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: sm.color, display: 'inline-block' }} />
             <span style={{ fontWeight: 800, color: sm.color, fontSize: 14 }}>{sm.label}</span>
@@ -225,6 +250,7 @@ export function CandidateDashboardAI() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

@@ -98,6 +98,9 @@ export function ResumeUploadWidget({ source = 'dock' }: { source?: string }) {
             <div style={{ color: '#9ca3af', fontSize: 11.5, marginTop: 2 }}>ATS readability {Math.round(result.atsScore)}% · {result.extractedSkills.length} skills detected</div>
           </div>
         </div>
+        <p style={{ color: '#94a3b8', fontSize: 10.5, margin: '0 0 14px', lineHeight: 1.5 }}>
+          A Noble Job guidance score to help you improve your resume — not an employer verification or a guarantee of hiring.
+        </p>
 
         {/* 2) Detected skills */}
         {result.extractedSkills.length > 0 && (

@@ -37,6 +37,23 @@ export interface PersistedCareerScore {
   score: number
   extractedSkills: string[]
   mergedSkills: string[]
+  /** True only when the career_score column was actually written (migration applied). */
+  scorePersisted: boolean
+  /** True when the score differs from the previously stored value. */
+  changed: boolean
+}
+
+/**
+ * Pure decision for Career Score persistence + activity logging.
+ *  • scorePersisted   → the score column write succeeded (used to avoid
+ *    reporting success when persistence failed).
+ *  • shouldLogActivity → log a timeline event ONLY when the score persisted AND
+ *    changed, so repeated identical recomputes are idempotent (no duplicates).
+ */
+export function careerScoreOutcome(prev: number | null, next: number, updateOk: boolean) {
+  const scorePersisted = updateOk
+  const changed = prev !== next
+  return { scorePersisted, changed, shouldLogActivity: scorePersisted && changed }
 }
 
 function uniqueMerge(a: string[], b: string[], limit = 50): string[] {
@@ -59,7 +76,7 @@ function uniqueMerge(a: string[], b: string[], limit = 50): string[] {
  */
 export async function persistCareerScore(
   sb: AnyClient,
-  candidate: { id: string; resume_url?: string | null; skills?: string[] | null },
+  candidate: { id: string; resume_url?: string | null; skills?: string[] | null; career_score?: number | null },
 ): Promise<PersistedCareerScore | null> {
   const path =
     normalizeResumeStoragePath(candidate.resume_url ?? null, candidate.id) ??
@@ -77,23 +94,22 @@ export async function persistCareerScore(
   const result = analyzeResume({ text: parsed.text, parseWarning: parsed.warning })
   const score = Math.round(result.overallScore)
   const mergedSkills = uniqueMerge(candidate.skills ?? [], result.extractedSkills)
+  const prev = typeof candidate.career_score === "number" ? candidate.career_score : null
 
-  // Try the full update (needs the migration). Fall back to skills-only so
-  // extracted skills still persist on a pre-migration database.
-  try {
-    const { error: upErr } = await sb
-      .from("candidates")
-      .update({ career_score: score, career_score_updated_at: new Date().toISOString(), skills: mergedSkills })
-      .eq("id", candidate.id)
-    if (upErr) throw upErr
-  } catch {
-    try {
-      await sb.from("candidates").update({ skills: mergedSkills }).eq("id", candidate.id)
-    } catch {
-      /* ignore */
-    }
+  // Try the full update (needs the migration). On failure fall back to a
+  // skills-only update so extracted skills still persist pre-migration.
+  const { error: upErr } = await sb
+    .from("candidates")
+    .update({ career_score: score, career_score_updated_at: new Date().toISOString(), skills: mergedSkills })
+    .eq("id", candidate.id)
+  const { scorePersisted, changed, shouldLogActivity } = careerScoreOutcome(prev, score, !upErr)
+  if (upErr) {
+    await sb.from("candidates").update({ skills: mergedSkills }).eq("id", candidate.id)
   }
 
-  await logCandidateActivity(sb, candidate.id, "career_score", `Career Score updated to ${score}`, { score })
-  return { score, extractedSkills: result.extractedSkills, mergedSkills }
+  if (shouldLogActivity) {
+    await logCandidateActivity(sb, candidate.id, "career_score", `Career Score updated to ${score}`, { score })
+  }
+
+  return { score, extractedSkills: result.extractedSkills, mergedSkills, scorePersisted, changed }
 }
