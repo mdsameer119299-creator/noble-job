@@ -11,6 +11,7 @@
 import { cache } from "react"
 import { unstable_cache } from "next/cache"
 import { GOVT_ROWS_CACHE_TTL_SECONDS } from "@/lib/config/govtCache"
+import { GOVT_LIST_COLUMNS, GOVT_DETAIL_COLUMNS } from "@/lib/config/govtColumns"
 import { GOVT_JOBS, enrichGovtJob } from "@/lib/data/govtData"
 import { applyGovtVacancies } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
@@ -44,9 +45,13 @@ function mapRow(row: Record<string, unknown>): GovtJob {
 }
 
 /**
- * The actual Supabase read + graceful local fallback. UNCHANGED query, filters,
- * ordering and visibility (status=active AND review_status=approved AND
- * published; date-expired rows dropped regardless of source).
+ * The actual Supabase POOL read + graceful local fallback. Same query, filters,
+ * ordering and visibility as before (status=active AND review_status=approved
+ * AND published; date-expired rows dropped) — the ONLY change is an explicit
+ * LIGHT column projection instead of select("*"). Heavy detail-body columns are
+ * excluded: `enrichGovtJob` synthesizes them when absent and no pool consumer
+ * (lists / stats / sitemap / related / generateStaticParams) renders them, so
+ * output is unchanged while per-row egress drops sharply.
  */
 async function loadActiveGovtRows(): Promise<GovtJob[]> {
   const local = GOVT_JOBS.filter(isActiveGovtJob)
@@ -55,19 +60,59 @@ async function loadActiveGovtRows(): Promise<GovtJob[]> {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const { data, error } = await supabaseAdmin
       .from("govt_jobs")
-      .select("*")
+      .select(GOVT_LIST_COLUMNS)
       .eq("status", "active")
       .eq("review_status", "approved")
       .eq("published", true)
     if (error || !data?.length) return local
     const rows = data.map(r =>
-      enrichGovtJob(mapRow(r as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }),
+      enrichGovtJob(mapRow(r as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }),
     )
     return rows.filter(isActiveGovtJob)
   } catch {
     return local
   }
 }
+
+/** Strip characters that could break/inject a PostgREST or() filter. Slugs and
+ *  ids are `[a-z0-9-]`; anything else simply yields no match (→ local fallback). */
+function sanitizeGovtKey(v: string): string {
+  return v.replace(/[^a-zA-Z0-9_-]/g, "")
+}
+
+/**
+ * Fetch ONE genuine government job by slug or id — a single indexed row with its
+ * full (light + heavy) columns — instead of loading the entire active dataset
+ * and filtering in memory. Mirrors the pool's visibility filters (active,
+ * approved, published, non-expired). Returns null when unconfigured / not found
+ * / expired; the caller applies the local-seed fallback (kept in govtJobService
+ * to avoid a circular import). Slugs are persisted + indexed on govt_jobs.
+ */
+async function loadGovtJobRow(slugOrId: string): Promise<GovtJob | null> {
+  const key = sanitizeGovtKey(slugOrId || "")
+  if (!key || !adminConfigured()) return null
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabase/admin")
+    const { data, error } = await supabaseAdmin
+      .from("govt_jobs")
+      .select(GOVT_DETAIL_COLUMNS)
+      .or(`slug.eq.${key},id.eq.${key}`)
+      .eq("status", "active")
+      .eq("review_status", "approved")
+      .eq("published", true)
+      .limit(1)
+    if (error || !data?.length) return null
+    const job = enrichGovtJob(
+      mapRow(data[0] as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string },
+    )
+    return isActiveGovtJob(job) ? job : null
+  } catch {
+    return null
+  }
+}
+
+/** Per-render-deduped single-row lookup (detail page metadata + body share it). */
+export const getGovtJobRow = cache((slugOrId: string): Promise<GovtJob | null> => loadGovtJobRow(slugOrId))
 
 /**
  * SHARED, cross-request cache for the govt_jobs full-table read.
