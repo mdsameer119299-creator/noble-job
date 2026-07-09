@@ -550,6 +550,34 @@ export interface Database {
         }
         Relationships: []
       }
+      analytics_events: {
+        Row: {
+          id: string
+          event: string
+          props: Json
+          path: string | null
+          session_id: string | null
+          user_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          event: string
+          props?: Json
+          path?: string | null
+          session_id?: string | null
+          user_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          event?: string
+          props?: Json
+          path?: string | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

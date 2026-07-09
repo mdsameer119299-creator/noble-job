@@ -46,6 +46,9 @@ jobs:
       - name: Provenance tests
         run: npm run test:provenance
 
+      - name: Candidate-acquisition tests
+        run: npm run test:acq
+
       - name: SEO verification (static)
         run: npm run verify:seo
 
