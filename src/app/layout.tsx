@@ -6,6 +6,7 @@ import '../styles/mobile-responsive.css'
 import { Navbar } from '@/components/shared/Navbar'
 import { Footer } from '@/components/shared/Footer'
 import { Toast } from '@/components/shared/Toast'
+import { ResumeCtaDock } from '@/components/candidate/ResumeCtaDock'
 import { SiteSchemas } from '@/components/seo/SiteSchemas'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { SITE_TAGLINE } from '@/lib/seo/constants'
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </main>
         <Footer />
+        <ResumeCtaDock />
         <Toast />
       </body>
     </html>

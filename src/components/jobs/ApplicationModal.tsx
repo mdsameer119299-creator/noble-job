@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/hooks/useToast'
 import { validateResumeFile } from '@/lib/utils/resumeUpload'
+import { track, AcqEvent } from '@/lib/analytics/events'
 
 interface ApplicationModalProps {
   open: boolean
@@ -167,6 +168,13 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
       }
       setDone(true)
       onApplied?.()
+      // Fire "first_application" once per browser (acquisition funnel).
+      try {
+        if (typeof window !== 'undefined' && !localStorage.getItem('nj_applied_once')) {
+          localStorage.setItem('nj_applied_once', '1')
+          track(AcqEvent.FIRST_APPLICATION, { board, jobId })
+        }
+      } catch { /* ignore */ }
     } catch {
       toast.error('Could not submit application')
     } finally {

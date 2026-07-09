@@ -330,3 +330,10 @@ body {
 @media (max-width: 768px) {
   .section-inner-pad { padding-left: 16px !important; padding-right: 16px !important; }
 }
+
+/* ── Resume acquisition dock (PR #20) ── */
+@media (max-width: 640px) {
+  .nj-resume-dock { right: 12px !important; bottom: 12px !important; }
+  .nj-resume-dock button:first-child { padding: 11px 16px !important; font-size: 13px !important; }
+  .nj-resume-sheet { max-width: 100% !important; }
+}
