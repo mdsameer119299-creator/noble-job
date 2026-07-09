@@ -7,6 +7,10 @@ import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobs } from "@/lib/services/wfhJobService"
 import { getAbroadJobs } from "@/lib/services/abroadJobService"
 import type { CategoryLanding, CityLanding, Landing, LandingJobCard, LandingView } from "@/lib/seo/landingTypes"
+import { jobDetailHref } from "@/lib/jobs/provenance"
+import type { Job } from "@/types/job"
+import type { WfhJob } from "@/types/wfhJob"
+import type { AbroadJob } from "@/types/abroadJob"
 
 const CATEGORY_BY_SLUG = new Map(CATEGORY_LANDINGS.map(c => [c.slug, c]))
 const CITY_BY_SLUG = new Map(CITY_LANDINGS.map(c => [c.slug, c]))
@@ -74,22 +78,22 @@ const govtCard = (j: { slug?: string; id: string; title: string; org: string; va
   meta: [j.vacancies ? `${j.vacancies} posts` : null, j.qualification].filter(Boolean).join(" · "),
   badge: j.badge,
 })
-const privateCard = (j: { id: string; title: string; company: string; location: string; salary: string; badge?: string }): LandingJobCard => ({
-  href: `/jobs/private/${j.id}`,
+const privateCard = (j: Job): LandingJobCard => ({
+  href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
   meta: [j.location, j.salary].filter(Boolean).join(" · "),
   badge: j.badge,
 })
-const wfhCard = (j: { id: string; title: string; company: string; cat: string; salary: string; badge?: string }): LandingJobCard => ({
-  href: `/jobs/wfh/${j.id}`,
+const wfhCard = (j: WfhJob): LandingJobCard => ({
+  href: jobDetailHref("wfh", j),
   title: j.title,
   company: j.company,
   meta: [j.cat, j.salary].filter(Boolean).join(" · "),
   badge: j.badge,
 })
-const abroadCard = (j: { id: string; title: string; company: string; country: string; salary: string; badge?: string }): LandingJobCard => ({
-  href: `/jobs/abroad/${j.id}`,
+const abroadCard = (j: AbroadJob): LandingJobCard => ({
+  href: jobDetailHref("abroad", j),
   title: j.title,
   company: j.company,
   meta: [j.country, j.salary].filter(Boolean).join(" · "),

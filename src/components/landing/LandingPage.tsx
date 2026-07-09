@@ -66,16 +66,24 @@ function JobBlock({ title, icon, jobs, ctaHref, ctaLabel, accent }: { title: str
     <Card>
       <H2 icon={icon}>{title}</H2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
-        {jobs.map((j, i) => (
-          <Link key={`${j.href}-${i}`} href={j.href} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-              <span style={{ fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
-              {j.badge && <span style={{ background: "#dcfce7", color: "#15803d", padding: "2px 7px", borderRadius: 8, fontSize: 10.5, fontWeight: 800, border: "1px solid #86efac", flexShrink: 0 }}>{j.badge}</span>}
-            </div>
-            <div style={{ color: "#475569", fontSize: 12.5, fontWeight: 600, marginTop: 3 }}>{j.company}</div>
-            {j.meta && <div style={{ color: "#6b7280", fontSize: 12, marginTop: 2 }}>{j.meta}</div>}
-          </Link>
-        ))}
+        {jobs.map((j, i) => {
+          const cardStyle = { display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" } as const
+          const inner = (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
+                {j.badge && <span style={{ background: "#dcfce7", color: "#15803d", padding: "2px 7px", borderRadius: 8, fontSize: 10.5, fontWeight: 800, border: "1px solid #86efac", flexShrink: 0 }}>{j.badge}</span>}
+              </div>
+              <div style={{ color: "#475569", fontSize: 12.5, fontWeight: 600, marginTop: 3 }}>{j.company}</div>
+              {j.meta && <div style={{ color: "#6b7280", fontSize: 12, marginTop: 2 }}>{j.meta}</div>}
+            </>
+          )
+          // Non-genuine rows (href === null) render as a non-linked card so the
+          // page stays populated without emitting a crawlable dofollow anchor.
+          return j.href
+            ? <Link key={i} href={j.href} style={cardStyle}>{inner}</Link>
+            : <div key={i} style={cardStyle}>{inner}</div>
+        })}
       </div>
       <Link href={ctaHref} style={{ display: "inline-block", marginTop: 14, background: accent, color: "#fff", padding: "10px 18px", borderRadius: 9, fontWeight: 800, fontSize: 13.5, textDecoration: "none" }}>{ctaLabel} →</Link>
     </Card>

@@ -116,13 +116,20 @@ export function ArticlePage({ view, jobs }: { view: ArticleView; jobs: LandingJo
               <Card id="latest-opportunities">
                 <H2 icon="🆕">Latest Opportunities</H2>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
-                  {jobs.map((j, i) => (
-                    <Link key={`${j.href}-${i}`} href={j.href} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
-                      <span style={{ display: "block", fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
-                      <span style={{ display: "block", color: "#475569", fontSize: 12.5, fontWeight: 600, marginTop: 3 }}>{j.company}</span>
-                      {j.meta && <span style={{ display: "block", color: "#6b7280", fontSize: 12, marginTop: 2 }}>{j.meta}</span>}
-                    </Link>
-                  ))}
+                  {jobs.map((j, i) => {
+                    const cardStyle = { display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" } as const
+                    const inner = (
+                      <>
+                        <span style={{ display: "block", fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
+                        <span style={{ display: "block", color: "#475569", fontSize: 12.5, fontWeight: 600, marginTop: 3 }}>{j.company}</span>
+                        {j.meta && <span style={{ display: "block", color: "#6b7280", fontSize: 12, marginTop: 2 }}>{j.meta}</span>}
+                      </>
+                    )
+                    // Non-genuine rows (href === null) render unlinked — populated, not crawlable.
+                    return j.href
+                      ? <Link key={i} href={j.href} style={cardStyle}>{inner}</Link>
+                      : <div key={i} style={cardStyle}>{inner}</div>
+                  })}
                 </div>
                 <Link href={view.jobsHref} style={{ display: "inline-block", marginTop: 14, background: view.accent, color: "#fff", padding: "10px 18px", borderRadius: 9, fontWeight: 800, fontSize: 13.5, textDecoration: "none" }}>{view.jobsLabel} →</Link>
               </Card>

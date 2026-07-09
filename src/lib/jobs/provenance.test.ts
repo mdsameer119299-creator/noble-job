@@ -22,6 +22,7 @@ import {
   isCountableAsGenuine,
   hasVerifiedTrust,
   hasRealApplyUrl,
+  jobDetailHref,
   GENUINE_PROVENANCE,
   KNOWN_PROVENANCE,
   type Classifiable,
@@ -206,6 +207,28 @@ test("gate aliases agree with isPublishableAsOpen", () => {
   assert.equal(isIndexable(j), isPublishableAsOpen(j))
   assert.equal(isSchemaEligible(j), isPublishableAsOpen(j))
   assert.equal(isDistributable(j), isPublishableAsOpen(j))
+})
+
+// ── Internal-link hygiene: jobDetailHref only links GENUINE jobs ──────────
+test("jobDetailHref: synthetic/unclassified → null (no crawlable link)", () => {
+  assert.equal(jobDetailHref("private", { id: "live-priv-101", provenance: "SYNTHETIC" }), null)
+  assert.equal(jobDetailHref("wfh", { id: "ver-wfh-10193" }), null) // demo id prefix
+  assert.equal(jobDetailHref("abroad", { id: "u", source: "Some Board", apply_url: REAL_URL }), null) // unclassified
+})
+test("jobDetailHref: genuine job → board-scoped path", () => {
+  const emp: Classifiable & { id: string } = { id: "9f3k2a", provenance: "EMPLOYER", employer_id: "e" }
+  assert.equal(jobDetailHref("private", emp), "/jobs/private/9f3k2a")
+  const agg: Classifiable & { id: string } = { id: "h-1", source: "Himalayas", apply_url: REAL_URL }
+  assert.equal(jobDetailHref("wfh", agg), "/jobs/wfh/h-1")
+})
+test("jobDetailHref: genuine but archived still links (openness ≠ genuineness)", () => {
+  assert.equal(
+    jobDetailHref("private", { id: "a1", provenance: "EMPLOYER", employer_id: "e", jobStatus: "ARCHIVED_JOB" }),
+    "/jobs/private/a1",
+  )
+})
+test("jobDetailHref: missing id → null", () => {
+  assert.equal(jobDetailHref("private", { provenance: "EMPLOYER", employer_id: "e" }), null)
 })
 
 console.log(`\nprovenance tests: ${passed} passed, ${failed} failed`)
