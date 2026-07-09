@@ -49,6 +49,9 @@ jobs:
       - name: Candidate-acquisition tests
         run: npm run test:acq
 
+      - name: Egress-config tests
+        run: npm run test:egress
+
       - name: SEO verification (static)
         run: npm run verify:seo
 

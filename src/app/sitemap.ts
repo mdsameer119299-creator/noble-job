@@ -1,5 +1,4 @@
 import type { MetadataRoute } from "next"
-import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { GOVT_TOP_CATEGORIES, INDIAN_STATES, GOVT_QUALIFICATIONS } from "@/lib/config/govtTaxonomy"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
@@ -10,6 +9,11 @@ import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 import { isIndexable } from "@/lib/jobs/provenance"
 import { govtClassifiable } from "@/lib/jobs/govtProvenance"
+
+// Cache the generated sitemap for 1 hour. Its contents change at most hourly
+// (govt ingestion cron), so per-request regeneration — which re-ran the govt
+// and jobs queries on every bot fetch — is pure waste. Emergency egress fix.
+export const revalidate = 3600
 
 /**
  * Sitemap policy: every emitted URL must resolve to HTTP 200 with real content
@@ -164,35 +168,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let privateJobRoutes: MetadataRoute.Sitemap = []
   if (isSupabaseConfigured()) {
     try {
-      const supabase = await createClient()
-      if (supabase) {
-        const { data: jobs } = await supabase
-          .from("jobs")
-          .select("id, posted_at, provenance, apply_url, employer_id, is_verified, job_status")
-          .eq("status", "active")
-          .limit(PER_BOARD_LIMIT)
-        privateJobRoutes = (jobs || [])
-          .filter(job => {
-            const r = job as Record<string, unknown>
-            // Defense-in-depth: even an "active" DB row is only listed when it
-            // passes the genuine-provenance publication gate (fail closed).
-            return isIndexable({
-              id: String(r.id),
-              board: "private",
-              provenance: r.provenance as string | undefined,
-              apply_url: r.apply_url as string | undefined,
-              employer_id: r.employer_id as string | undefined,
-              is_verified: Boolean(r.is_verified),
-              jobStatus: (r.job_status as string | undefined) ?? "LIVE_JOB",
-            })
+      // Cookie-LESS service-role read (same query/columns/filter as before). The
+      // previous cookie-based client called cookies(), a dynamic API that would
+      // force this route to render per-request in production and ignore the
+      // `revalidate` above. Output is identical: only status=active rows that
+      // pass the genuine-provenance gate are listed.
+      const { supabaseAdmin } = await import("@/lib/supabase/admin")
+      const { data: jobs } = await supabaseAdmin
+        .from("jobs")
+        .select("id, posted_at, provenance, apply_url, employer_id, is_verified, job_status")
+        .eq("status", "active")
+        .limit(PER_BOARD_LIMIT)
+      privateJobRoutes = (jobs || [])
+        .filter(job => {
+          const r = job as Record<string, unknown>
+          // Defense-in-depth: even an "active" DB row is only listed when it
+          // passes the genuine-provenance publication gate (fail closed).
+          return isIndexable({
+            id: String(r.id),
+            board: "private",
+            provenance: r.provenance as string | undefined,
+            apply_url: r.apply_url as string | undefined,
+            employer_id: r.employer_id as string | undefined,
+            is_verified: Boolean(r.is_verified),
+            jobStatus: (r.job_status as string | undefined) ?? "LIVE_JOB",
           })
-          .map(job => ({
-            url: `${base}/jobs/private/${(job as { id: string }).id}`,
-            lastModified: new Date((job as { posted_at: string }).posted_at || now),
-            changeFrequency: "weekly" as const,
-            priority: 0.8,
-          }))
-      }
+        })
+        .map(job => ({
+          url: `${base}/jobs/private/${(job as { id: string }).id}`,
+          lastModified: new Date((job as { posted_at: string }).posted_at || now),
+          changeFrequency: "weekly" as const,
+          priority: 0.8,
+        }))
     } catch {
       /* no private job URLs when the DB is unreachable */
     }
