@@ -147,6 +147,9 @@ export interface Database {
           skills: string[]
           resume_url: string | null
           profile_score: number
+          career_score: number | null
+          career_score_updated_at: string | null
+          availability_status: string | null
           created_at: string
           updated_at: string
         }
@@ -164,6 +167,9 @@ export interface Database {
           skills?: string[]
           resume_url?: string | null
           profile_score?: number
+          career_score?: number | null
+          career_score_updated_at?: string | null
+          availability_status?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -181,8 +187,35 @@ export interface Database {
           skills?: string[]
           resume_url?: string | null
           profile_score?: number
+          career_score?: number | null
+          career_score_updated_at?: string | null
+          availability_status?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      candidate_activity: {
+        Row: {
+          id: string
+          candidate_id: string
+          type: string
+          title: string
+          meta: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          candidate_id: string
+          type: string
+          title: string
+          meta?: Json
+          created_at?: string
+        }
+        Update: {
+          type?: string
+          title?: string
+          meta?: Json
         }
         Relationships: []
       }
