@@ -20,6 +20,9 @@ export function JobCard({ job, onSave }: JobCardProps) {
   // Only genuine jobs get a crawlable internal link to their detail page; for
   // synthetic/demo rows this is null so no dofollow discovery link is emitted.
   const detailHref = jobDetailHref('private', job)
+  // Non-genuine cards stay interactive via a "Similar Jobs" path to the (real,
+  // indexable) category listing — never a link to a synthetic detail URL.
+  const similarHref = `/jobs/private${job.cat ? `?category=${encodeURIComponent(job.cat)}` : ''}`
   const [applyOpen, setApplyOpen] = useState(false)
   const [applied, setApplied] = useState(false)
   return (
@@ -32,17 +35,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            {detailHref ? (
-              <Link href={detailHref}
-                style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' }}
-                className="hover:text-noble-blue">
-                {job.title}
-              </Link>
-            ) : (
-              <span style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', lineHeight: 1.3, display: 'block' }}>
-                {job.title}
-              </span>
-            )}
+            <Link href={detailHref || similarHref}
+              style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' }}
+              className="hover:text-noble-blue">
+              {job.title}
+            </Link>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {job.jobStatus && (
                 <JobStatusBadge
@@ -93,12 +90,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
               style={{ background: applied ? '#15803d' : '#1847d4', color: '#fff', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, border: 'none', cursor: applied ? 'not-allowed' : 'pointer', display: 'inline-block' }}>
               {applied ? 'Applied ✓' : 'Apply Now →'}
             </button>
-          ) : detailHref ? (
-            <Link href={detailHref}
+          ) : (
+            <Link href={detailHref || similarHref}
               style={{ background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
-              View Details
+              {detailHref ? 'View Details' : 'Similar Jobs →'}
             </Link>
-          ) : null}
+          )}
         </div>
       </div>
 
