@@ -5,7 +5,7 @@ import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL } from '@/lib/config/jobStrategy'
-import { isGenuine } from '@/lib/jobs/provenance'
+import { isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
 
@@ -17,6 +17,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
   const genuine = isGenuine(job)
   // Only a genuine, currently-open role may present a live "Apply Now" action.
   const canApply = genuine && isActiveStatus(job.jobStatus)
+  // Only genuine jobs get a crawlable internal link to their detail page; for
+  // synthetic/demo rows this is null so no dofollow discovery link is emitted.
+  const detailHref = jobDetailHref('private', job)
+  // Non-genuine cards stay interactive via a "Similar Jobs" path to the (real,
+  // indexable) category listing — never a link to a synthetic detail URL.
+  const similarHref = `/jobs/private${job.cat ? `?category=${encodeURIComponent(job.cat)}` : ''}`
   const [applyOpen, setApplyOpen] = useState(false)
   const [applied, setApplied] = useState(false)
   return (
@@ -29,7 +35,7 @@ export function JobCard({ job, onSave }: JobCardProps) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <Link href={`/jobs/private/${job.id}`}
+            <Link href={detailHref || similarHref}
               style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' }}
               className="hover:text-noble-blue">
               {job.title}
@@ -85,9 +91,9 @@ export function JobCard({ job, onSave }: JobCardProps) {
               {applied ? 'Applied ✓' : 'Apply Now →'}
             </button>
           ) : (
-            <Link href={`/jobs/private/${job.id}`}
+            <Link href={detailHref || similarHref}
               style={{ background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
-              View Details
+              {detailHref ? 'View Details' : 'Similar Jobs →'}
             </Link>
           )}
         </div>

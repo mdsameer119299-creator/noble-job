@@ -117,7 +117,10 @@ export function ArticlePage({ view, jobs }: { view: ArticleView; jobs: LandingJo
                 <H2 icon="🆕">Latest Opportunities</H2>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
                   {jobs.map((j, i) => (
-                    <Link key={`${j.href}-${i}`} href={j.href} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
+                    // Genuine → detail page; non-genuine (href null) → section hub
+                    // ("browse similar"), a real indexable page, never a synthetic
+                    // detail URL. No card is left inert.
+                    <Link key={i} href={j.href ?? view.jobsHref} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
                       <span style={{ display: "block", fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
                       <span style={{ display: "block", color: "#475569", fontSize: 12.5, fontWeight: 600, marginTop: 3 }}>{j.company}</span>
                       {j.meta && <span style={{ display: "block", color: "#6b7280", fontSize: 12, marginTop: 2 }}>{j.meta}</span>}

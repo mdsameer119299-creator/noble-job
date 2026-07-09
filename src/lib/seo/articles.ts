@@ -6,6 +6,7 @@ import { ARTICLE_EXPANSIONS_2 } from "@/lib/data/articles/articleExpansions2"
 import { getGovtJobs } from "@/lib/services/govtJobService"
 import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobs } from "@/lib/services/wfhJobService"
+import { jobDetailHref } from "@/lib/jobs/provenance"
 import type { ArticleCluster, ArticleConfig, ArticleLink, ArticleView } from "@/lib/seo/articleTypes"
 import type { LandingJobCard } from "@/lib/seo/landingTypes"
 
@@ -144,7 +145,7 @@ export async function fetchArticleJobs(cfg: ArticleConfig): Promise<LandingJobCa
     if (cfg.cityLocation) {
       const r = await getJobs({ location: cfg.cityLocation, limit: 8, sort: "latest" })
       return r.jobs.slice(0, 8).map(j => ({
-        href: `/jobs/private/${j.id}`,
+        href: jobDetailHref("private", j),
         title: j.title,
         company: j.company,
         meta: [j.location, j.salary].filter(Boolean).join(" · "),
@@ -164,7 +165,7 @@ export async function fetchArticleJobs(cfg: ArticleConfig): Promise<LandingJobCa
     if (cfg.jobSource === "wfh") {
       const rows = await getWfhJobs()
       return rows.slice(0, 8).map(j => ({
-        href: `/jobs/wfh/${j.id}`,
+        href: jobDetailHref("wfh", j),
         title: j.title,
         company: j.company,
         meta: [j.cat, j.salary].filter(Boolean).join(" · "),
@@ -173,7 +174,7 @@ export async function fetchArticleJobs(cfg: ArticleConfig): Promise<LandingJobCa
     }
     const r = await getJobs({ limit: 8, sort: "latest" })
     return r.jobs.slice(0, 8).map(j => ({
-      href: `/jobs/private/${j.id}`,
+      href: jobDetailHref("private", j),
       title: j.title,
       company: j.company,
       meta: [j.location, j.salary].filter(Boolean).join(" · "),

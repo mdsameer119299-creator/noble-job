@@ -67,7 +67,10 @@ function JobBlock({ title, icon, jobs, ctaHref, ctaLabel, accent }: { title: str
       <H2 icon={icon}>{title}</H2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
         {jobs.map((j, i) => (
-          <Link key={`${j.href}-${i}`} href={j.href} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
+          // Genuine rows link to their detail page; non-genuine rows (href null)
+          // fall back to the section hub ("browse similar") — a real, indexable
+          // page, never a synthetic detail URL — so no card is inert.
+          <Link key={i} href={j.href ?? ctaHref} style={{ display: "block", textDecoration: "none", background: "#f8faff", border: "1px solid #e2e8f0", borderRadius: 11, padding: "13px 15px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
               <span style={{ fontWeight: 800, color: "#0d1f4e", fontSize: 14, lineHeight: 1.35 }}>{j.title}</span>
               {j.badge && <span style={{ background: "#dcfce7", color: "#15803d", padding: "2px 7px", borderRadius: 8, fontSize: 10.5, fontWeight: 800, border: "1px solid #86efac", flexShrink: 0 }}>{j.badge}</span>}

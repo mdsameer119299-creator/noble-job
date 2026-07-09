@@ -1,15 +1,21 @@
 import Link from "next/link"
 import { getJobs } from "@/lib/services/jobService"
 import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
+import { jobDetailHref } from "@/lib/jobs/provenance"
 
 /**
  * Server-rendered, crawlable job directory with URL-based pagination.
  *
  * The interactive listing (LiveJobsList / WfhJobsPanel / AbroadJobsPanel) is a
  * client component whose pagination is button-driven (onClick), so Googlebot
- * cannot follow it to page 2+. This component renders plain <a> links to every
- * job plus real <a href="?page=N"> pagination, giving crawlers (and no-JS users)
- * a complete path to discover every job detail URL.
+ * cannot follow it to page 2+. This component renders plain <a> links plus real
+ * <a href="?page=N"> pagination, giving crawlers a complete path to discover
+ * every GENUINE job detail URL.
+ *
+ * It lists ONLY genuine jobs (jobDetailHref !== null): synthetic/demo inventory
+ * has noindex detail pages, so exposing it here would just feed crawlers dead
+ * URLs. When there is no genuine inventory the section renders nothing — the
+ * page's interactive human-facing list is unaffected, so the page is not empty.
  */
 
 type Board = "private" | "wfh" | "abroad"
@@ -26,37 +32,30 @@ async function loadPage(board: Board, page: number): Promise<{ rows: Row[]; tota
   if (board === "private") {
     const r = await getJobs({ limit: PER_PAGE, page, sort: "latest" })
     const rows = r.jobs
-      .filter(j => j.jobStatus !== "ARCHIVED_JOB")
       .map(j => ({
-        href: `/jobs/private/${j.id}`,
+        href: jobDetailHref("private", j),
         title: j.title,
         company: j.company,
         meta: [j.location, j.salary].filter(Boolean).join(" · "),
       }))
+      .filter((row): row is Row => row.href !== null)
     return { rows, totalPages: Math.max(1, Math.ceil((r.total || rows.length) / PER_PAGE)) }
   }
   if (board === "wfh") {
-    // Enumerate the full inventory (non-archived) — matches the sitemap so every
-    // listed WFH job URL has a crawlable internal link.
-    const all = WFH_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB")
+    // Only genuine WFH jobs get a crawlable directory link; synthetic inventory
+    // (noindex detail pages) is excluded, so this is empty until real WFH
+    // inventory exists.
+    const all = WFH_INVENTORY
+      .map(j => ({ href: jobDetailHref("wfh", j), title: j.title, company: j.company, meta: [j.cat, j.salary].filter(Boolean).join(" · ") }))
+      .filter((row): row is Row => row.href !== null)
     const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
-    const rows = all.slice((page - 1) * PER_PAGE, page * PER_PAGE).map(j => ({
-      href: `/jobs/wfh/${j.id}`,
-      title: j.title,
-      company: j.company,
-      meta: [j.cat, j.salary].filter(Boolean).join(" · "),
-    }))
-    return { rows, totalPages }
+    return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }
   }
-  const all = ABROAD_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB")
+  const all = ABROAD_INVENTORY
+    .map(j => ({ href: jobDetailHref("abroad", j), title: j.title, company: j.company, meta: [j.country, j.salary].filter(Boolean).join(" · ") }))
+    .filter((row): row is Row => row.href !== null)
   const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
-  const rows = all.slice((page - 1) * PER_PAGE, page * PER_PAGE).map(j => ({
-    href: `/jobs/abroad/${j.id}`,
-    title: j.title,
-    company: j.company,
-    meta: [j.country, j.salary].filter(Boolean).join(" · "),
-  }))
-  return { rows, totalPages }
+  return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }
 }
 
 function pageHref(basePath: string, n: number): string {

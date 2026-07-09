@@ -63,7 +63,8 @@ export type Landing = CategoryLanding | CityLanding
 
 /** Normalised job card used by the latest/trending blocks. */
 export interface LandingJobCard {
-  href: string
+  /** Detail path, or null for non-genuine rows that must not be linked. */
+  href: string | null
   title: string
   company: string
   meta: string

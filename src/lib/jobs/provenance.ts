@@ -229,6 +229,21 @@ export function isCountableAsGenuine(j: Classifiable): boolean {
 }
 
 /**
+ * The on-site detail path for a private/WFH/abroad job, or `null` when the job
+ * must NOT be linked from indexable pages. We only hand a crawlable internal
+ * link to GENUINE jobs; synthetic / unclassified demo rows return null so their
+ * (noindex) detail pages are never given dofollow discovery links. Government
+ * jobs are always genuine and are linked via their own slug path elsewhere.
+ */
+export function jobDetailHref(
+  board: "private" | "wfh" | "abroad",
+  job: Classifiable & { id?: string | null },
+): string | null {
+  if (!job.id) return null
+  return isGenuine(job) ? `/jobs/${board}/${job.id}` : null
+}
+
+/**
  * May we present a "Verified" trust badge? Never for synthetic / unclassified
  * content, even when a legacy `jobStatus` is VERIFIED_JOB or a stale `verified`
  * flag is set.
