@@ -333,7 +333,13 @@ body {
 
 /* ── Resume acquisition dock (PR #20) ── */
 @media (max-width: 640px) {
-  .nj-resume-dock { right: 12px !important; bottom: 12px !important; }
-  .nj-resume-dock button:first-child { padding: 11px 16px !important; font-size: 13px !important; }
+  .nj-resume-dock { right: 12px !important; bottom: 12px !important; left: 12px !important; justify-content: center; }
+  .nj-resume-dock button:first-child {
+    padding: 11px 14px !important;
+    font-size: 12.5px !important;
+    white-space: normal !important;
+    max-width: calc(100vw - 64px);
+    line-height: 1.25;
+  }
   .nj-resume-sheet { max-width: 100% !important; }
 }

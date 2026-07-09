@@ -20,7 +20,7 @@ interface JobAlertCtaProps {
  * subscribe without an account. A resume-acquisition-first surface.
  */
 export function JobAlertCta({
-  title = 'Get Jobs Like This Daily',
+  title = 'Get Matching Jobs by Email',
   keywords,
   location,
   category,
@@ -65,8 +65,13 @@ export function JobAlertCta({
 
   return (
     <form onSubmit={submit} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: compact ? '12px 14px' : '16px 18px' }}>
-      <div style={{ fontWeight: 800, color: '#0d1f4e', fontSize: compact ? 14 : 15.5, marginBottom: 8, fontFamily: 'Playfair Display,serif' }}>
-        📬 {title}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <span style={{ fontWeight: 800, color: '#0d1f4e', fontSize: compact ? 14 : 15.5, fontFamily: 'Playfair Display,serif' }}>
+          📬 {title}
+        </span>
+        <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 700 }}>
+          📱 WhatsApp — coming soon
+        </span>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <input

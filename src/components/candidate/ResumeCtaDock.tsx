@@ -49,10 +49,10 @@ export function ResumeCtaDock() {
         <div className="nj-resume-dock" style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             onClick={openWidget}
-            style={{ background: '#1847d4', color: '#fff', border: 'none', borderRadius: 999, padding: '13px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer', boxShadow: '0 8px 24px rgba(24,71,212,.35)', display: 'inline-flex', alignItems: 'center', gap: 8 }}
-            aria-label="Upload your resume for a free AI score"
+            style={{ background: '#1847d4', color: '#fff', border: 'none', borderRadius: 999, padding: '13px 20px', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 8px 24px rgba(24,71,212,.35)', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            aria-label="Upload your resume for a free AI Career Report"
           >
-            📄 Free Resume Score
+            📄 Upload Resume &amp; Get AI Career Report
           </button>
           <button onClick={dismiss} aria-label="Dismiss" style={{ background: '#fff', color: '#6b7280', border: '1px solid #e2e8f0', borderRadius: 999, width: 30, height: 30, cursor: 'pointer', fontSize: 15, lineHeight: 1, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>×</button>
         </div>
@@ -75,9 +75,9 @@ export function ResumeCtaDock() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <div>
                 <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 19, margin: 0 }}>
-                  Free AI Resume Score
+                  Free AI Career Report
                 </h2>
-                <p style={{ color: '#6b7280', fontSize: 12.8, margin: '3px 0 0' }}>Instant feedback · no signup needed</p>
+                <p style={{ color: '#6b7280', fontSize: 12.8, margin: '3px 0 0' }}>Career Score, skills &amp; matching jobs · no signup needed</p>
               </div>
               <button onClick={() => setOpen(false)} aria-label="Close" style={{ background: 'transparent', border: 'none', fontSize: 24, color: '#9ca3af', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
