@@ -9,6 +9,8 @@
  * React cache() so a single page render performs at most one query.
  */
 import { cache } from "react"
+import { unstable_cache } from "next/cache"
+import { GOVT_ROWS_CACHE_TTL_SECONDS } from "@/lib/config/govtCache"
 import { GOVT_JOBS, enrichGovtJob } from "@/lib/data/govtData"
 import { applyGovtVacancies } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
@@ -20,6 +22,9 @@ import type { GovtJob } from "@/types/govtJob"
  * query (status=active AND review_status=approved AND published) so that
  * bypassing RLS can never surface pending/unpublished rows.
  */
+/** Re-exported for callers/tests; defined in the dependency-free config module. */
+export { GOVT_ROWS_CACHE_TTL_SECONDS }
+
 function adminConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -39,10 +44,11 @@ function mapRow(row: Record<string, unknown>): GovtJob {
 }
 
 /**
- * Active government jobs from Supabase, or the local active inventory as a
- * graceful fallback. Date-expired rows are filtered out regardless of source.
+ * The actual Supabase read + graceful local fallback. UNCHANGED query, filters,
+ * ordering and visibility (status=active AND review_status=approved AND
+ * published; date-expired rows dropped regardless of source).
  */
-export const getActiveGovtRows = cache(async (): Promise<GovtJob[]> => {
+async function loadActiveGovtRows(): Promise<GovtJob[]> {
   const local = GOVT_JOBS.filter(isActiveGovtJob)
   if (!adminConfigured()) return local
   try {
@@ -61,4 +67,25 @@ export const getActiveGovtRows = cache(async (): Promise<GovtJob[]> => {
   } catch {
     return local
   }
+}
+
+/**
+ * SHARED, cross-request cache for the govt_jobs full-table read.
+ *
+ * `unstable_cache` stores the result in Next's server Data Cache with a ~300s
+ * TTL, so ALL renders and ALL requests (the govt hub, ~140 detail/state/
+ * category/qualification pages, the homepage category cards and the sitemap)
+ * reuse a SINGLE `govt_jobs` read per window — instead of one full-table read
+ * per request, which is the dominant Supabase egress source. React `cache()`
+ * remains as the per-render dedupe (belt-and-suspenders on a cache miss).
+ *
+ * Emergency egress fix: no cron/tag invalidation here — the govt data changes
+ * at most hourly (via the ingestion cron), so a 300s TTL is behaviour-neutral
+ * for users while collapsing egress. Filtering, ordering, visibility, URLs,
+ * metadata, schema and sitemap contents are unchanged.
+ */
+const cachedActiveGovtRows = unstable_cache(loadActiveGovtRows, ["govt-active-rows-v1"], {
+  revalidate: GOVT_ROWS_CACHE_TTL_SECONDS,
 })
+
+export const getActiveGovtRows = cache((): Promise<GovtJob[]> => cachedActiveGovtRows())

@@ -41,6 +41,7 @@
     "verify:job-schema": "tsx scripts/verify-job-schema.ts",
     "test:provenance": "tsx src/lib/jobs/provenance.test.ts",
     "test:acq": "tsx src/lib/resume/scoreBand.test.ts",
+    "test:egress": "tsx src/lib/config/govtCache.test.ts",
     "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
     "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"
   },
