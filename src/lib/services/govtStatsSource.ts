@@ -12,6 +12,7 @@ import { cache } from "react"
 import { unstable_cache } from "next/cache"
 import { GOVT_ROWS_CACHE_TTL_SECONDS } from "@/lib/config/govtCache"
 import { GOVT_LIST_COLUMNS, GOVT_DETAIL_COLUMNS } from "@/lib/config/govtColumns"
+import { govtKeyLookups } from "@/lib/config/govtKey"
 import { GOVT_JOBS, enrichGovtJob } from "@/lib/data/govtData"
 import { applyGovtVacancies } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
@@ -76,10 +77,6 @@ async function loadActiveGovtRows(): Promise<GovtJob[]> {
 
 /** Strip characters that could break/inject a PostgREST or() filter. Slugs and
  *  ids are `[a-z0-9-]`; anything else simply yields no match (→ local fallback). */
-function sanitizeGovtKey(v: string): string {
-  return v.replace(/[^a-zA-Z0-9_-]/g, "")
-}
-
 /**
  * Fetch ONE genuine government job by slug or id — a single indexed row with its
  * full (light + heavy) columns — instead of loading the entire active dataset
@@ -87,24 +84,37 @@ function sanitizeGovtKey(v: string): string {
  * approved, published, non-expired). Returns null when unconfigured / not found
  * / expired; the caller applies the local-seed fallback (kept in govtJobService
  * to avoid a circular import). Slugs are persisted + indexed on govt_jobs.
+ *
+ * Resolution uses separate parameterized `.eq()` queries (slug first, then id)
+ * rather than interpolating the raw key into a combined `.or()` string. This
+ * keeps colon-containing ids (e.g. "mppsc:mppsc-2025-20-06-20") working and makes
+ * PostgREST filter injection structurally impossible — the key is only ever a
+ * VALUE bound by supabase-js, never part of the filter grammar. Both columns are
+ * indexed, so the extra lookup for an id is a cheap single-row read.
  */
 async function loadGovtJobRow(slugOrId: string): Promise<GovtJob | null> {
-  const key = sanitizeGovtKey(slugOrId || "")
-  if (!key || !adminConfigured()) return null
+  const lookups = govtKeyLookups(slugOrId)
+  if (!lookups.length || !adminConfigured()) return null
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
-    const { data, error } = await supabaseAdmin
-      .from("govt_jobs")
-      .select(GOVT_DETAIL_COLUMNS)
-      .or(`slug.eq.${key},id.eq.${key}`)
-      .eq("status", "active")
-      .eq("review_status", "approved")
-      .eq("published", true)
-      .limit(1)
-    if (error || !data?.length) return null
-    const job = enrichGovtJob(
-      mapRow(data[0] as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string },
-    )
+    let row: Record<string, unknown> | null = null
+    for (const [column, value] of lookups) {
+      const { data, error } = await supabaseAdmin
+        .from("govt_jobs")
+        .select(GOVT_DETAIL_COLUMNS)
+        .eq(column, value)
+        .eq("status", "active")
+        .eq("review_status", "approved")
+        .eq("published", true)
+        .limit(1)
+      if (error) return null
+      if (data?.length) {
+        row = data[0] as unknown as Record<string, unknown>
+        break
+      }
+    }
+    if (!row) return null
+    const job = enrichGovtJob(mapRow(row) as GovtJob & { last_date: string; age_range: string })
     return isActiveGovtJob(job) ? job : null
   } catch {
     return null
