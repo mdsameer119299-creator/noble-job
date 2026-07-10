@@ -17,6 +17,7 @@ import {
   GOVT_LIST_COLUMN_LIST,
   GOVT_HEAVY_DETAIL_COLUMN_LIST,
 } from "./govtColumns"
+import { govtKeyLookups } from "./govtKey"
 
 let passed = 0
 let failed = 0
@@ -80,15 +81,54 @@ test("pool read uses the light projection, not select(*)", () => {
   assert.doesNotMatch(src, /\.select\("\*"\)/)
 })
 
-test("detail pages fetch a SINGLE row (slug/id .or) — not the full pool", () => {
+test("detail pages fetch a SINGLE row — not the full pool", () => {
   const src = read("src/lib/services/govtStatsSource.ts")
   assert.match(src, /\.select\(GOVT_DETAIL_COLUMNS\)/)
-  assert.match(src, /\.or\(`slug\.eq\./)
   assert.match(src, /export const getGovtJobRow = cache\(/)
   const svc = read("src/lib/services/govtJobService.ts")
   // getGovtJobBySlug/ById must use the single-row fetch, not getActiveGovtRows.
   assert.match(svc, /getGovtJobRow\(slug\)/)
   assert.match(svc, /getGovtJobRow\(id\)/)
+})
+
+// ── PR-E3: govt id resolution (colon-ids) + injection safety ──────────────
+test("single-row fetch uses parameterized .eq() (slug + id), NOT a raw .or() string", () => {
+  const src = read("src/lib/services/govtStatsSource.ts")
+  assert.match(src, /govtKeyLookups\(slugOrId\)/)
+  assert.match(src, /\.eq\(column, value\)/)
+  // Must NOT interpolate the user key into a combined .or() filter grammar.
+  assert.doesNotMatch(src, /\.or\(`slug\.eq\.\$\{/)
+  assert.doesNotMatch(src, /\.or\(`[^`]*\$\{(key|slugOrId|value)/)
+  // Must NOT strip characters from the key (would corrupt colon-ids).
+  assert.doesNotMatch(src, /sanitizeGovtKey/)
+  assert.doesNotMatch(src, /replace\(\/\[\^a-zA-Z0-9/)
+})
+
+test("govtKeyLookups preserves colon-containing ids VERBATIM (PR-E2 regression)", () => {
+  const id = "mppsc:mppsc-2025-20-06-20"
+  const l = govtKeyLookups(id)
+  assert.deepEqual(l, [["slug", id], ["id", id]])
+  // slug tried first (public URLs are slugs), id second (may contain ':').
+  assert.equal(l[0][0], "slug")
+  assert.equal(l[1][0], "id")
+  assert.equal(l[1][1], id) // colon NOT stripped
+})
+
+test("govtKeyLookups passes filter-breaking chars through as a VALUE (no injection)", () => {
+  for (const bad of ["a,b)c(d", 'x".eq."y', "id.eq.evil", "a)or(b"]) {
+    const l = govtKeyLookups(bad)
+    // The raw string is preserved as the .eq() value — it is never spliced into
+    // filter grammar, so it cannot add or break filters.
+    assert.equal(l[0][1], bad)
+    assert.equal(l[1][1], bad)
+  }
+})
+
+test("govtKeyLookups: normal + hyphen/number slugs preserved; empty → none", () => {
+  assert.equal(govtKeyLookups("ssc-cgl-2026-27-recruitment")[0][1], "ssc-cgl-2026-27-recruitment")
+  assert.equal(govtKeyLookups("madhya-pradesh-public-service-commission-2025-20-06-2026")[1][1], "madhya-pradesh-public-service-commission-2025-20-06-2026")
+  assert.deepEqual(govtKeyLookups(""), [])
+  assert.deepEqual(govtKeyLookups("   "), [])
 })
 
 console.log(`\negress config tests: ${passed} passed, ${failed} failed`)
