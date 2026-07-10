@@ -4,7 +4,7 @@ import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { jobMatchesQualification } from "@/lib/services/govtQualificationMatch"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
-import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
+import { getActiveGovtRows, getGovtJobRow } from "@/lib/services/govtStatsSource"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
@@ -18,15 +18,15 @@ export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): P
   return getGovtJobsLocal(tab, state, pool)
 }
 
+// Single-row fetch (indexed slug/id lookup) instead of loading the full active
+// dataset and filtering in memory. Same visibility + local-seed fallback.
 export async function getGovtJobById(id: string): Promise<GovtJob | null> {
-  const pool = await getActiveGovtRows()
-  return pool.find(j => j.id === id || j.slug === id) ?? getGovtJobByIdLocal(id)
+  return (await getGovtJobRow(id)) ?? getGovtJobByIdLocal(id)
 }
 
-/** Look up a single government job by SEO slug (falls back to id). */
+/** Look up a single government job by SEO slug (falls back to id, then local). */
 export async function getGovtJobBySlug(slug: string): Promise<GovtJob | null> {
-  const pool = await getActiveGovtRows()
-  return pool.find(j => j.slug === slug || j.id === slug) ?? getGovtJobByIdLocal(slug)
+  return (await getGovtJobRow(slug)) ?? getGovtJobByIdLocal(slug)
 }
 
 export interface GovtJobFilters {

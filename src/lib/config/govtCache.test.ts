@@ -11,6 +11,12 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { GOVT_ROWS_CACHE_TTL_SECONDS } from "./govtCache"
+import {
+  GOVT_LIST_COLUMNS,
+  GOVT_DETAIL_COLUMNS,
+  GOVT_LIST_COLUMN_LIST,
+  GOVT_HEAVY_DETAIL_COLUMN_LIST,
+} from "./govtColumns"
 
 let passed = 0
 let failed = 0
@@ -43,6 +49,46 @@ test("sitemap declares a 3600s revalidate and is cookie-less", () => {
   assert.match(src, /export const revalidate = 3600/)
   // Must not use the cookie-based server client (would force dynamic in prod).
   assert.doesNotMatch(src, /from\s*["']@\/lib\/supabase\/server["']/)
+})
+
+// ── PR-E2: column projections ────────────────────────────────────────────
+test("light pool projection EXCLUDES every heavy detail-body column", () => {
+  for (const c of GOVT_HEAVY_DETAIL_COLUMN_LIST) {
+    assert.ok(!GOVT_LIST_COLUMN_LIST.includes(c), `light projection must not include heavy column "${c}"`)
+  }
+})
+
+test("light pool projection INCLUDES sitemap-indexability + card columns", () => {
+  // govtClassifiable() reads these — dropping any would change sitemap contents.
+  for (const c of ["id", "slug", "official_url", "notification_url", "notification_pdf", "apply_url", "job_status"]) {
+    assert.ok(GOVT_LIST_COLUMN_LIST.includes(c), `light projection must include "${c}"`)
+  }
+  // Vacancy total comes from the `vacancies` string (not vacancy_breakup).
+  assert.ok(GOVT_LIST_COLUMN_LIST.includes("vacancies"))
+})
+
+test("detail projection = light + heavy body columns; neither uses select(*)", () => {
+  for (const c of GOVT_HEAVY_DETAIL_COLUMN_LIST) assert.match(GOVT_DETAIL_COLUMNS, new RegExp(`\\b${c}\\b`))
+  for (const c of GOVT_LIST_COLUMN_LIST) assert.match(GOVT_DETAIL_COLUMNS, new RegExp(`\\b${c}\\b`))
+  assert.doesNotMatch(GOVT_LIST_COLUMNS, /\*/)
+  assert.doesNotMatch(GOVT_DETAIL_COLUMNS, /\*/)
+})
+
+test("pool read uses the light projection, not select(*)", () => {
+  const src = read("src/lib/services/govtStatsSource.ts")
+  assert.match(src, /\.select\(GOVT_LIST_COLUMNS\)/)
+  assert.doesNotMatch(src, /\.select\("\*"\)/)
+})
+
+test("detail pages fetch a SINGLE row (slug/id .or) — not the full pool", () => {
+  const src = read("src/lib/services/govtStatsSource.ts")
+  assert.match(src, /\.select\(GOVT_DETAIL_COLUMNS\)/)
+  assert.match(src, /\.or\(`slug\.eq\./)
+  assert.match(src, /export const getGovtJobRow = cache\(/)
+  const svc = read("src/lib/services/govtJobService.ts")
+  // getGovtJobBySlug/ById must use the single-row fetch, not getActiveGovtRows.
+  assert.match(svc, /getGovtJobRow\(slug\)/)
+  assert.match(svc, /getGovtJobRow\(id\)/)
 })
 
 console.log(`\negress config tests: ${passed} passed, ${failed} failed`)
