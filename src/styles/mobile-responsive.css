@@ -343,3 +343,8 @@ body {
   }
   .nj-resume-sheet { max-width: 100% !important; }
 }
+
+/* ── Candidate AI dashboard grid (PR #21) ── */
+@media (max-width: 900px) {
+  .cand-ai-grid { grid-template-columns: 1fr !important; }
+}
