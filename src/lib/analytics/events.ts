@@ -12,6 +12,9 @@ export const AcqEvent = {
   RESUME_UPLOAD: "resume_upload",
   RESUME_PARSED: "resume_parsed",
   RESUME_SCORE_GENERATED: "resume_score_generated",
+  // Demand-measurement for the post-report Resume AI launcher. One event per
+  // CTA click, distinguished by a `mode` prop (improve|build|tailor|report).
+  RESUME_MODE_SELECTED: "resume_mode_selected",
   JOB_ALERT_SUBSCRIBED: "job_alert_subscribed",
   FIRST_APPLICATION: "first_application",
 } as const

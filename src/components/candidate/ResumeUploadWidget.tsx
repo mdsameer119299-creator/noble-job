@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { validateResumeFile } from '@/lib/utils/resumeUpload'
 import { resumeScoreBand, anonProfileCompletion } from '@/lib/resume/scoreBand'
 import { track, AcqEvent } from '@/lib/analytics/events'
+import { RESUME_MODES, type ResumeModeKey } from '@/lib/resume/resumeModes'
 import { JobAlertCta } from './JobAlertCta'
 
 interface QuickScore {
@@ -30,10 +31,31 @@ interface QuickScore {
  */
 export function ResumeUploadWidget({ source = 'dock' }: { source?: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const reportTopRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
   const [result, setResult] = useState<QuickScore | null>(null)
   const [fileName, setFileName] = useState('')
+
+  /**
+   * Post-report launcher CTA. Fires ONE demand-measurement event per click
+   * (mode = improve|build|tailor|report) via the existing dependency-free
+   * pipeline; sendBeacon survives the subsequent navigation. "View Career
+   * Report" (href = null) never navigates — it scrolls back to the score,
+   * preserving the anonymous report state exactly as-is.
+   */
+  function onModeClick(key: ResumeModeKey, href: string | null, e: React.MouseEvent) {
+    track(AcqEvent.RESUME_MODE_SELECTED, {
+      mode: key,
+      source,
+      score: result ? Math.round(result.overallScore) : null,
+    })
+    if (href === null) {
+      e.preventDefault()
+      reportTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // For real destinations, let the <a href> navigate normally.
+  }
 
   async function handleFile(file: File) {
     const valid = validateResumeFile(file)
@@ -86,7 +108,7 @@ export function ResumeUploadWidget({ source = 'dock' }: { source?: string }) {
       <div>
         {/* ── VALUE FIRST ─────────────────────────────────────────────── */}
         {/* 1) Career Score */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+        <div ref={reportTopRef} style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
           <div style={{ width: 88, height: 88, borderRadius: '50%', border: `6px solid ${band.color}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 26, fontWeight: 900, color: band.color, lineHeight: 1 }}>{Math.round(result.overallScore)}</span>
             <span style={{ fontSize: 10, color: '#6b7280' }}>/ 100</span>
@@ -110,6 +132,30 @@ export function ResumeUploadWidget({ source = 'dock' }: { source?: string }) {
             </div>
           </div>
         )}
+
+        {/* ── RESUME AI LAUNCHER — clear next actions after the report ──── */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#374151', marginBottom: 7 }}>What would you like to do next?</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {RESUME_MODES.map(m => {
+              const shared = {
+                'aria-label': m.label,
+                onClick: (e: React.MouseEvent) => onModeClick(m.key, m.href, e),
+                style: modeCard,
+              }
+              const inner = (
+                <>
+                  <span style={modeIcon} aria-hidden>{m.emoji}</span>
+                  <span style={modeTitle}>{m.label}</span>
+                  <span style={modeSub}>{m.desc}</span>
+                </>
+              )
+              return m.href
+                ? <a key={m.key} href={m.href} {...shared}>{inner}</a>
+                : <button key={m.key} type="button" {...shared}>{inner}</button>
+            })}
+          </div>
+        </div>
 
         {/* 3) Matching jobs + 4) Salary/career insights — honest teasers to real pages */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
@@ -188,6 +234,18 @@ const teaser = { display: 'block', textDecoration: 'none', background: '#f8faff'
 const teaserIcon = { fontSize: 18, marginBottom: 3 } as const
 const teaserTitle = { fontWeight: 800, color: '#0d1f4e', fontSize: 12.8 } as const
 const teaserSub = { color: '#6b7280', fontSize: 11.5, marginTop: 1 } as const
+
+// Resume AI launcher cards. Uniform for both <a> (navigating modes) and
+// <button> (in-place "View Career Report") so the row reads as one control set.
+const modeCard = {
+  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2,
+  textAlign: 'left', textDecoration: 'none', width: '100%', cursor: 'pointer',
+  background: '#fff', border: '1.5px solid #dbe4ff', borderRadius: 11,
+  padding: '11px 12px', font: 'inherit',
+} as const
+const modeIcon = { fontSize: 18, marginBottom: 2 } as const
+const modeTitle = { fontWeight: 800, color: '#1847d4', fontSize: 12.8, lineHeight: 1.25 } as const
+const modeSub = { color: '#6b7280', fontSize: 11, lineHeight: 1.3 } as const
 
 /**
  * Honest social proof — credibility markers only, no fabricated counts or
