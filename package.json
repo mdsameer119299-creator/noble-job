@@ -43,6 +43,8 @@
     "test:acq": "tsx src/lib/resume/scoreBand.test.ts",
     "test:resume": "tsx src/lib/resume/resumeModes.test.ts",
     "test:resume-workspace": "tsx src/lib/resume/resumeWorkspace.test.ts",
+    "test:admin": "tsx src/lib/validation/adminValidation.test.ts",
+    "test:admin-route": "tsx src/app/api/admin/adminRoute.test.ts",
     "test:egress": "tsx src/lib/config/govtCache.test.ts",
     "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
     "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"

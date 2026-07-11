@@ -136,7 +136,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
     const path = resumeObjectPath(candidateId, validation.ext)
     const { error } = await sb.storage.from(RESUME_BUCKET).upload(path, file, { upsert: true })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    await sb.from("candidates").update({ resume_url: path }).eq("user_id", user.id)
+    // Persist the storage path; if this fails the resume is orphaned (uploaded but
+    // unlinked, so the admin resume bank can't find it) — surface the error and
+    // do NOT send the "resume uploaded" admin alert after a failed mutation.
+    const { error: linkError } = await sb.from("candidates").update({ resume_url: path }).eq("user_id", user.id)
+    if (linkError) return NextResponse.json({ error: linkError.message }, { status: 500 })
 
     const c = candidate as { first_name?: string; last_name?: string }
     const { alertAdmins } = await import("@/lib/services/adminNotifyService")

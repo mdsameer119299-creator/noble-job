@@ -55,6 +55,12 @@ jobs:
       - name: Resume-workspace tests
         run: npm run test:resume-workspace
 
+      - name: Admin validation tests
+        run: npm run test:admin
+
+      - name: Admin route regression tests
+        run: npm run test:admin-route
+
       - name: Egress-config tests
         run: npm run test:egress
 

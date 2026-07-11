@@ -90,6 +90,8 @@ async function notifyJobDecision(jobId: string, approved: boolean) {
 
 export async function approveJob(id: string) {
   const result = await supabaseAdmin.from("jobs").update({ status: "active" }).eq("id", id)
+  // Never notify (in-app + email) after a failed DB mutation.
+  if (result.error) return result
   await notifyJobDecision(id, true)
   const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
   await notifyAdmins("job_approved", "Job approved", "A job posting was approved and is now live.")
@@ -98,6 +100,14 @@ export async function approveJob(id: string) {
 
 export async function rejectJob(id: string) {
   const result = await supabaseAdmin.from("jobs").update({ status: "rejected" }).eq("id", id)
+  // Never notify after a failed DB mutation.
+  if (result.error) return result
+  // Keep dashboard counts consistent: Live/Verified/Total read `job_status`, so a
+  // rejected job must leave those buckets. Best-effort + resilient — a missing
+  // job_status column (environments without that migration) must not fail the
+  // rejection itself, which already succeeded above.
+  const archived = await supabaseAdmin.from("jobs").update({ job_status: "ARCHIVED_JOB" }).eq("id", id)
+  if (archived.error) console.warn("[reject-job] job_status archive skipped:", archived.error.message)
   await notifyJobDecision(id, false)
   const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
   await notifyAdmins("job_rejected", "Job rejected", "A job posting was rejected.")
