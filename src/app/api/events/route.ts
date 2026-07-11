@@ -19,6 +19,7 @@ const ALLOWED = new Set([
   "resume_upload",
   "resume_parsed",
   "resume_score_generated",
+  "resume_mode_selected",
   "job_alert_subscribed",
   "first_application",
 ])

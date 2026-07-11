@@ -49,6 +49,9 @@ jobs:
       - name: Candidate-acquisition tests
         run: npm run test:acq
 
+      - name: Resume-launcher tests
+        run: npm run test:resume
+
       - name: Egress-config tests
         run: npm run test:egress
 
