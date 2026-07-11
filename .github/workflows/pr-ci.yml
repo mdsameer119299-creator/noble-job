@@ -52,6 +52,9 @@ jobs:
       - name: Resume-launcher tests
         run: npm run test:resume
 
+      - name: Resume-workspace tests
+        run: npm run test:resume-workspace
+
       - name: Egress-config tests
         run: npm run test:egress
 

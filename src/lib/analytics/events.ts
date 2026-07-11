@@ -15,6 +15,12 @@ export const AcqEvent = {
   // Demand-measurement for the post-report Resume AI launcher. One event per
   // CTA click, distinguished by a `mode` prop (improve|build|tailor|report).
   RESUME_MODE_SELECTED: "resume_mode_selected",
+  // Resume AI workspace shell + entry-flow funnel (PR-Resume-02).
+  RESUME_WORKSPACE_VIEWED: "resume_workspace_viewed",       // { mode }
+  RESUME_FILE_SELECTED: "resume_file_selected",             // { mode, ext, size }
+  RESUME_BUILD_METHOD_SELECTED: "resume_build_method_selected", // { method }
+  RESUME_TAILOR_TARGET_ENTERED: "resume_tailor_target_entered", // { hasResume, jdChars }
+  RESUME_SIGNIN_REQUESTED: "resume_signin_requested",       // { mode, reason }
   JOB_ALERT_SUBSCRIBED: "job_alert_subscribed",
   FIRST_APPLICATION: "first_application",
 } as const

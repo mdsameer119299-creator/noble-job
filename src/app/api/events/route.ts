@@ -20,6 +20,11 @@ const ALLOWED = new Set([
   "resume_parsed",
   "resume_score_generated",
   "resume_mode_selected",
+  "resume_workspace_viewed",
+  "resume_file_selected",
+  "resume_build_method_selected",
+  "resume_tailor_target_entered",
+  "resume_signin_requested",
   "job_alert_subscribed",
   "first_application",
 ])
