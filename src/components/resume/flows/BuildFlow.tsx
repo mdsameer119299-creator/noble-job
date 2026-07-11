@@ -39,8 +39,14 @@ export function BuildFlow() {
   async function chooseSaved() {
     setMethod('saved')
     setSavedState('busy')
+    // Guard against a hung request leaving a permanent "Checking…" spinner:
+    // abort after 12s so the flow falls back to the graceful error state.
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 12000)
     try {
-      const res = await fetch('/api/candidate/profile', { headers: { Accept: 'application/json' } })
+      const res = await fetch('/api/candidate/profile', { headers: { Accept: 'application/json' }, signal: ctrl.signal })
+      // 401 → not signed in; all other non-OK (403/404/500/503) fall through to
+      // the graceful error state, which always offers "start from scratch".
       if (res.status === 401) {
         setSavedState('signin')
         track(AcqEvent.RESUME_SIGNIN_REQUESTED, { mode: 'build', reason: 'saved-data' })
@@ -57,7 +63,10 @@ export function BuildFlow() {
       setSavedState(hasAny ? 'ready' : 'empty')
       track(AcqEvent.RESUME_BUILD_METHOD_SELECTED, { method: 'saved' })
     } catch {
+      // Network failure or timeout/abort → graceful error (never a dead end).
       setSavedState('error')
+    } finally {
+      clearTimeout(timer)
     }
   }
 

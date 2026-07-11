@@ -59,7 +59,7 @@ export function TailorFlow() {
       <textarea
         id="tailor-jd"
         value={jd}
-        onChange={e => { setJd(e.target.value); if (error) setError('') }}
+        onChange={e => { setJd(e.target.value); if (error) setError(''); if (entered) setEntered(false) }}
         rows={6}
         placeholder="Paste the job description (responsibilities, requirements, skills)…"
         aria-invalid={!!error || over}

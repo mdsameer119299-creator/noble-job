@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ResumeFilePicker } from '../ResumeFilePicker'
 import { resumeScoreBand } from '@/lib/resume/scoreBand'
 import { track, AcqEvent } from '@/lib/analytics/events'
@@ -29,8 +29,13 @@ export function ImproveFlow() {
   const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle')
   const [error, setError] = useState('')
   const [score, setScore] = useState<QuickScore | null>(null)
+  // Monotonic token: any file change or new request invalidates in-flight
+  // quick-score responses so a stale result can never be applied to a
+  // replaced/removed resume.
+  const reqId = useRef(0)
 
   function onReady(f: File, ext: string) {
+    reqId.current++
     setFile(f)
     setScore(null)
     setState('idle')
@@ -38,6 +43,7 @@ export function ImproveFlow() {
     track(AcqEvent.RESUME_FILE_SELECTED, { mode: 'improve', ext, size: f.size })
   }
   function onClear() {
+    reqId.current++
     setFile(null)
     setScore(null)
     setState('idle')
@@ -46,13 +52,16 @@ export function ImproveFlow() {
 
   async function runQuickScore() {
     if (!file) return
+    const myId = ++reqId.current
+    const target = file
     setState('busy')
     setError('')
     try {
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('file', target)
       const res = await fetch('/api/resume/quick-score', { method: 'POST', body: fd })
       const json = await res.json().catch(() => ({}))
+      if (myId !== reqId.current) return // superseded — resume was replaced/removed
       if (!res.ok) {
         setState('error')
         setError(json?.error || 'Could not score your resume. Please try again.')
@@ -63,6 +72,7 @@ export function ImproveFlow() {
       setState('done')
       track(AcqEvent.RESUME_SCORE_GENERATED, { source: 'improve', score: data.overallScore, skills: data.extractedSkills.length })
     } catch {
+      if (myId !== reqId.current) return
       setState('error')
       setError('Network error. Please try again.')
     }
