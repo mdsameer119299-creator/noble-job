@@ -25,14 +25,14 @@ export function AdminSidebar(){
     }).catch(()=>{})
   },[path])
   return(
-    <aside style={{width:230,flexShrink:0,position:'sticky',top:110}}>
+    <aside className="dashboard-sidebar admin-dashboard-sidebar" aria-label="Admin navigation" style={{width:230,flexShrink:0,position:'sticky',top:110,zIndex:10,pointerEvents:'auto'}}>
       <div style={{background:'#fff',borderRadius:16,border:'1.5px solid #e2e8f0',overflow:'hidden',boxShadow:'0 4px 20px rgba(24,71,212,.06)'}}>
         <div style={{background:'linear-gradient(135deg,#0d1f4e,#1e3a8a)',padding:'20px 18px'}}>
           <div style={{fontSize:28,marginBottom:8}}>🛡️</div>
           <div style={{color:'#fff',fontWeight:900,fontSize:15}}>Admin Panel</div>
           <div style={{color:'rgba(255,255,255,.6)',fontSize:12}}>Noble Job · NCC Foundation</div>
         </div>
-        <nav style={{padding:'8px 0'}}>
+        <nav className="dashboard-sidebar__nav" style={{padding:'8px 0'}}>
           {NAV.map(n=>{
             const active=path===n.href||path.startsWith(n.href+'/')
             return(
