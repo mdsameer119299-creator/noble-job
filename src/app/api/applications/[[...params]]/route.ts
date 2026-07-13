@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   const { data: candidate } = await sb
     .from("candidates")
-    .select("id, resume_url")
+    .select("id, resume_url, category")
     .eq("user_id", user.id)
     .single()
   if (!candidate) return NextResponse.json({ error: "Candidate profile not found" }, { status: 404 })
@@ -72,12 +72,14 @@ export async function POST(req: NextRequest) {
   // `jobs`; inserting those would violate the job_id → jobs(id) foreign key. Such
   // applications are stored as ownerless imported records (job_id = NULL + metadata).
   let jobExists = false
+  let jobCategory: string | null = null
 
   if (isUuid) {
-    const { data: job } = await sb.from("jobs").select("employer_id, title").eq("id", d.jobId).single()
+    const { data: job } = await sb.from("jobs").select("employer_id, title, category").eq("id", d.jobId).single()
     if (job) {
       jobExists = true
       employerId = (job as { employer_id?: string })?.employer_id ?? null
+      jobCategory = (job as { category?: string | null })?.category ?? null
     }
   }
 
@@ -130,6 +132,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "You have already applied to this job" }, { status: 409 })
     }
     return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  // Derive the candidate's category from the genuine applied job when their
+  // profile category is missing. The `.is("category", null)` guard means a
+  // candidate-selected category is NEVER overwritten. Best-effort — a failure
+  // here must not affect the already-successful application.
+  const ownCategory = ((candidate as { category?: string | null }).category ?? "").trim()
+  if (!ownCategory && jobCategory && jobCategory.trim()) {
+    const { error: catErr } = await sb
+      .from("candidates")
+      .update({ category: jobCategory.trim() })
+      .eq("id", candidateId)
+      .is("category", null)
+    if (catErr) console.warn("[apply] category derivation skipped:", catErr.message)
   }
 
   if (employerId) {
