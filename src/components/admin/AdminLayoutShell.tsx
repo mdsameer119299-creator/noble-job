@@ -11,9 +11,9 @@ export async function AdminLayoutShell({ children }: { children: React.ReactNode
   if (!isLogin) {
     await requireRole("admin")
     return (
-      <div style={{ background: "#f0f4ff", minHeight: "100vh" }}>
+      <div style={{ background: "#f0f4ff", minHeight: "100vh", overflowX: "clip" }}>
         <div
-          className="wrap"
+          className="wrap dashboard-shell admin-dashboard-shell"
           style={{
             paddingTop: 28,
             paddingBottom: 48,
@@ -23,7 +23,9 @@ export async function AdminLayoutShell({ children }: { children: React.ReactNode
           }}
         >
           <AdminSidebar />
-          <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+          <div className="admin-dashboard-content" style={{ flex: 1, minWidth: 0, width: "100%", overflowX: "auto" }}>
+            {children}
+          </div>
         </div>
         <ScrollToTop />
       </div>
