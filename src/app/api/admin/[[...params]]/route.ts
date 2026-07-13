@@ -69,6 +69,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ url })
   }
 
+  // --- Admin candidate intelligence: GET /api/admin/candidates/{id}/intelligence ---
+  if (p?.[0] === "candidates" && p?.[1] && p?.[2] === "intelligence") {
+    if (!isUuid(p[1])) return NextResponse.json({ error: "Valid candidate id required" }, { status: 400 })
+    const { getCandidateIntelligence } = await import("@/lib/services/candidateAdminService")
+    const data = await getCandidateIntelligence(p[1])
+    if (!data) return NextResponse.json({ error: "Candidate not found" }, { status: 404 })
+    return NextResponse.json({ data })
+  }
+
   // --- Admin applications list (filter + search + pagination) ---
   if (route === "applications") {
     const status = get("status")
@@ -180,24 +189,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
 
   if (route === "candidates") {
     const { limit, offset, q } = parsePagination(get)
-    const built = supabaseAdmin
-      .from("candidates")
-      .select("*, users(email, status, created_at)", { count: "exact" })
-      .order("created_at", { ascending: false })
-    const { data, error, count } = q
-      ? await built.limit(ADMIN_LIST_MAX_LIMIT)
-      : await built.range(offset, offset + limit - 1)
-    if (error) return dbError(error.message)
-    let rows = (data || []) as Record<string, unknown>[]
-    if (q) {
-      const needle = q.toLowerCase()
-      rows = rows.filter((r) => {
-        const u = r.users as { email?: string } | null
-        return matches(r, [r.first_name as string, r.last_name as string, u?.email, r.category as string], needle)
-      })
-      return NextResponse.json({ data: rows.slice(offset, offset + limit), total: rows.length, limit, offset })
-    }
-    return NextResponse.json({ data: rows, total: count ?? rows.length, limit, offset })
+    const { getEnrichedCandidates } = await import("@/lib/services/candidateAdminService")
+    const res = await getEnrichedCandidates({ limit, offset, q })
+    if (res.error) return dbError(res.error)
+    return NextResponse.json({ data: res.data, total: res.total, limit, offset })
   }
 
   if (route === "messages") {
