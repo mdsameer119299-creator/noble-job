@@ -5,6 +5,8 @@ import type { Job, JobStatus } from '@/types/job'
 
 type Counts = { all: number; live: number; verified: number; archived: number }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const TABS: { id: string; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'LIVE_JOB', label: 'Live' },
@@ -34,13 +36,18 @@ export function JobsTable() {
       .finally(() => setLoading(false))
   }, [status])
 
-  // Per-job application counts (loaded once).
+  // Per-job application counts, scoped to the jobs actually on screen so the
+  // tally is EXACT. The endpoint's unscoped path only counts a bounded window of
+  // recent applications, which would undercount once the site has many of them.
+  // Only real (UUID) job ids exist in `applications.job_id`; inventory ids can't.
   useEffect(() => {
-    fetch('/api/admin/application-counts')
+    const ids = jobs.map(j => String(j.id)).filter(id => UUID_RE.test(id))
+    if (!ids.length) { setAppCounts({}); return }
+    fetch(`/api/admin/application-counts?jobIds=${encodeURIComponent(ids.join(','))}`)
       .then(r => (r.ok ? r.json() : { data: {} }))
       .then(d => setAppCounts(d.data || {}))
       .catch(() => setAppCounts({}))
-  }, [])
+  }, [jobs])
 
   const needle = q.trim().toLowerCase()
   const visible = needle

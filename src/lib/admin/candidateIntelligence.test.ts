@@ -83,7 +83,7 @@ test("latestScoreByUser keeps the most recent real numeric score", () => {
 // ── full merge ───────────────────────────────────────────────────────────
 test("mergeCandidateRows produces truthful enriched rows", () => {
   const candidates: CandidateBase[] = [
-    { id: "c1", user_id: "u1", first_name: "Ravi", last_name: "Kumar", category: null, profile_score: 0, resume_url: "path.pdf", updated_at: "2026-01-01T00:00:00Z", users: { email: "ravi@x.com", status: "active" } },
+    { id: "c1", user_id: "u1", first_name: "Ravi", last_name: "Kumar", category: null, profile_score: 0, resume_url: "path.pdf", updated_at: "2026-01-01T00:00:00Z", city: "Pune", state: "MH", skills: ["SQL"], experience_years: "3", expected_salary: 900000, users: { email: "ravi@x.com", status: "active" } },
     { id: "c2", user_id: "u2", first_name: "Asha", last_name: null, category: "Banking", profile_score: 60, resume_url: null, updated_at: "2026-01-02T00:00:00Z", users: { email: "asha@x.com", status: "suspended" } },
   ]
   const apps: AppRow[] = [
@@ -110,6 +110,32 @@ test("mergeCandidateRows produces truthful enriched rows", () => {
   assert.equal(r2.latestAppliedJob, null)
   assert.equal(r2.resumeUploaded, false)
   assert.equal(r2.careerScore, null)         // no persisted score → UI shows "Not Scored"
+})
+
+test("enriched rows never expose the raw resume_url storage path", () => {
+  const rows = mergeCandidateRows(
+    [{ id: "c1", user_id: "u1", first_name: "R", last_name: "K", category: null, profile_score: 10, resume_url: "candidates/c1/resume.pdf", updated_at: null }],
+    [], [],
+  )
+  assert.equal("resume_url" in rows[0], false)
+  assert.equal(rows[0].resumeUploaded, true) // presence is conveyed by the flag only
+})
+
+test("profile fields the Resume Bank filters on are passed through", () => {
+  const rows = mergeCandidateRows(
+    [{ id: "c1", user_id: "u1", first_name: "R", last_name: "K", category: null, profile_score: 10, resume_url: "p.pdf", updated_at: null, city: "Pune", state: "MH", skills: ["SQL", "Python"], experience_years: "3", expected_salary: 900000 }],
+    [], [],
+  )
+  const r = rows[0]
+  assert.equal(r.city, "Pune")
+  assert.equal(r.state, "MH")
+  assert.deepEqual(r.skills, ["SQL", "Python"])
+  assert.equal(r.experience_years, "3")
+  assert.equal(r.expected_salary, 900000)
+  // absent profile fields default safely (no crash in the filters)
+  const bare = mergeCandidateRows([{ id: "c2", user_id: "u2", first_name: null, last_name: null, category: null, profile_score: 0, resume_url: null, updated_at: null }], [], [])[0]
+  assert.deepEqual(bare.skills, [])
+  assert.equal(bare.city, null)
 })
 
 console.log(`\ncandidate-intelligence tests: ${passed} passed, ${failed} failed`)

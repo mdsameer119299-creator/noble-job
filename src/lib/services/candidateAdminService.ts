@@ -15,7 +15,8 @@ import {
  * persisted Career Scores, shown as "Not Scored" — never fabricated).
  */
 
-const CAND_SELECT = "id, user_id, first_name, last_name, category, profile_score, resume_url, updated_at, users(email, status, created_at)"
+const CAND_SELECT =
+  "id, user_id, first_name, last_name, category, profile_score, resume_url, updated_at, city, state, skills, experience_years, expected_salary, users(email, status, created_at)"
 
 /** Latest `resume_score_generated` events for the given users. Never throws. */
 async function fetchScores(userIds: string[]): Promise<ScoreRow[]> {
