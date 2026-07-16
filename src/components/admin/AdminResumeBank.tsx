@@ -7,13 +7,17 @@ type Candidate = {
   id: string
   first_name: string | null
   last_name: string | null
+  name?: string
   city: string | null
   state: string | null
   skills: string[] | null
   experience_years: string | null
   expected_salary: number | null
   category: string | null
-  resume_url: string | null
+  /** Presence flag from /api/admin/candidates — the raw storage path is never
+   *  exposed; resumes are only reachable via the signed-URL endpoint. */
+  resumeUploaded: boolean
+  email?: string | null
   users?: { email?: string }
 }
 
@@ -33,7 +37,7 @@ export function AdminResumeBank() {
     setError(false)
     fetch('/api/admin/candidates')
       .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(d => setAll((d.data || []).filter((c: Candidate) => c.resume_url)))
+      .then(d => setAll((d.data || []).filter((c: Candidate) => c.resumeUploaded)))
       .catch(() => setError(true))
       .finally(() => setLoading(false))
   }
@@ -102,7 +106,7 @@ export function AdminResumeBank() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
           {results.map(c => {
-            const name = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || 'Candidate'
+            const name = (c.name || `${c.first_name ?? ''} ${c.last_name ?? ''}`).trim() || 'Candidate'
             return (
               <div key={c.id} style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', padding: 18 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#0d1f4e' }}>{name}</div>

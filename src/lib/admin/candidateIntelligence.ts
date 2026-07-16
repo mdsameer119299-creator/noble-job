@@ -34,6 +34,12 @@ export interface CandidateBase {
   profile_score: number | null
   resume_url: string | null
   updated_at: string | null
+  // Profile fields consumed by the admin Resume Bank filters.
+  city?: string | null
+  state?: string | null
+  skills?: string[] | null
+  experience_years?: string | null
+  expected_salary?: number | null
   users?: { email?: string | null; status?: string | null } | null
 }
 
@@ -53,6 +59,14 @@ export interface EnrichedCandidate {
   profileCompletion: number
   lastActivity: string | null
   accountStatus: string | null
+  // Profile passthrough for the admin Resume Bank filters. NOTE: the raw
+  // `resume_url` storage path is deliberately NOT exposed — `resumeUploaded`
+  // conveys presence, and access is only ever via a signed URL endpoint.
+  city: string | null
+  state: string | null
+  skills: string[]
+  experience_years: string | null
+  expected_salary: number | null
 }
 
 /** Read a title from an imported application's `notes` JSON (best-effort). */
@@ -164,6 +178,11 @@ export function mergeCandidateRows(
       profileCompletion: typeof c.profile_score === "number" ? c.profile_score : 0,
       lastActivity: computeLastActivity(c.updated_at, agg?.latestAt, scoreAtByUser.get(c.user_id)),
       accountStatus: c.users?.status ?? null,
+      city: c.city ?? null,
+      state: c.state ?? null,
+      skills: c.skills ?? [],
+      experience_years: c.experience_years ?? null,
+      expected_salary: c.expected_salary ?? null,
     }
   })
 }
