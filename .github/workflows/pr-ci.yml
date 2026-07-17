@@ -67,6 +67,9 @@ jobs:
       - name: Egress-config tests
         run: npm run test:egress
 
+      - name: jobService withTimeout tests
+        run: npm run test:jobservice-timeout
+
       - name: SEO verification (static)
         run: npm run verify:seo
 

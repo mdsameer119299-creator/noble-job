@@ -47,6 +47,7 @@
     "test:admin-route": "tsx src/app/api/admin/adminRoute.test.ts",
     "test:admin-candidates": "tsx src/lib/admin/candidateIntelligence.test.ts",
     "test:egress": "tsx src/lib/config/govtCache.test.ts",
+    "test:jobservice-timeout": "tsx src/lib/services/jobService.test.ts",
     "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
     "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"
   },
