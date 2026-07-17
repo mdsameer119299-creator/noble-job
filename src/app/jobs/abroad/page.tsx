@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { paginationMeta } from '@/lib/seo/metadata'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
 import { AbroadJobsPanel } from '@/components/abroad/AbroadJobsPanel'
@@ -24,7 +25,9 @@ export default async function AbroadJobsPage({ searchParams }: SP) {
         <AbroadJobsPanel countries={countries} />
       </div>
       <div className="wrap">
-        <JobsBrowseIndex board="abroad" page={page} basePath="/jobs/abroad" title="All Abroad Jobs — Full Directory" />
+        <Suspense fallback={null}>
+          <JobsBrowseIndex board="abroad" page={page} basePath="/jobs/abroad" title="All Abroad Jobs — Full Directory" />
+        </Suspense>
       </div>
       <ScrollToTop />
     </div>

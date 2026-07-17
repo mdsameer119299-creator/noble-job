@@ -11,6 +11,22 @@ async function getSupabaseClient() {
   return createClient()
 }
 
+/**
+ * A stalled/slow network call to Supabase never rejects on its own, so a plain
+ * `await` can hang the caller indefinitely — and for callers with no Suspense
+ * boundary of their own (e.g. JobsBrowseIndex), that hang blocks the entire
+ * page. Race every live query against a bound so it always settles.
+ */
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Supabase query exceeded ${ms}ms`)), ms)
+    Promise.resolve(promise).then(
+      v => { clearTimeout(timer); resolve(v) },
+      e => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
+
 export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> {
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
@@ -37,7 +53,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 
     if (filter.status && filter.status !== "all") query = query.eq("job_status", filter.status)
 
-    const { data, count, error } = await query.range((page - 1) * limit, page * limit - 1)
+    const { data, count, error } = await withTimeout(query.range((page - 1) * limit, page * limit - 1), 8000)
     if (error || !data?.length) {
       return localResult()
     }
@@ -105,7 +121,7 @@ export async function getJobById(id: string): Promise<Job | null> {
   try {
     const sb = await getSupabaseClient()
     if (!sb) return local
-    const { data } = await sb.from("jobs").select("*").eq("id", id).maybeSingle()
+    const { data } = await withTimeout(sb.from("jobs").select("*").eq("id", id).maybeSingle(), 8000)
     return (data as unknown as Job) ?? local
   } catch {
     return local
