@@ -50,7 +50,9 @@ export default async function PrivateJobsPage({ searchParams }: SP) {
             </div>
           </div>
         </div>
-        <JobsBrowseIndex board="private" page={page} basePath="/jobs/private" title="All Private Jobs — Full Directory" />
+        <Suspense fallback={null}>
+          <JobsBrowseIndex board="private" page={page} basePath="/jobs/private" title="All Private Jobs — Full Directory" />
+        </Suspense>
       </div>
       <ScrollToTop />
     </div>

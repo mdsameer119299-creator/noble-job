@@ -11,6 +11,46 @@ async function getSupabaseClient() {
   return createClient()
 }
 
+/**
+ * A stalled/slow network call to Supabase never rejects on its own, so a plain
+ * `await` can hang the caller indefinitely — and for callers with no Suspense
+ * boundary of their own (e.g. JobsBrowseIndex), that hang blocks the entire
+ * page. Race every live query against a bound so it always settles.
+ */
+export class QueryTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Supabase query exceeded ${ms}ms`)
+    this.name = "QueryTimeoutError"
+  }
+}
+
+export function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new QueryTimeoutError(ms)), ms)
+    Promise.resolve(promise).then(
+      v => { clearTimeout(timer); resolve(v) },
+      e => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
+
+/**
+ * The local-inventory fallback is a legitimate degraded mode (e.g. Supabase
+ * genuinely has no matching rows), so it must never itself look like an
+ * error. But a *forced* fallback — the live query timed out or threw — is a
+ * signal worth keeping visible, or a real outage silently reads as "working
+ * as intended" forever. Timeouts and other failures are logged distinctly so
+ * a persistent flood of one or the other in production logs is diagnosable
+ * (slow query / missing index vs. Supabase down / misconfigured).
+ */
+function logQueryFallback(scope: string, err: unknown): void {
+  if (err instanceof QueryTimeoutError) {
+    console.warn(`[jobService:${scope}] live query timed out, serving local fallback:`, err.message)
+  } else {
+    console.error(`[jobService:${scope}] live query failed, serving local fallback:`, err)
+  }
+}
+
 export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> {
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
@@ -37,8 +77,12 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 
     if (filter.status && filter.status !== "all") query = query.eq("job_status", filter.status)
 
-    const { data, count, error } = await query.range((page - 1) * limit, page * limit - 1)
-    if (error || !data?.length) {
+    const { data, count, error } = await withTimeout(query.range((page - 1) * limit, page * limit - 1), 8000)
+    if (error) {
+      console.error("[jobService:getJobs] live query returned an error, serving local fallback:", error.message)
+      return localResult()
+    }
+    if (!data?.length) {
       return localResult()
     }
     const jobs = (data || []).map(row => {
@@ -94,7 +138,8 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
       totalPages: Math.ceil((count || jobs.length) / limit),
       counts: countByStatus(sorted),
     }
-  } catch {
+  } catch (err) {
+    logQueryFallback("getJobs", err)
     return localResult()
   }
 }
@@ -105,9 +150,14 @@ export async function getJobById(id: string): Promise<Job | null> {
   try {
     const sb = await getSupabaseClient()
     if (!sb) return local
-    const { data } = await sb.from("jobs").select("*").eq("id", id).maybeSingle()
+    const { data, error } = await withTimeout(sb.from("jobs").select("*").eq("id", id).maybeSingle(), 8000)
+    if (error) {
+      console.error("[jobService:getJobById] live query returned an error, serving local fallback:", error.message)
+      return local
+    }
     return (data as unknown as Job) ?? local
-  } catch {
+  } catch (err) {
+    logQueryFallback("getJobById", err)
     return local
   }
 }

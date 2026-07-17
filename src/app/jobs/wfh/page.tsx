@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { paginationMeta } from '@/lib/seo/metadata'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
 import { WfhJobsPanel } from '@/components/wfh/WfhJobsPanel'
@@ -21,7 +22,9 @@ export default async function WfhJobsPage({ searchParams }: SP) {
       <CategoryHero variant="wfh" />
       <WfhJobsPanel />
       <div className="wrap">
-        <JobsBrowseIndex board="wfh" page={page} basePath="/jobs/wfh" title="All Work From Home Jobs — Full Directory" />
+        <Suspense fallback={null}>
+          <JobsBrowseIndex board="wfh" page={page} basePath="/jobs/wfh" title="All Work From Home Jobs — Full Directory" />
+        </Suspense>
       </div>
       <ScrollToTop />
     </div>
