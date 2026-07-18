@@ -38,17 +38,58 @@ function summary(md: string) {
   if (SUMMARY) fs.appendFileSync(SUMMARY, md + "\n")
 }
 
-async function rowCount(): Promise<number | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
+function adminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  return { url, key }
+}
+
+/**
+ * Fail fast with an actionable message if the DB is unreachable, misconfigured,
+ * or rejecting requests (bad key, or a Supabase-side restriction such as an
+ * exceeded egress/usage quota — same "Invalid API key"-shaped error either way),
+ * BEFORE polling ~20 adapters. Without this the run scrapes everything and then
+ * silently writes nothing, with the real cause visible nowhere.
+ */
+async function preflight(): Promise<void> {
+  const { url, key } = adminClient()
+  if (!url || !key) {
+    throw new Error("Missing DB secrets: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
+  }
   const { createClient } = await import("@supabase/supabase-js")
   const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-  const { count } = await db.from("govt_jobs").select("id", { count: "exact", head: true })
-  return count ?? null
+  const { error } = await db.from("govt_jobs").select("id", { count: "exact", head: true })
+  if (error) {
+    const host = (() => { try { return new URL(url).host } catch { return "(invalid URL)" } })()
+    console.error(`❌ DB preflight failed: ${error.message || "(empty error — almost always a bad apikey or a restricted project)"}`)
+    console.error(`   URL host: ${host}`)
+    console.error(`   service key length: ${key.length} (legacy keys start with "eyJ"; new ones with "sb_secret_")`)
+    console.error("   Common causes, in order of likelihood:")
+    console.error("     • Supabase project restricted (e.g. exceeded egress/usage quota) — check the project dashboard")
+    console.error("     • SUPABASE_SERVICE_ROLE_KEY is wrong/stale/whitespace-corrupted in GitHub Secrets")
+    console.error("     • SUPABASE_URL doesn't belong to the same project as that key")
+    throw new Error(`DB preflight failed: ${error.message || "Invalid API key"}`)
+  }
+  console.log(`✓ DB preflight OK (${(() => { try { return new URL(url).host } catch { return url } })()})`)
+}
+
+async function rowCount(): Promise<number | null> {
+  const { url, key } = adminClient()
+  if (!url || !key) return null
+  try {
+    const { createClient } = await import("@supabase/supabase-js")
+    const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { count, error } = await db.from("govt_jobs").select("id", { count: "exact", head: true })
+    if (error) { console.error(`[rowCount] ${error.message}`); return null }
+    return count ?? null
+  } catch (e) {
+    console.error(`[rowCount] threw: ${(e as Error).message}`)
+    return null
+  }
 }
 
 async function main() {
+  await preflight() // fail fast on bad/missing/restricted DB credentials before scraping ~20 adapters
   const { runGovtAutoUpdate } = await import("@/lib/services/govtAutoUpdate")
   console.log("Running full ingestion pass (writes to Supabase)…\n")
 

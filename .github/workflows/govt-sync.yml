@@ -1,5 +1,19 @@
 name: Government Jobs Hourly Sync
 
+# DISABLED (2026-07): this workflow and govt-ingestion.yml both drive
+# runGovtAutoUpdate() and were running concurrently — this one hourly (24x/day)
+# via the site's /api/cron/govt-jobs endpoint since 2026-06-13, alongside
+# govt-ingestion.yml every 6h (4x/day) since 2026-06-22. Neither workflow was
+# ever meant to be more than a fallback for the other (see the original comment
+# below); running both was unintentional duplication that contributed to the
+# July 2026 Supabase egress-quota exhaustion. govt-ingestion.yml is the
+# canonical schedule (it also has secret preflight checks, Slack/issue
+# alerting, and doesn't depend on the deployed site being reachable) — this
+# workflow is kept for reference and manual (`workflow_dispatch`) runs only.
+# Re-enable the `schedule:` trigger below only if govt-ingestion.yml is
+# retired instead.
+#
+# Original design note:
 # Hourly ingestion + auto-expiry. Triggers the secured cron endpoint, which runs
 # runGovtAutoUpdate() (poll enabled adapters -> normalise -> dedupe -> publish ->
 # expireStaleJobs -> record ingest_runs).
@@ -11,8 +25,7 @@ name: Government Jobs Hourly Sync
 # Required repo secrets: SITE_URL (e.g. https://www.noblejob.in), CRON_SECRET.
 
 on:
-  schedule:
-    - cron: "0 * * * *"      # every hour, on the hour (UTC)
+  # schedule: disabled — see note above. Was: cron: "0 * * * *" (every hour).
   workflow_dispatch: {}       # allow manual runs
 
 concurrency:
