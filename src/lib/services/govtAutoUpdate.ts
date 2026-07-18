@@ -151,6 +151,32 @@ async function expireStaleJobs(): Promise<number> {
   }
 }
 
+export interface IngestRunStatus { status: "success" | "partial" | "error"; error: string | null }
+
+/**
+ * Aggregate a run's outcome into the ingest_runs status/error fields.
+ *
+ * `failedSources` only covers adapters whose `.fetch()` threw — it says
+ * nothing about adapters that fetched fine but whose `persist()` write
+ * failed (e.g. a restricted/quota-exceeded Supabase project: every adapter
+ * fetches successfully, every write is rejected, `failedSources` stays
+ * empty). That gap meant a run where NOTHING was published could still be
+ * recorded as `status: "success"`. Folding in `sources[].error` — populated
+ * for write failures too as of the govtAutoUpdate.ts persist()/
+ * expireStaleJobs() error-surfacing fix — closes it. Exported for testing
+ * (pure function, no I/O).
+ */
+export function computeIngestRunStatus(
+  result: Pick<AutoUpdateResult, "failedSources" | "sources" | "totalPublished">,
+): IngestRunStatus {
+  const writeFailedIds = result.sources
+    .filter(s => s.error && !result.failedSources.includes(s.id))
+    .map(s => s.id)
+  const allFailedIds = [...result.failedSources, ...writeFailedIds]
+  if (!allFailedIds.length) return { status: "success", error: null }
+  return { status: result.totalPublished ? "partial" : "error", error: `failed: ${allFailedIds.join(", ")}` }
+}
+
 /**
  * Best-effort monitoring write — never breaks a run, but no longer fails
  * SILENTLY: a rejected insert (e.g. missing table / schema-cache miss) is logged
@@ -160,7 +186,7 @@ async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, du
   if (!isSupabaseAdminConfigured()) return
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
-    const status = result.failedSources.length ? (result.totalPublished ? "partial" : "error") : "success"
+    const { status, error: statusError } = computeIngestRunStatus(result)
     const { error } = await supabaseAdmin.from("ingest_runs").insert({
       source_id: "all",
       trigger: "cron",
@@ -173,7 +199,7 @@ async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, du
       updated: 0,
       skipped: result.sources.reduce((s, r) => s + r.skipped, 0),
       expired: result.totalExpired,
-      error: result.failedSources.length ? `failed: ${result.failedSources.join(", ")}` : null,
+      error: statusError,
     } as never)
     if (error) console.error(`[govtAutoUpdate] ingest_runs insert failed: ${error.message}`)
   } catch (e) {
