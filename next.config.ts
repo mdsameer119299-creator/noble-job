@@ -1,6 +1,18 @@
+import path from 'node:path'
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // ── Cache handler (Hostinger standalone) ──────────────────
+  // Persists the Data Cache (unstable_cache, fetch revalidate) to disk instead
+  // of the framework default of per-process memory, which is wiped on every
+  // restart when self-hosting (no such guarantee outside Vercel). See
+  // cache-handler.js for the full rationale — this is what makes the 300s
+  // shared cache around the govt_jobs pool read (govtStatsSource.ts) actually
+  // collapse repeat reads instead of silently re-querying Supabase every time
+  // the single Node process restarts.
+  cacheHandler: path.join(__dirname, 'cache-handler.js'),
+  cacheMaxMemorySize: 0, // defer entirely to the custom handler's own in-memory layer
+
   // ── Images ──────────────────────────────────────────────
   images: {
     remotePatterns: [

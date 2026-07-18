@@ -90,9 +90,11 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
   return { job: enrichGovtJob(base, { synthesizeVacancies: false }), sourceId: adapter.id, hash: contentHash(raw) }
 }
 
+interface PersistResult { published: number; error?: string }
+
 /** Idempotent upsert (onConflict:"id") with provenance + content hash. */
-async function persist(entries: PersistEntry[]): Promise<number> {
-  if (!isSupabaseAdminConfigured() || entries.length === 0) return 0
+async function persist(entries: PersistEntry[]): Promise<PersistResult> {
+  if (!isSupabaseAdminConfigured() || entries.length === 0) return { published: 0 }
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
     const rows = entries.map(({ job: j, sourceId, hash }) => ({
@@ -109,9 +111,12 @@ async function persist(entries: PersistEntry[]): Promise<number> {
       source_id: sourceId, content_hash: hash, published: SCHEDULER_CONFIG.autoPublish,
     }))
     const { error } = await supabaseAdmin.from("govt_jobs").upsert(rows as never, { onConflict: "id" })
-    return error ? 0 : entries.length
-  } catch {
-    return 0
+    if (error) console.error(`[govtAutoUpdate] persist upsert failed: ${error.message}`)
+    return error ? { published: 0, error: error.message } : { published: entries.length }
+  } catch (e) {
+    const msg = (e as Error).message
+    console.error(`[govtAutoUpdate] persist threw: ${msg}`)
+    return { published: 0, error: msg }
   }
 }
 
@@ -128,7 +133,8 @@ async function expireStaleJobs(): Promise<number> {
       .from("govt_jobs")
       .select("id, last_date")
       .eq("status", "active")
-    if (error || !data?.length) return 0
+    if (error) { console.error(`[govtAutoUpdate] expireStaleJobs read failed: ${error.message}`); return 0 }
+    if (!data?.length) return 0
     const staleIds = (data as { id: string; last_date: string }[])
       .filter(row => isGovtJobExpired(row.last_date))
       .map(row => row.id)
@@ -137,8 +143,10 @@ async function expireStaleJobs(): Promise<number> {
       .from("govt_jobs")
       .update({ status: "expired" })
       .in("id", staleIds)
+    if (updateError) console.error(`[govtAutoUpdate] expireStaleJobs update failed: ${updateError.message}`)
     return updateError ? 0 : staleIds.length
-  } catch {
+  } catch (e) {
+    console.error(`[govtAutoUpdate] expireStaleJobs threw: ${(e as Error).message}`)
     return 0
   }
 }
@@ -194,9 +202,9 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
         seen.add(entry.job.id)
         toPublish.push(entry)
       }
-      const published = SCHEDULER_CONFIG.autoPublish ? await persist(toPublish) : 0
-      totalPublished += published
-      report.push({ id: adapter.id, label: adapter.label, fetched, published, skipped })
+      const result = SCHEDULER_CONFIG.autoPublish ? await persist(toPublish) : { published: 0 }
+      totalPublished += result.published
+      report.push({ id: adapter.id, label: adapter.label, fetched, published: result.published, skipped, error: result.error })
     } catch (e) {
       failedSources.push(adapter.id)
       report.push({ id: adapter.id, label: adapter.label, fetched, published: 0, skipped, error: (e as Error).message })

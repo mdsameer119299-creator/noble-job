@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdminApi } from "@/lib/auth/verifyAdminApi"
 import { getAdminStats, approveJob, rejectJob, toggleEmployerStatus } from "@/lib/services/adminService"
 import { hasRealApplyUrl } from "@/lib/jobs/provenance"
+import { GOVT_LIST_COLUMNS } from "@/lib/config/govtColumns"
 import {
   validateKeyValueBody,
   parsePagination,
@@ -10,6 +11,11 @@ import {
   isUuid,
   ADMIN_LIST_MAX_LIMIT,
 } from "@/lib/validation/adminValidation"
+
+/** Light column projection for the admin abroad-jobs inventory list — mirrors
+ *  the govt list/detail split (excludes the free-text `description` body). */
+const ABROAD_LIST_COLUMNS =
+  "id, title, company, logo, country, location, type, salary, experience, category, apply_url, skills, badge, status, posted_at, job_status"
 
 /** Standard failure helpers — a real DB error is never hidden as an empty list
  *  and a failed mutation never reports success. */
@@ -219,15 +225,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   }
 
   if (route === "govt-jobs") {
-    const { data, error } = await supabaseAdmin.from("govt_jobs").select("*").order("sort_order")
+    const { limit, offset } = parsePagination(get)
+    const { data, error, count } = await supabaseAdmin
+      .from("govt_jobs")
+      .select(`${GOVT_LIST_COLUMNS}, review_status, published`, { count: "exact" })
+      .order("sort_order")
+      .range(offset, offset + limit - 1)
     if (error) return dbError(error.message)
-    return NextResponse.json({ data: data || [] })
+    return NextResponse.json({ data: data || [], total: count ?? 0, limit, offset })
   }
 
   if (route === "abroad-jobs") {
-    const { data, error } = await supabaseAdmin.from("abroad_jobs").select("*").order("posted_at", { ascending: false })
+    const { limit, offset } = parsePagination(get)
+    const { data, error, count } = await supabaseAdmin
+      .from("abroad_jobs")
+      .select(ABROAD_LIST_COLUMNS, { count: "exact" })
+      .order("posted_at", { ascending: false })
+      .range(offset, offset + limit - 1)
     if (error) return dbError(error.message)
-    return NextResponse.json({ data: data || [] })
+    return NextResponse.json({ data: data || [], total: count ?? 0, limit, offset })
   }
 
   // Single job for the admin edit form: GET /api/admin/jobs/{id}
