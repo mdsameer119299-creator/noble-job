@@ -1,17 +1,46 @@
 import path from 'node:path'
 import type { NextConfig } from 'next'
 
+/**
+ * Vercel sets VERCEL=1 in every build AND runtime context for that platform
+ * (preview and production alike) — and since Next.js reads `cacheHandler` at
+ * config-load time (i.e. whichever machine runs `next build` for a given
+ * deploy target), this one check correctly resolves per-target with no
+ * separate config files:
+ *
+ *   - Hostinger (production): `next build` runs off-Vercel (either locally via
+ *     `npm run build:hostinger` then a ZIP upload, or on Hostinger's own
+ *     build infra) — VERCEL is unset, so the custom handler applies. This is
+ *     the ONLY target the filesystem cache handler has been tested against
+ *     (see cache-handler.js): verified live that it survives a full process
+ *     kill+restart on the single Node `server.js` process this deploy uses.
+ *   - Vercel (production + preview): `next build` runs on Vercel's own build
+ *     servers, which set VERCEL=1 — cacheOverrides is empty, so `cacheHandler`
+ *     and `cacheMaxMemorySize` are absent from the config entirely and Next
+ *     falls through to Vercel's own native Data Cache / ISR implementation,
+ *     completely untouched by this repo's code. Vercel's serverless functions
+ *     also don't have a writable, persistent filesystem at `process.cwd()`
+ *     the way Hostinger's single long-lived process does, so the custom
+ *     handler would silently degrade to a per-invocation, non-shared,
+ *     in-memory-only fallback there — worse than either Vercel's own cache OR
+ *     Next's own in-memory default. Excluding it is not a missed
+ *     optimization, it's what makes this safe to ship to a dual-deployment app.
+ *   - Local dev (`next dev`/`next start`): VERCEL is unset here too, same as
+ *     Hostinger, so the custom handler applies — harmless (writes to the
+ *     already-gitignored `.next/cache/custom-handler`), and gives local
+ *     testing the same cache behaviour as production Hostinger.
+ */
+const isVercel = !!process.env.VERCEL
+
+const cacheOverrides: Pick<NextConfig, 'cacheHandler' | 'cacheMaxMemorySize'> = isVercel
+  ? {}
+  : {
+      cacheHandler: path.join(__dirname, 'cache-handler.js'),
+      cacheMaxMemorySize: 0, // defer entirely to the custom handler's own in-memory layer
+    }
+
 const nextConfig: NextConfig = {
-  // ── Cache handler (Hostinger standalone) ──────────────────
-  // Persists the Data Cache (unstable_cache, fetch revalidate) to disk instead
-  // of the framework default of per-process memory, which is wiped on every
-  // restart when self-hosting (no such guarantee outside Vercel). See
-  // cache-handler.js for the full rationale — this is what makes the 300s
-  // shared cache around the govt_jobs pool read (govtStatsSource.ts) actually
-  // collapse repeat reads instead of silently re-querying Supabase every time
-  // the single Node process restarts.
-  cacheHandler: path.join(__dirname, 'cache-handler.js'),
-  cacheMaxMemorySize: 0, // defer entirely to the custom handler's own in-memory layer
+  ...cacheOverrides,
 
   // ── Images ──────────────────────────────────────────────
   images: {
