@@ -70,6 +70,9 @@ jobs:
       - name: jobService withTimeout tests
         run: npm run test:jobservice-timeout
 
+      - name: Ingest-run status tests
+        run: npm run test:ingest-status
+
       - name: SEO verification (static)
         run: npm run verify:seo
 
