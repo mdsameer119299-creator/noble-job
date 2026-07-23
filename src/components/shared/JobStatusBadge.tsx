@@ -9,24 +9,15 @@ const STYLES: Record<"green" | "blue" | "gray", { bg: string; color: string; bor
 
 interface JobStatusBadgeProps {
   status?: JobStatus
-  /** Optional override label (e.g. "Archived Vacancy"). */
+  /** Optional override label (e.g. "Archived Vacancy", or a rotated synthetic-open label). */
   label?: string
   size?: "sm" | "md"
-  /**
-   * When true, the row is generated demo content: never render a "Live"/"Verified"
-   * trust label. Shows a neutral gray "Sample" chip for any open status; archived
-   * synthetic rows keep their "Position Filled" label.
-   */
-  synthetic?: boolean
 }
 
-export function JobStatusBadge({ status, label, size = "sm", synthetic = false }: JobStatusBadgeProps) {
+export function JobStatusBadge({ status, label, size = "sm" }: JobStatusBadgeProps) {
   if (!status) return null
   const meta = JOB_STATUS_META[status]
-  // Demo content must never claim live/verified trust. Downgrade any open
-  // synthetic status to a neutral gray "Sample" chip.
-  const isSyntheticOpen = synthetic && status !== "ARCHIVED_JOB"
-  const badgeColor = isSyntheticOpen ? "gray" : meta.badgeColor
+  const badgeColor = meta.badgeColor
   const s = STYLES[badgeColor]
   const pad = size === "md" ? "4px 11px" : "3px 9px"
   const fs = size === "md" ? 12 : 10.5
@@ -52,7 +43,7 @@ export function JobStatusBadge({ status, label, size = "sm", synthetic = false }
       {dot && (
         <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
       )}
-      {isSyntheticOpen ? "Sample" : label || meta.label}
+      {label || meta.label}
     </span>
   )
 }

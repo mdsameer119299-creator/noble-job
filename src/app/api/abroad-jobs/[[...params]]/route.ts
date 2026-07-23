@@ -5,8 +5,9 @@ import {
   getAbroadJobByIdLocal,
   type AbroadJobFilters,
 } from "@/lib/services/abroadJobLocal"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 
-function listFromQuery(sp: URLSearchParams) {
+function listFromQuery(sp: URLSearchParams, syntheticVisible: boolean) {
   const filters: AbroadJobFilters = {
     q: sp.get("q") || "",
     country: sp.get("country") || "",
@@ -15,7 +16,7 @@ function listFromQuery(sp: URLSearchParams) {
     page: Number(sp.get("page") || 1),
     limit: Number(sp.get("limit") || 20),
   }
-  return getAbroadJobsPaginatedLocal(filters)
+  return getAbroadJobsPaginatedLocal(filters, syntheticVisible)
 }
 
 function jsonFromResult(result: ReturnType<typeof getAbroadJobsPaginatedLocal>) {
@@ -31,13 +32,14 @@ function jsonFromResult(result: ReturnType<typeof getAbroadJobsPaginatedLocal>) 
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   const sp = req.nextUrl.searchParams
+  const syntheticVisible = await isSyntheticJobsVisible()
 
   try {
     const { params: p } = await params
 
     if (p?.length === 1) {
       if (useLocalInventoryOnly()) {
-        const job = getAbroadJobByIdLocal(p[0])
+        const job = getAbroadJobByIdLocal(p[0], syntheticVisible)
         if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 })
         return NextResponse.json({ data: job })
       }
@@ -48,12 +50,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (useLocalInventoryOnly()) {
-      return jsonFromResult(listFromQuery(sp))
+      return jsonFromResult(listFromQuery(sp, syntheticVisible))
     }
 
     const { getAbroadJobsPaginated } = await import("@/lib/services/abroadJobService")
     return jsonFromResult(
-      getAbroadJobsPaginated({
+      await getAbroadJobsPaginated({
         q: sp.get("q") || "",
         country: sp.get("country") || "",
         category: sp.get("category") || "",
@@ -65,6 +67,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   } catch (err) {
     console.error("[abroad-jobs]", err)
     if (err instanceof Error) console.error("[abroad-jobs] stack:", err.stack)
-    return jsonFromResult(listFromQuery(sp))
+    return jsonFromResult(listFromQuery(sp, syntheticVisible))
   }
 }

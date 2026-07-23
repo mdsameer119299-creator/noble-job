@@ -578,6 +578,37 @@ export interface Database {
         }
         Relationships: []
       }
+      job_reports: {
+        Row: {
+          id: string
+          board: string
+          job_id: string
+          job_title: string | null
+          reason: string
+          note: string | null
+          reporter_user_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          board: string
+          job_id: string
+          job_title?: string | null
+          reason: string
+          note?: string | null
+          reporter_user_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          board?: string
+          job_id?: string
+          job_title?: string | null
+          reason?: string
+          note?: string | null
+          reporter_user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

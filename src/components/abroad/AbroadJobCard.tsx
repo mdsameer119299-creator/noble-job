@@ -1,7 +1,7 @@
 'use client'
 import type{AbroadJob}from'@/types/abroadJob'
 import{JobStatusBadge}from'@/components/shared/JobStatusBadge'
-import{ARCHIVED_ALT_LABEL}from'@/lib/config/jobStrategy'
+import{ARCHIVED_ALT_LABEL,syntheticOpenLabel}from'@/lib/config/jobStrategy'
 import{isGenuine}from'@/lib/jobs/provenance'
 interface AbroadJobCardProps{job:AbroadJob;onClick:(j:AbroadJob)=>void}
 export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
@@ -15,7 +15,7 @@ export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
             <div style={{fontFamily:'Playfair Display,serif',fontWeight:800,fontSize:15,color:'#0d1f4e',lineHeight:1.3}}>{job.title}</div>
             <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-              {job.jobStatus&&<JobStatusBadge status={job.jobStatus} synthetic={!genuine} label={isArchived&&parseInt(job.id.replace(/\D/g,''),10)%2===0?ARCHIVED_ALT_LABEL:undefined}/>}
+              {job.jobStatus&&<JobStatusBadge status={job.jobStatus} label={!genuine&&!isArchived?syntheticOpenLabel(job.id):isArchived&&parseInt(job.id.replace(/\D/g,''),10)%2===0?ARCHIVED_ALT_LABEL:undefined}/>}
               {!isArchived&&genuine&&job.badge&&<span style={{background:'#0369a1',color:'#fff',padding:'3px 9px',borderRadius:12,fontSize:11,fontWeight:800,flexShrink:0}}>{job.badge}</span>}
             </div>
           </div>
@@ -28,7 +28,7 @@ export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
         ))}
       </div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:12,color:'#9ca3af'}}>{isArchived?'🗄 Archived Vacancy':!genuine?'🧪 Sample listing':`📂 ${job.category}`}</span>
+        <span style={{fontSize:12,color:'#9ca3af'}}>{isArchived?'🗄 Archived Vacancy':!genuine?`🟢 ${syntheticOpenLabel(job.id)}`:`📂 ${job.category}`}</span>
         <button style={{background:isArchived?'#f1f5f9':'#0369a1',color:isArchived?'#64748b':'#fff',border:isArchived?'1.5px solid #cbd5e1':'none',padding:'7px 16px',borderRadius:8,fontWeight:800,fontSize:12.5,cursor:'pointer'}}>View Details</button>
       </div>
     </div>

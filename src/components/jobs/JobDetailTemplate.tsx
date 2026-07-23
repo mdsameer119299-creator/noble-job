@@ -24,6 +24,8 @@ export interface JobDetailTemplateProps {
   content: JobContent
   /** Board-specific apply UI (button / link) rendered in the sticky sidebar. */
   applySlot: React.ReactNode
+  /** Save / Share / Report / Print row, rendered under the apply UI. */
+  actionsSlot?: React.ReactNode
   /** JobPosting JSON-LD for this job. */
   jsonLdSlot: React.ReactNode
   internalLinks: {
@@ -198,6 +200,7 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
               <h3 style={{ fontWeight: 800, color: "#0d1f4e", fontSize: 14.5, marginBottom: 12 }}>Apply for this Job</h3>
               {props.applySlot}
               <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", marginTop: 10 }}>Noble Job never charges candidates to apply.</p>
+              {props.actionsSlot && <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #eef2fb" }}>{props.actionsSlot}</div>}
             </div>
 
             <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", padding: "18px 16px" }}>

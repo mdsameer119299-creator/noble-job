@@ -6,6 +6,7 @@ import {
   getAbroadJobByIdLocal,
   type AbroadJobFilters,
 } from "@/lib/services/abroadJobLocal"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import type { AbroadJob } from "@/types/abroadJob"
 
 export type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -15,12 +16,12 @@ async function getSupabaseClient() {
   return createClient()
 }
 
-export function getAbroadJobsPaginated(filters: AbroadJobFilters = {}) {
-  return getAbroadJobsPaginatedLocal(filters)
+export async function getAbroadJobsPaginated(filters: AbroadJobFilters = {}) {
+  return getAbroadJobsPaginatedLocal(filters, await isSyntheticJobsVisible())
 }
 
 export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<AbroadJob[]> {
-  const local = getAbroadJobsPaginatedLocal(filters).items
+  const local = getAbroadJobsPaginatedLocal(filters, await isSyntheticJobsVisible()).items
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
 
   try {
@@ -40,7 +41,7 @@ export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<Abr
 }
 
 export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
-  const local = getAbroadJobByIdLocal(id)
+  const local = getAbroadJobByIdLocal(id, await isSyntheticJobsVisible())
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()

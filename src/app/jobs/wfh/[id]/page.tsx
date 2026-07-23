@@ -4,13 +4,13 @@ import { getWfhJobById, getWfhJobs } from '@/lib/services/wfhJobService'
 import { getGovtJobs } from '@/lib/services/govtJobService'
 import { getJobs } from '@/lib/services/jobService'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
+import { JobActionBar } from '@/components/jobs/JobActionBar'
 import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
-import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
-import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
+import { isIndexable } from '@/lib/jobs/provenance'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -88,9 +88,8 @@ export default async function WfhJobDetailPage({ params }: Props) {
       badges={['🏠 Work From Home', `💼 ${job.type || 'Full Time'}`, `💰 ${salaryBadge}`, `🎓 ${job.qualification || 'Any Graduate'}`, `📅 ${job.experience || 'Freshers'}`]}
       content={content}
       jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
-      applySlot={isGenuine(job)
-        ? <ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />
-        : <SampleListingNotice />}
+      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />}
+      actionsSlot={<JobActionBar board="wfh" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },
         category: { href: '/work-from-home-jobs', label: 'Work From Home Jobs Guide' },

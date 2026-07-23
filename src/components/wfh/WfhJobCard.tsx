@@ -3,7 +3,7 @@
 import type { WfhJob } from '@/types/wfhJob'
 import { WfhSkillTags } from './WfhSkillTags'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
-import { ARCHIVED_ALT_LABEL } from '@/lib/config/jobStrategy'
+import { ARCHIVED_ALT_LABEL, syntheticOpenLabel } from '@/lib/config/jobStrategy'
 import { isGenuine } from '@/lib/jobs/provenance'
 
 interface WfhJobCardProps {
@@ -29,11 +29,12 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
               {job.jobStatus && (
                 <JobStatusBadge
                   status={job.jobStatus}
-                  synthetic={!genuine}
                   label={
-                    isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
-                      ? ARCHIVED_ALT_LABEL
-                      : undefined
+                    !genuine && !isArchived
+                      ? syntheticOpenLabel(job.id)
+                      : isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
+                        ? ARCHIVED_ALT_LABEL
+                        : undefined
                   }
                 />
               )}
@@ -77,7 +78,7 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
           {isArchived
             ? '🗄 Archived Vacancy'
             : !genuine
-              ? '🧪 Sample listing · Demo data'
+              ? `📌 ${syntheticOpenLabel(job.id)}`
               : `👤 ${job.applicants} applicants · Verified`}
         </span>
         <button

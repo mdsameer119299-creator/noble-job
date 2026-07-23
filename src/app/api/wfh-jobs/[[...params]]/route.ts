@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
 import { getWfhJobsPaginatedLocal, getWfhJobByIdLocal } from "@/lib/services/wfhJobLocal"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 
-function listFromQuery(sp: URLSearchParams) {
+function listFromQuery(sp: URLSearchParams, syntheticVisible: boolean) {
   const filters: WfhJobFilters = {
     q: sp.get("q") || "",
     cat: sp.get("cat") || "all",
@@ -13,7 +14,7 @@ function listFromQuery(sp: URLSearchParams) {
     page: Number(sp.get("page") || 1),
     limit: Number(sp.get("limit") || 20),
   }
-  return getWfhJobsPaginatedLocal(filters)
+  return getWfhJobsPaginatedLocal(filters, syntheticVisible)
 }
 
 function jsonFromResult(result: ReturnType<typeof getWfhJobsPaginatedLocal>) {
@@ -29,13 +30,14 @@ function jsonFromResult(result: ReturnType<typeof getWfhJobsPaginatedLocal>) {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   const sp = req.nextUrl.searchParams
+  const syntheticVisible = await isSyntheticJobsVisible()
 
   try {
     const { params: p } = await params
 
     if (p?.length === 1) {
       if (useLocalInventoryOnly()) {
-        const job = getWfhJobByIdLocal(p[0])
+        const job = getWfhJobByIdLocal(p[0], syntheticVisible)
         if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 })
         return NextResponse.json({ data: job })
       }
@@ -46,11 +48,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (useLocalInventoryOnly()) {
-      return jsonFromResult(listFromQuery(sp))
+      return jsonFromResult(listFromQuery(sp, syntheticVisible))
     }
 
     const { getWfhJobsPaginated } = await import("@/lib/services/wfhJobService")
-    const result = getWfhJobsPaginated({
+    const result = await getWfhJobsPaginated({
       q: sp.get("q") || "",
       cat: sp.get("cat") || "all",
       exp: sp.get("exp") || "all",
@@ -63,6 +65,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   } catch (err) {
     console.error("[wfh-jobs]", err)
     if (err instanceof Error) console.error("[wfh-jobs] stack:", err.stack)
-    return jsonFromResult(listFromQuery(sp))
+    return jsonFromResult(listFromQuery(sp, syntheticVisible))
   }
 }

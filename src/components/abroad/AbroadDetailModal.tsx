@@ -1,6 +1,7 @@
 'use client'
 import{Modal}from'@/components/ui/Modal'
 import type{AbroadJob}from'@/types/abroadJob'
+import{AbroadApplySlot}from'./AbroadApplySlot'
 interface AbroadDetailModalProps{job:AbroadJob|null;open:boolean;onClose:()=>void}
 export function AbroadDetailModal({job,open,onClose}:AbroadDetailModalProps){
   if(!job)return null
@@ -32,7 +33,7 @@ export function AbroadDetailModal({job,open,onClose}:AbroadDetailModalProps){
             </div>
           </div>
         )}
-        <a href={job.apply_url||'#'} target="_blank" rel="noopener noreferrer" style={{display:'block',background:'linear-gradient(135deg,#0369a1,#0d1f4e)',color:'#fff',padding:'14px',borderRadius:12,fontWeight:900,fontSize:16,textDecoration:'none',textAlign:'center',fontFamily:'Playfair Display,serif'}}>Apply on Official Career Page →</a>
+        <AbroadApplySlot job={job} />
         <p style={{fontSize:11,color:'#9ca3af',textAlign:'center',marginTop:8}}>Noble Job never charges candidates. Visa and work permit info available on the official page.</p>
       </div>
     </Modal>

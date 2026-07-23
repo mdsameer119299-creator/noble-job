@@ -224,6 +224,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     return NextResponse.json({ data: await getSiteContent() })
   }
 
+  if (route === "reports") {
+    const { limit, offset } = parsePagination(get)
+    const { data, error, count } = await supabaseAdmin
+      .from("job_reports")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1)
+    if (error) return dbError(error.message)
+    return NextResponse.json({ data: data || [], total: count ?? 0, limit, offset })
+  }
+
   if (route === "govt-jobs") {
     const { limit, offset } = parsePagination(get)
     const { data, error, count } = await supabaseAdmin
