@@ -3,6 +3,7 @@
  */
 import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
+import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
 
 function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
@@ -26,10 +27,10 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
   return list
 }
 
-export function getPrivateJobsLocal(filter: JobFilter = {}): JobSearchResult {
+export function getPrivateJobsLocal(filter: JobFilter = {}, syntheticVisible = true): JobSearchResult {
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
-  const preStatus = filterPrivateJobs(PRIVATE_INVENTORY, filter)
+  const preStatus = filterPrivateJobs(applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible), filter)
   const counts = countByStatus(preStatus)
   const status = filter.status
   let list =
@@ -46,14 +47,18 @@ export function getPrivateJobsLocal(filter: JobFilter = {}): JobSearchResult {
   }
 }
 
-export function getPrivateJobByIdLocal(id: string): Job | null {
-  return PRIVATE_INVENTORY.find(j => j.id === id) ?? null
+export function getPrivateJobByIdLocal(id: string, syntheticVisible = true): Job | null {
+  const job = PRIVATE_INVENTORY.find(j => j.id === id) ?? null
+  if (!job) return null
+  return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }
 
-export function getPrivateJobsFeaturedLocal(limit = 4): Job[] {
-  return sortByStatus([...PRIVATE_INVENTORY]).slice(0, limit)
+export function getPrivateJobsFeaturedLocal(limit = 4, syntheticVisible = true): Job[] {
+  return sortByStatus(applySyntheticVisibility([...PRIVATE_INVENTORY], syntheticVisible)).slice(0, limit)
 }
 
-export function getPrivateJobsCountLocal(): number {
-  return PRIVATE_INVENTORY.filter(j => (j.jobStatus ?? "VERIFIED_JOB") !== "ARCHIVED_JOB").length
+export function getPrivateJobsCountLocal(syntheticVisible = true): number {
+  return applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible).filter(
+    j => (j.jobStatus ?? "VERIFIED_JOB") !== "ARCHIVED_JOB",
+  ).length
 }

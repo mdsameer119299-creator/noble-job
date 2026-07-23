@@ -7,6 +7,7 @@ import {
   getWfhJobByIdLocal,
   type WfhJobFilters,
 } from "@/lib/services/wfhJobLocal"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import type { WfhJob } from "@/types/wfhJob"
 
 export type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
@@ -32,12 +33,12 @@ async function getSupabaseClient() {
   return createClient()
 }
 
-export function getWfhJobsPaginated(filters: WfhJobFilters = {}) {
-  return getWfhJobsPaginatedLocal(filters)
+export async function getWfhJobsPaginated(filters: WfhJobFilters = {}) {
+  return getWfhJobsPaginatedLocal(filters, await isSyntheticJobsVisible())
 }
 
 export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]> {
-  const local = getWfhJobsPaginatedLocal(filters).items
+  const local = getWfhJobsPaginatedLocal(filters, await isSyntheticJobsVisible()).items
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
 
   try {
@@ -63,7 +64,7 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
 }
 
 export async function getWfhJobById(id: string): Promise<WfhJob | null> {
-  const local = getWfhJobByIdLocal(id)
+  const local = getWfhJobByIdLocal(id, await isSyntheticJobsVisible())
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()

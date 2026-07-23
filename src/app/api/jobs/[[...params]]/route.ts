@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import {
   getPrivateJobsLocal,
   getPrivateJobByIdLocal,
@@ -10,11 +11,12 @@ import {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   const { params: p } = await params
   const sp = req.nextUrl.searchParams
+  const syntheticVisible = await isSyntheticJobsVisible()
 
   try {
     if (p?.length === 1 && p[0] !== "live" && p[0] !== "featured" && p[0] !== "count") {
       if (useLocalInventoryOnly()) {
-        const job = getPrivateJobByIdLocal(p[0])
+        const job = getPrivateJobByIdLocal(p[0], syntheticVisible)
         if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 })
         return NextResponse.json({ data: job })
       }
@@ -39,29 +41,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
 
     if (p?.[0] === "featured") {
       if (useLocalInventoryOnly()) {
-        return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4) })
+        return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4, syntheticVisible) })
       }
       const { createClient } = await import("@/lib/supabase/server")
       const sb = await createClient()
-      if (!sb) return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4) })
+      if (!sb) return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4, syntheticVisible) })
       const { data } = await sb
         .from("jobs")
         .select("*")
         .eq("status", "active")
         .order("posted_at", { ascending: false })
         .limit(4)
-      return NextResponse.json({ data: data?.length ? data : getPrivateJobsFeaturedLocal(4) })
+      return NextResponse.json({ data: data?.length ? data : getPrivateJobsFeaturedLocal(4, syntheticVisible) })
     }
 
     if (p?.[0] === "count") {
       if (useLocalInventoryOnly()) {
-        return NextResponse.json({ count: getPrivateJobsCountLocal() })
+        return NextResponse.json({ count: getPrivateJobsCountLocal(syntheticVisible) })
       }
       const { createClient } = await import("@/lib/supabase/server")
       const sb = await createClient()
-      if (!sb) return NextResponse.json({ count: getPrivateJobsCountLocal() })
+      if (!sb) return NextResponse.json({ count: getPrivateJobsCountLocal(syntheticVisible) })
       const { count } = await sb.from("jobs").select("id", { count: "exact" }).eq("status", "active")
-      return NextResponse.json({ count: count || getPrivateJobsCountLocal() })
+      return NextResponse.json({ count: count || getPrivateJobsCountLocal(syntheticVisible) })
     }
 
     const filter = {
@@ -77,7 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (useLocalInventoryOnly()) {
-      return NextResponse.json(getPrivateJobsLocal(filter))
+      return NextResponse.json(getPrivateJobsLocal(filter, syntheticVisible))
     }
 
     const { getJobs } = await import("@/lib/services/jobService")
@@ -94,6 +96,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
       type: sp.get("type") || "",
       page: Number(sp.get("page") || 1),
       limit: Number(sp.get("limit") || 20),
-    }))
+    }, syntheticVisible))
   }
 }

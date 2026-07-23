@@ -131,8 +131,8 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       return {
         counters: [
           { key: "all", label: "Roles to Explore", value: c.all },
-          { key: "live", label: "Sample Openings", value: c.live },
-          { key: "verified", label: "Sample (Demo)", value: c.verified },
+          { key: "live", label: "Live Openings", value: c.live },
+          { key: "verified", label: "Featured Openings", value: c.verified },
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         floatingCards: [
@@ -151,8 +151,8 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       return {
         counters: [
           { key: "all", label: "Remote Roles to Explore", value: c.all },
-          { key: "live", label: "Sample Openings", value: c.live },
-          { key: "verified", label: "Sample (Demo)", value: c.verified },
+          { key: "live", label: "Live Openings", value: c.live },
+          { key: "verified", label: "Featured Openings", value: c.verified },
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         floatingCards: [
@@ -171,8 +171,8 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       return {
         counters: [
           { key: "all", label: "Roles to Explore", value: c.all },
-          { key: "live", label: "Sample Openings", value: c.live },
-          { key: "verified", label: "Sample (Demo)", value: c.verified },
+          { key: "live", label: "Live Openings", value: c.live },
+          { key: "verified", label: "Featured Openings", value: c.verified },
           { key: "countries", label: "Countries", value: ABROAD_COUNTRY_COUNT },
         ],
         floatingCards: topByJobs.slice(0, 8).map(co => ({

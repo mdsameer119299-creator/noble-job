@@ -15,6 +15,8 @@ import { GovtJobJsonLd } from "@/components/govt/GovtJobJsonLd"
 import { govtClassifiable, isIndexable } from "@/lib/jobs/govtProvenance"
 import { RelatedGovtJobs } from "@/components/govt/RelatedGovtJobs"
 import { GovtHowToApply } from "@/components/govt/GovtHowToApply"
+import { GovtApplyLinkButton } from "@/components/govt/GovtApplyLinkButton"
+import { JobActionBar } from "@/components/jobs/JobActionBar"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 
@@ -212,11 +214,11 @@ export default async function GovtJobDetailPage({ params }: Props) {
               <Section id="important-links" title="Important Links" icon="🔗">
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
                   {links.map((lk, i) => (
-                    <a
+                    <GovtApplyLinkButton
                       key={`${lk.l}-${i}`}
                       href={lk.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      jobTitle={job.title}
+                      intercept={Boolean(lk.primary)}
                       style={{
                         background: lk.primary ? "#1847d4" : "#eff6ff",
                         color: lk.primary ? "#fff" : "#1847d4",
@@ -232,7 +234,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
                       }}
                     >
                       {lk.l}<span>→</span>
-                    </a>
+                    </GovtApplyLinkButton>
                   ))}
                 </div>
               </Section>
@@ -267,11 +269,11 @@ export default async function GovtJobDetailPage({ params }: Props) {
                   </p>
                 ) : (
                   links.slice(0, 4).map((lk, i) => (
-                    <a
+                    <GovtApplyLinkButton
                       key={`${lk.l}-${i}`}
                       href={lk.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      jobTitle={job.title}
+                      intercept={Boolean(lk.primary)}
                       style={{
                         background: lk.primary ? "#1847d4" : "#f8faff",
                         color: lk.primary ? "#fff" : "#1e3a8a",
@@ -285,9 +287,12 @@ export default async function GovtJobDetailPage({ params }: Props) {
                       }}
                     >
                       {lk.l}
-                    </a>
+                    </GovtApplyLinkButton>
                   ))
                 )}
+              </div>
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #eef2fb" }}>
+                <JobActionBar board="govt" jobId={job.id} jobTitle={job.title} />
               </div>
             </div>
             <RelatedGovtJobs title="Related Government Jobs" jobs={related} icon="🔗" />

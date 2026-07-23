@@ -4,6 +4,7 @@ import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
 import { classifyProvenance, KNOWN_PROVENANCE } from "@/lib/jobs/provenance"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult, Provenance } from "@/types/job"
 
 async function getSupabaseClient() {
@@ -55,7 +56,8 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
   const { q, category, location, exp, type: jType, sort = "latest" } = filter
-  const localResult = () => getPrivateJobsLocal(filter)
+  const syntheticVisible = await isSyntheticJobsVisible()
+  const localResult = () => getPrivateJobsLocal(filter, syntheticVisible)
   if (preferLocalInventory() || !isSupabaseConfigured()) {
     return localResult()
   }
@@ -145,7 +147,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 }
 
 export async function getJobById(id: string): Promise<Job | null> {
-  const local = getPrivateJobByIdLocal(id)
+  const local = getPrivateJobByIdLocal(id, await isSyntheticJobsVisible())
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()

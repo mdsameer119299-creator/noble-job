@@ -34,6 +34,20 @@ export const JOB_STATUS_META: Record<
 /** Alternate label for archived listings. */
 export const ARCHIVED_ALT_LABEL = "Archived Vacancy"
 
+/**
+ * Rotated badge labels for OPEN synthetic/demo rows. These must read exactly
+ * like a normal open-role badge (no "Sample"/"Demo"/"Synthetic" text) while
+ * never claiming employer verification — "Verified" stays reserved for
+ * genuine provenance (see hasVerifiedTrust in provenance.ts).
+ */
+const SYNTHETIC_OPEN_LABELS = ["Live Vacancy", "Hiring Now", "Recently Posted"] as const
+
+/** Deterministic per-row pick from SYNTHETIC_OPEN_LABELS, keyed by job id. */
+export function syntheticOpenLabel(id: string): string {
+  const n = parseInt(id.replace(/\D/g, ""), 10) || 0
+  return SYNTHETIC_OPEN_LABELS[n % SYNTHETIC_OPEN_LABELS.length]
+}
+
 /** A status counts as an "active opening" only when not archived. */
 export function isActiveStatus(status?: JobStatus): boolean {
   return status ? JOB_STATUS_META[status].isActive : true

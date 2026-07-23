@@ -3,6 +3,7 @@
  */
 import { ABROAD_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
+import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { JobStatus } from "@/types/job"
 import type { AbroadJob } from "@/types/abroadJob"
 
@@ -35,13 +36,15 @@ function filterAbroadWithCounts(jobs: AbroadJob[], filters: AbroadJobFilters) {
   return { list, counts }
 }
 
-export function getAbroadJobsPaginatedLocal(filters: AbroadJobFilters = {}): PaginatedResult<AbroadJob> {
+export function getAbroadJobsPaginatedLocal(filters: AbroadJobFilters = {}, syntheticVisible = true): PaginatedResult<AbroadJob> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  const { list, counts } = filterAbroadWithCounts(ABROAD_INVENTORY, filters)
+  const { list, counts } = filterAbroadWithCounts(applySyntheticVisibility(ABROAD_INVENTORY, syntheticVisible), filters)
   return paginate(list, page, limit, counts)
 }
 
-export function getAbroadJobByIdLocal(id: string): AbroadJob | null {
-  return ABROAD_INVENTORY.find(j => j.id === id) ?? null
+export function getAbroadJobByIdLocal(id: string, syntheticVisible = true): AbroadJob | null {
+  const job = ABROAD_INVENTORY.find(j => j.id === id) ?? null
+  if (!job) return null
+  return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }

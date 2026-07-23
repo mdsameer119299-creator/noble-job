@@ -3,6 +3,7 @@
  */
 import { WFH_INVENTORY } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
+import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 
@@ -55,13 +56,15 @@ function filterWfhWithCounts(jobs: WfhJob[], filters: WfhJobFilters) {
   return { list, counts }
 }
 
-export function getWfhJobsPaginatedLocal(filters: WfhJobFilters = {}): PaginatedResult<WfhJob> {
+export function getWfhJobsPaginatedLocal(filters: WfhJobFilters = {}, syntheticVisible = true): PaginatedResult<WfhJob> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  const { list, counts } = filterWfhWithCounts(WFH_INVENTORY, filters)
+  const { list, counts } = filterWfhWithCounts(applySyntheticVisibility(WFH_INVENTORY, syntheticVisible), filters)
   return paginate(list, page, limit, counts)
 }
 
-export function getWfhJobByIdLocal(id: string): WfhJob | null {
-  return WFH_INVENTORY.find(j => j.id === id) ?? null
+export function getWfhJobByIdLocal(id: string, syntheticVisible = true): WfhJob | null {
+  const job = WFH_INVENTORY.find(j => j.id === id) ?? null
+  if (!job) return null
+  return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }

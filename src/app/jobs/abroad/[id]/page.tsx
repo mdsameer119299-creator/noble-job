@@ -7,8 +7,9 @@ import { AbroadJobJsonLd } from '@/components/seo/AbroadJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
-import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
-import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
+import { isIndexable } from '@/lib/jobs/provenance'
+import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
+import { JobActionBar } from '@/components/jobs/JobActionBar'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -83,13 +84,8 @@ export default async function AbroadJobDetailPage({ params }: Props) {
       badges={[`🌍 ${job.country}`, `🏢 ${job.company}`, `💰 ${job.salary}`, `💼 ${job.type || 'Full Time'}`, `🧑‍💼 ${job.experience || 'Any'}`]}
       content={content}
       jsonLdSlot={<AbroadJobJsonLd job={job} content={content} />}
-      applySlot={isGenuine(job)
-        ? (
-          <a href={job.apply_url || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block', background: 'linear-gradient(135deg,#0369a1,#0d1f4e)', color: '#fff', padding: '13px', borderRadius: 10, fontWeight: 900, textDecoration: 'none', textAlign: 'center', fontSize: 15 }}>
-            Apply on Official Site →
-          </a>
-        )
-        : <SampleListingNotice />}
+      applySlot={<AbroadApplySlot job={job} />}
+      actionsSlot={<JobActionBar board="abroad" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/jobs-abroad', label: 'Jobs Abroad Guide' },
         category: { href: '/jobs/abroad', label: `More Jobs in ${job.country}` },

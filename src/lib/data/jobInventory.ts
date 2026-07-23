@@ -9,6 +9,7 @@
 import { FALLBACK_PRIVATE_JOBS, FALLBACK_WFH_JOBS, FALLBACK_ABROAD_JOBS } from "./fallbackJobs"
 import { countByStatus } from "./inventoryPagination"
 import { isCountableAsGenuine, isPublishableAsOpen } from "@/lib/jobs/provenance"
+import { syntheticOpenLabel } from "@/lib/config/jobStrategy"
 import type { Job, JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
@@ -130,8 +131,9 @@ function buildPrivateJob(i: number, status: JobStatus): Job {
     verified: false,
     source: status === "ARCHIVED_JOB" ? "Archived Inventory" : status === "LIVE_JOB" ? "Live Feed" : company as string,
     board: "private",
-    // Neutral "Sample" marker — no "Verified"/"Hot" trust claim on demo content.
-    badge: status === "ARCHIVED_JOB" ? undefined : "Sample",
+    // Honest, non-alarming label — never "Sample"/"Demo" and never "Verified"
+    // (that trust claim is reserved for genuine provenance; see provenance.ts).
+    badge: status === "ARCHIVED_JOB" ? undefined : syntheticOpenLabel(`${prefix}-${i + 1}`),
   }
 }
 
@@ -193,7 +195,7 @@ function buildWfhJob(i: number, status: JobStatus, cat: string): WfhJob {
     cat,
     qualification: "Graduate",
     skills: ["Communication", "Remote Tools"],
-    badge: status === "ARCHIVED_JOB" ? "Archived" : "Sample",
+    badge: status === "ARCHIVED_JOB" ? "Archived" : syntheticOpenLabel(`${prefix}-${i + 1}`),
     badge_type: status === "ARCHIVED_JOB" ? "archived" : "new",
     applicants: 50 + (i % 400),
     description: `Remote ${role} at ${company}.`,
@@ -280,7 +282,7 @@ function buildAbroadJob(globalIdx: number, country: string, status: JobStatus): 
     description: `${role} opportunity with ${company} in ${country}.`,
     apply_url: status === "ARCHIVED_JOB" ? "#" : "https://careers.example.com/abroad",
     skills: ["Communication", "English"],
-    badge: status === "ARCHIVED_JOB" ? "Archived" : "Sample",
+    badge: status === "ARCHIVED_JOB" ? "Archived" : syntheticOpenLabel(`${prefix}-${country.toLowerCase().replace(/\s+/g, "-")}-${globalIdx + 1}`),
     status: "active",
     posted_at: new Date(Date.now() - (globalIdx % 20) * 86400000).toISOString(),
     jobStatus: status,

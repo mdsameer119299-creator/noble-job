@@ -4,14 +4,13 @@ import { getJobById, getJobs } from '@/lib/services/jobService'
 import { getGovtJobs } from '@/lib/services/govtJobService'
 import { formatSalary } from '@/lib/utils/formatters'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
-import { SaveJobButton } from '@/components/jobs/SaveJobButton'
+import { JobActionBar } from '@/components/jobs/JobActionBar'
 import { PrivateJobJsonLd } from '@/components/seo/PrivateJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
-import { isIndexable, isGenuine } from '@/lib/jobs/provenance'
-import { SampleListingNotice } from '@/components/jobs/SampleListingNotice'
+import { isIndexable } from '@/lib/jobs/provenance'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -85,14 +84,8 @@ export default async function JobDetailPage({ params }: Props) {
       badges={[`🏢 ${job.company}`, `📍 ${job.location}`, `💰 ${salary}`, `💼 ${row.job_type || job.type || 'Full Time'}`, `🧑‍💼 ${row.experience_required || job.exp || 'Any'}`]}
       content={content}
       jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
-      applySlot={
-        <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
-          {isGenuine(job)
-            ? <ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />
-            : <SampleListingNotice />}
-          <SaveJobButton jobId={job.id} board="private" />
-        </div>
-      }
+      applySlot={<ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />}
+      actionsSlot={<JobActionBar board="private" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/private-jobs', label: 'Private Jobs in India' },
         category: { href: `/jobs/private?category=${encodeURIComponent(job.cat || '')}`, label: `More ${job.cat || 'Private'} Jobs` },

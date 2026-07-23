@@ -13,6 +13,7 @@ const NAV=[
   {href:'/admin/resume-bank',label:'Resume Bank',icon:'📄'},
   {href:'/admin/applications',label:'Applications',icon:'📋'},
   {href:'/admin/messages',label:'Messages',icon:'📬'},
+  {href:'/admin/reports',label:'Job Reports',icon:'🚩'},
   {href:'/admin/content',label:'Site Content',icon:'📝'},
   {href:'/admin/settings',label:'Settings',icon:'⚙️'},
 ]

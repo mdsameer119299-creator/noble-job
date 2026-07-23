@@ -1,6 +1,7 @@
 import type { GovtJob } from "@/types/govtJob"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
 import { getGovtHowToApplySteps } from "@/lib/services/govtArticle"
+import { GovtApplyLinkButton } from "./GovtApplyLinkButton"
 
 /** Renders step-by-step apply instructions with a prominent CTA. */
 export function GovtHowToApply({ job }: { job: GovtJob }) {
@@ -39,10 +40,10 @@ export function GovtHowToApply({ job }: { job: GovtJob }) {
       </h2>
 
       {applyLink && (
-        <a
+        <GovtApplyLinkButton
           href={applyLink.href}
-          target="_blank"
-          rel="noopener noreferrer"
+          jobTitle={job.title}
+          intercept
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -51,6 +52,7 @@ export function GovtHowToApply({ job }: { job: GovtJob }) {
             color: "#fff",
             padding: "12px 20px",
             borderRadius: 10,
+            border: "none",
             fontWeight: 800,
             fontSize: 14,
             textDecoration: "none",
@@ -58,7 +60,7 @@ export function GovtHowToApply({ job }: { job: GovtJob }) {
           }}
         >
           Apply Online on Official Portal →
-        </a>
+        </GovtApplyLinkButton>
       )}
 
       {steps.length > 0 && (
