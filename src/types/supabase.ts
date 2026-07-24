@@ -346,9 +346,10 @@ export interface Database {
           posted_at: string
           employer_id: string | null
           provenance: string | null
+          is_featured: boolean
         }
-        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null }
-        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null }
+        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
+        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
         Relationships: []
       }
       abroad_jobs: {
@@ -370,9 +371,10 @@ export interface Database {
           posted_at: string
           employer_id: string | null
           provenance: string | null
+          is_featured: boolean
         }
-        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null }
-        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null }
+        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
+        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
         Relationships: []
       }
       applications: {

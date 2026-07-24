@@ -10,4 +10,5 @@ export interface WfhJob {
   provenance?: Provenance
   /** Owning employer id — evidence for EMPLOYER provenance genuineness checks. */
   employer_id?: string | null
+  is_featured?: boolean
 }

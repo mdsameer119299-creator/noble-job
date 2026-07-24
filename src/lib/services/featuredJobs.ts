@@ -2,6 +2,20 @@ import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isGenuine } from "@/lib/jobs/provenance"
 import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
 import type { Job } from "@/types/job"
+import type { WfhJob } from "@/types/wfhJob"
+import type { AbroadJob } from "@/types/abroadJob"
+
+export type FeaturedBoard = "private" | "wfh" | "abroad"
+
+export interface FeaturedJobCard {
+  board: FeaturedBoard
+  id: string
+  title: string
+  company: string
+  location: string
+  salary?: string
+  color?: string
+}
 
 /**
  * "Featured" is a stronger trust claim than a plain listing badge, so it is
@@ -41,4 +55,96 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
   } catch {
     return localGenuineFeatured()
   }
+}
+
+async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
+  if (!isSupabaseConfigured()) return []
+  try {
+    const { createClient } = await import("@/lib/supabase/server")
+    const sb = await createClient()
+    if (!sb) return []
+    const { data: featuredRows } = await sb
+      .from("wfh_jobs")
+      .select("*")
+      .eq("status", "active")
+      .eq("is_featured", true)
+      .order("posted_at", { ascending: false })
+      .limit(20)
+    const featured = ((featuredRows || []) as unknown as WfhJob[]).filter(isGenuine).slice(0, limit)
+    if (featured.length) return featured
+
+    const { data: latestRows } = await sb
+      .from("wfh_jobs")
+      .select("*")
+      .eq("status", "active")
+      .order("posted_at", { ascending: false })
+      .limit(20)
+    return ((latestRows || []) as unknown as WfhJob[]).filter(isGenuine).slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+async function getFeaturedAbroadJobs(limit = 4): Promise<AbroadJob[]> {
+  if (!isSupabaseConfigured()) return []
+  try {
+    const { createClient } = await import("@/lib/supabase/server")
+    const sb = await createClient()
+    if (!sb) return []
+    const { data: featuredRows } = await sb
+      .from("abroad_jobs")
+      .select("*")
+      .eq("status", "active")
+      .eq("is_featured", true)
+      .order("posted_at", { ascending: false })
+      .limit(20)
+    const featured = ((featuredRows || []) as unknown as AbroadJob[]).filter(isGenuine).slice(0, limit)
+    if (featured.length) return featured
+
+    const { data: latestRows } = await sb
+      .from("abroad_jobs")
+      .select("*")
+      .eq("status", "active")
+      .order("posted_at", { ascending: false })
+      .limit(20)
+    return ((latestRows || []) as unknown as AbroadJob[]).filter(isGenuine).slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Balanced cross-board Featured Jobs for the homepage — genuine-only, same
+ * rule as getFeaturedPrivateJobs. Pulls an even share from each board (so the
+ * homepage never shows an all-private list just because private has more
+ * genuine inventory today) and interleaves them.
+ */
+export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> {
+  const perBoard = Math.max(2, Math.ceil(total / 3))
+  const [privateJobs, wfhJobs, abroadJobs] = await Promise.all([
+    getFeaturedPrivateJobs(perBoard),
+    getFeaturedWfhJobs(perBoard),
+    getFeaturedAbroadJobs(perBoard),
+  ])
+
+  const privateCards: FeaturedJobCard[] = privateJobs.map(j => ({
+    board: "private", id: j.id, title: j.title, company: j.company, location: j.location, salary: j.salary, color: j.color,
+  }))
+  const wfhCards: FeaturedJobCard[] = wfhJobs.map(j => ({
+    board: "wfh", id: j.id, title: j.title, company: j.company, location: "Remote", salary: j.salary, color: j.color,
+  }))
+  const abroadCards: FeaturedJobCard[] = abroadJobs.map(j => ({
+    board: "abroad", id: j.id, title: j.title, company: j.company, location: j.location || j.country, salary: j.salary,
+  }))
+
+  // Round-robin interleave across boards so a short board doesn't get buried.
+  const lists = [privateCards, wfhCards, abroadCards]
+  const mixed: FeaturedJobCard[] = []
+  for (let i = 0; mixed.length < total && lists.some(l => l.length > i); i++) {
+    for (const l of lists) {
+      if (l[i]) mixed.push(l[i])
+      if (mixed.length >= total) break
+    }
+  }
+  return mixed
 }
