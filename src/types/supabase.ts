@@ -71,6 +71,7 @@ export interface Database {
           apply_url: string | null
           is_verified: boolean
           is_featured: boolean
+          views_count: number
           badge: string | null
           posted_at: string
           expires_at: string | null
@@ -97,6 +98,7 @@ export interface Database {
           apply_url?: string | null
           is_verified?: boolean
           is_featured?: boolean
+          views_count?: number
           badge?: string | null
           posted_at?: string
           expires_at?: string | null
@@ -123,6 +125,7 @@ export interface Database {
           apply_url?: string | null
           is_verified?: boolean
           is_featured?: boolean
+          views_count?: number
           badge?: string | null
           posted_at?: string
           expires_at?: string | null
@@ -347,9 +350,10 @@ export interface Database {
           employer_id: string | null
           provenance: string | null
           is_featured: boolean
+          views_count: number
         }
-        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
-        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
+        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
+        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
         Relationships: []
       }
       abroad_jobs: {
@@ -372,9 +376,10 @@ export interface Database {
           employer_id: string | null
           provenance: string | null
           is_featured: boolean
+          views_count: number
         }
-        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
-        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean }
+        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
+        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
         Relationships: []
       }
       applications: {
@@ -623,7 +628,10 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_job_views: {
+        Args: { p_board: string; p_id: string }
+        Returns: void
+      }
     }
     Enums: {
       [_ in never]: never

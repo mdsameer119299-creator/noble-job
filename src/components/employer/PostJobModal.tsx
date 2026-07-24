@@ -9,11 +9,12 @@ import{useToast}from'@/hooks/useToast'
 import{JOB_CATEGORIES,WFH_CATEGORIES,JOB_TYPES}from'@/lib/constants/jobCategories'
 
 type Board='private'|'wfh'|'abroad'
-const BOARD_TABS:{board:Board;label:string}[]=[
-  {board:'private',label:'Private Job'},
-  {board:'wfh',label:'Work From Home'},
-  {board:'abroad',label:'Abroad'},
+const BOARD_TABS:{board:Board;label:string;icon:string;color:string;bg:string}[]=[
+  {board:'private',label:'Private Job',icon:'🏢',color:'#1847d4',bg:'#eff6ff'},
+  {board:'wfh',label:'Work From Home',icon:'🏠',color:'#15803d',bg:'#f0fdf4'},
+  {board:'abroad',label:'Abroad',icon:'🌍',color:'#a21caf',bg:'#fdf4ff'},
 ]
+const BOARD_META=Object.fromEntries(BOARD_TABS.map(t=>[t.board,t]))
 
 interface PostJobModalProps{open:boolean;onClose:()=>void;onPosted:()=>void}
 
@@ -59,7 +60,7 @@ export function PostJobModal({open,onClose,onPosted}:PostJobModalProps){
       payload.salary=form.salary
     }
     const res=await fetch('/api/employer/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    if(res.ok){toast.success('Job posted for review!');onPosted();onClose();setForm(EMPTY_FORM);setBoard('private')}
+    if(res.ok){toast.success(`${BOARD_META[board].label} job posted for review!`);onPosted();onClose();setForm(EMPTY_FORM);setBoard('private')}
     else toast.error('Failed to post job')
     setLoading(false)
   }
@@ -71,15 +72,25 @@ export function PostJobModal({open,onClose,onPosted}:PostJobModalProps){
         <h2 style={{fontFamily:'Playfair Display,serif',fontWeight:900,color:'#fff',fontSize:22}}>Post a New Job</h2>
         <p style={{color:'rgba(255,255,255,.75)',fontSize:13}}>Reach 80,000+ qualified candidates on Noble Job</p>
       </div>
-      <div style={{display:'flex',gap:4,padding:'14px 26px 0',borderBottom:'1.5px solid #eef2fb'}}>
+      <div style={{display:'flex',gap:8,padding:'16px 26px 0',borderBottom:'1.5px solid #eef2fb'}}>
         {BOARD_TABS.map(t=>(
           <button key={t.board} type="button" onClick={()=>switchBoard(t.board)}
-            style={{padding:'10px 16px',border:'none',background:'none',cursor:'pointer',fontWeight:800,fontSize:13.5,color:board===t.board?'#1847d4':'#6b7280',borderBottom:board===t.board?'2.5px solid #1847d4':'2.5px solid transparent',marginBottom:-1.5}}>
-            {t.label}
+            style={{
+              display:'flex',alignItems:'center',gap:7,padding:'10px 16px',border:'1.5px solid',
+              borderColor:board===t.board?t.color:'#e2e8f0',borderBottom:board===t.board?`1.5px solid ${t.color}`:'1.5px solid #e2e8f0',
+              background:board===t.board?t.bg:'#fff',borderRadius:'10px 10px 0 0',cursor:'pointer',fontWeight:800,fontSize:13.5,
+              color:board===t.board?t.color:'#6b7280',marginBottom:-1.5,
+            }}>
+            <span aria-hidden>{t.icon}</span> {t.label}
           </button>
         ))}
       </div>
-      <div style={{padding:'24px 26px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{padding:'10px 26px 0'}}>
+        <div style={{background:BOARD_META[board].bg,border:`1px solid ${BOARD_META[board].color}33`,borderRadius:9,padding:'9px 14px',fontSize:12.5,fontWeight:700,color:BOARD_META[board].color,display:'flex',alignItems:'center',gap:7}}>
+          <span aria-hidden>{BOARD_META[board].icon}</span> You are posting to: {BOARD_META[board].label}
+        </div>
+      </div>
+      <div style={{padding:'16px 26px 24px',display:'flex',flexDirection:'column',gap:14}}>
         <Input label="Job Title *" value={form.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Senior React Developer"/>
         <Input label="Company Name" value={form.company} onChange={e=>set('company',e.target.value)} placeholder="Defaults to your registered company name"/>
 
@@ -126,7 +137,7 @@ export function PostJobModal({open,onClose,onPosted}:PostJobModalProps){
         <Textarea label="Job Description *" value={form.description} onChange={e=>set('description',e.target.value)} placeholder="Describe the role, responsibilities, and requirements (min 50 chars)"/>
         <div style={{display:'flex',gap:10}}>
           <Button variant="ghost" onClick={onClose} className="flex-1">Cancel</Button>
-          <Button variant="blue" onClick={handlePost} loading={loading} className="flex-1">Post Job for Review</Button>
+          <Button variant="blue" onClick={handlePost} loading={loading} className="flex-1">Post {BOARD_META[board].label} for Review</Button>
         </div>
       </div>
     </Modal>

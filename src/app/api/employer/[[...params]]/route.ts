@@ -22,14 +22,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   const route = p?.join("/") || "dashboard"
 
   if (route === "dashboard" || route === "stats") {
-    const [jobs, apps, interviews] = await Promise.all([
-      sb.from("jobs").select("id", { count: "exact" }).eq("employer_id", eid).eq("status", "active"),
+    // Active jobs must be counted across all three employer-postable boards —
+    // querying only `jobs` silently under-reported WFH/Abroad postings.
+    const boards: EmployerJobBoard[] = ["private", "wfh", "abroad"]
+    const [boardCounts, apps, interviews] = await Promise.all([
+      Promise.all(
+        boards.map(async board => {
+          const table = JOB_BOARD_TABLE[board]
+          const { count } = await sb.from(table).select("id", { count: "exact", head: true }).eq("employer_id", eid).eq("status", "active")
+          return { board, count: count || 0 }
+        })
+      ),
       sb.from("applications").select("status").eq("employer_id", eid),
       sb.from("interviews").select("id", { count: "exact" }).eq("employer_id", eid).eq("status", "scheduled"),
     ])
     const appData = apps.data || []
+    const byBoard = Object.fromEntries(boardCounts.map(b => [b.board, b.count])) as Record<EmployerJobBoard, number>
     return NextResponse.json({
-      activeJobs: jobs.count || 0,
+      activeJobs: boardCounts.reduce((sum, b) => sum + b.count, 0),
+      activeJobsByBoard: byBoard,
       applications: appData.length,
       shortlisted: appData.filter((a: any) => a.status === "shortlisted").length,
       interviews: interviews.count || 0,
@@ -42,16 +53,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   if (route === "jobs") {
     const boardParam = req.nextUrl.searchParams.get("board")
     const boards: EmployerJobBoard[] = isEmployerJobBoard(boardParam) ? [boardParam] : ["private", "wfh", "abroad"]
-    const results = await Promise.all(
-      boards.map(async (board) => {
-        const table = JOB_BOARD_TABLE[board]
-        const { data } = await sb.from(table).select("*").eq("employer_id", eid).order("posted_at", { ascending: false })
-        return (data || []).map((row) => ({ ...(row as object), board }))
-      })
-    )
-    const merged = results.flat().sort(
-      (a, b) => new Date((b as { posted_at?: string }).posted_at || 0).getTime() - new Date((a as { posted_at?: string }).posted_at || 0).getTime()
-    )
+    const { getApplicationCountsByEmployer } = await import("@/lib/services/applicationService")
+    const [results, applicationCounts] = await Promise.all([
+      Promise.all(
+        boards.map(async (board) => {
+          const table = JOB_BOARD_TABLE[board]
+          const { data } = await sb.from(table).select("*").eq("employer_id", eid).order("posted_at", { ascending: false })
+          return (data || []).map((row) => ({ ...(row as Record<string, unknown>), board, id: (row as { id: string }).id }))
+        })
+      ),
+      getApplicationCountsByEmployer(eid),
+    ])
+    const merged = results.flat()
+      .map(row => ({ ...row, applications_count: applicationCounts[row.id] || 0 }))
+      .sort(
+        (a, b) => new Date((b as { posted_at?: string }).posted_at || 0).getTime() - new Date((a as { posted_at?: string }).posted_at || 0).getTime()
+      )
     return NextResponse.json({ data: merged })
   }
 

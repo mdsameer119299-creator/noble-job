@@ -22,8 +22,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     const { data: employer } = await sb.from("employers").select("id").eq("user_id", user.id).single()
     if (!employer) return NextResponse.json({ data: [] })
     const status = req.nextUrl.searchParams.get("status") || "all"
+    const board = req.nextUrl.searchParams.get("board") || "all"
     const { getApplicationsByEmployer } = await import("@/lib/services/applicationService")
-    const apps = await getApplicationsByEmployer((employer as { id: string }).id, status === "all" ? undefined : status)
+    const apps = await getApplicationsByEmployer(
+      (employer as { id: string }).id,
+      status === "all" ? undefined : status,
+      board === "all" ? undefined : board
+    )
     return NextResponse.json({ data: apps })
   }
 
