@@ -39,6 +39,19 @@ export const JOB_CATEGORIES = [
   'Retail / Sales',
   'Consulting',
   'Legal / Compliance',
+  'Driver',
+  'Delivery Boy',
+  'Security Guard',
+  'Housekeeping',
+  'Helper',
+  'Electrician',
+  'Plumber',
+  'Shop Assistant',
+  'Office Boy',
+  'Receptionist',
+  'Cook',
+  'Maid',
+  'Warehouse Staff',
 ] as const
 
 export const WFH_CATEGORIES = [

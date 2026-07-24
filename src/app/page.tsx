@@ -10,7 +10,9 @@ import { SITE_FAQ } from '@/lib/seo/faq'
 import { HeroSearchBar } from '@/components/home/HeroSearchBar'
 import { StatsStrip } from '@/components/home/StatsStrip'
 import { AiEmployerTeaser } from '@/components/home/AiEmployerTeaser'
+import { FeaturedJobsSection } from '@/components/home/FeaturedJobsSection'
 import { LatestJobsGrid } from '@/components/home/LatestJobsGrid'
+import { BlueCollarJobsSection } from '@/components/home/BlueCollarJobsSection'
 import { CategoryChips } from '@/components/home/CategoryChips'
 import { AiCandidateTeaser } from '@/components/home/AiCandidateTeaser'
 import { EmployerCta } from '@/components/home/EmployerCta'
@@ -40,13 +42,19 @@ export default function HomePage() {
       {/* 3. Stats strip — dark navy, 5 counters */}
       <StatsStrip />
 
+      {/* Featured Jobs — genuine-employer jobs only, hides itself when empty */}
+      <FeaturedJobsSection />
+
       {/* 4. AI Employer Teaser — dark card, 3-col: steps + JD card + candidates */}
       <AiEmployerTeaser />
 
       {/* 5. Latest Jobs Grid — 4 cols: Private, Govt, WFH, Abroad */}
       <LatestJobsGrid />
 
-      {/* 6. Category Chips — 6 categories + View All */}
+      {/* Blue Collar Jobs — Driver, Delivery, Security, Housekeeping, etc. */}
+      <BlueCollarJobsSection />
+
+      {/* 6. Category Chips — expanded categories + View All */}
       <CategoryChips />
 
       {/* 7. AI Candidate (cv-strip) — ring chart + features + Upload CTA */}

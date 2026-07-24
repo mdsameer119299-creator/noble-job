@@ -70,6 +70,7 @@ export interface Database {
           source: string | null
           apply_url: string | null
           is_verified: boolean
+          is_featured: boolean
           badge: string | null
           posted_at: string
           expires_at: string | null
@@ -95,6 +96,7 @@ export interface Database {
           source?: string | null
           apply_url?: string | null
           is_verified?: boolean
+          is_featured?: boolean
           badge?: string | null
           posted_at?: string
           expires_at?: string | null
@@ -120,6 +122,7 @@ export interface Database {
           source?: string | null
           apply_url?: string | null
           is_verified?: boolean
+          is_featured?: boolean
           badge?: string | null
           posted_at?: string
           expires_at?: string | null

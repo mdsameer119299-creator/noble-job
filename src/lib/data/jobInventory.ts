@@ -98,6 +98,94 @@ const PRIVATE_SKILLS: Record<string, string[]> = {
   Manufacturing: ["AutoCAD", "Quality Control", "Safety"],
 }
 
+// Blue-collar / frontline roles — the private catalog was entirely white-collar
+// until this addition; these are real category+role combinations, not filler.
+export const BLUE_COLLAR_CATEGORIES = [
+  "Driver", "Delivery Boy", "Security Guard", "Housekeeping", "Helper",
+  "Electrician", "Plumber", "Shop Assistant", "Office Boy", "Receptionist",
+  "Cook", "Maid", "Warehouse Staff",
+] as const
+
+const BLUE_COLLAR_COMPANIES = [
+  ["Urban Company", "#1847d4"], ["Zomato", "#dc2626"], ["Swiggy", "#f97316"], ["Dunzo", "#059669"],
+  ["Quess Corp", "#7c3aed"], ["TeamLease", "#0369a1"], ["Taj Hotels", "#b45309"], ["Oberoi Group", "#1e3a8a"],
+  ["Apollo Hospitals", "#dc2626"], ["Reliance Retail", "#1e3a8a"], ["DMart", "#059669"], ["Big Bazaar", "#f59e0b"],
+  ["G4S Security", "#374151"], ["SIS Security", "#0f172a"], ["Blue Dart", "#1d4ed8"], ["Delhivery", "#7c3aed"],
+] as const
+
+const BLUE_COLLAR_ROLES: Record<string, string[]> = {
+  Driver: ["Personal Driver", "Commercial Driver", "Delivery Van Driver", "Cab Driver"],
+  "Delivery Boy": ["Delivery Executive", "Food Delivery Rider", "Courier Delivery Boy", "E-commerce Delivery Partner"],
+  "Security Guard": ["Security Guard", "Security Supervisor", "Night Security Guard", "Corporate Security Officer"],
+  Housekeeping: ["Housekeeping Staff", "Housekeeping Supervisor", "Hotel Housekeeping Attendant", "Office Housekeeping"],
+  Helper: ["General Helper", "Kitchen Helper", "Loading Helper", "Store Helper"],
+  Electrician: ["Electrician", "Wireman", "Maintenance Electrician", "Site Electrician"],
+  Plumber: ["Plumber", "Pipe Fitter", "Maintenance Plumber", "Site Plumber"],
+  "Shop Assistant": ["Shop Assistant", "Retail Sales Assistant", "Store Assistant", "Counter Sales Staff"],
+  "Office Boy": ["Office Boy", "Peon", "Office Assistant", "Pantry Boy"],
+  Receptionist: ["Front Desk Receptionist", "Hotel Receptionist", "Clinic Receptionist", "Office Receptionist"],
+  Cook: ["Cook", "Kitchen Cook", "Tandoor Chef", "Catering Cook"],
+  Maid: ["Domestic Help", "Part-Time Maid", "Live-in Maid", "Nanny cum Housekeeper"],
+  "Warehouse Staff": ["Warehouse Worker", "Packing Staff", "Warehouse Loader", "Inventory Assistant"],
+}
+
+const BLUE_COLLAR_SKILLS: Record<string, string[]> = {
+  Driver: ["Valid Driving License", "Route Knowledge", "Vehicle Maintenance"],
+  "Delivery Boy": ["Two-Wheeler License", "Smartphone Navigation", "Time Management"],
+  "Security Guard": ["Vigilance", "Physical Fitness", "Basic Reporting"],
+  Housekeeping: ["Cleaning Equipment", "Time Management", "Attention to Detail"],
+  Helper: ["Physical Stamina", "Teamwork", "Basic Safety"],
+  Electrician: ["Wiring", "Fault Diagnosis", "ITI Certified"],
+  Plumber: ["Pipe Fitting", "Leak Repair", "Basic Tools"],
+  "Shop Assistant": ["Customer Service", "Billing", "Inventory"],
+  "Office Boy": ["Basic Communication", "Punctuality", "Multitasking"],
+  Receptionist: ["Communication", "MS Office", "Telephone Etiquette"],
+  Cook: ["Indian Cuisine", "Food Hygiene", "Menu Planning"],
+  Maid: ["Cooking", "Cleaning", "Childcare"],
+  "Warehouse Staff": ["Inventory Management", "Forklift (basic)", "Physical Stamina"],
+}
+
+const BLUE_COLLAR_SALARIES = ["₹10,000-15,000/mo", "₹12,000-18,000/mo", "₹15,000-22,000/mo", "₹18,000-28,000/mo", "₹20,000-32,000/mo"]
+const BLUE_COLLAR_EXP = ["Fresher", "0-1 Years", "1-3 Years", "2-5 Years"]
+
+function buildBlueCollarJob(i: number, status: JobStatus): Job {
+  const [company, color] = pick(BLUE_COLLAR_COMPANIES, i)
+  const cat = pick(BLUE_COLLAR_CATEGORIES, i)
+  const role = pick(BLUE_COLLAR_ROLES[cat], i + 2)
+  const loc = pick(LOCATIONS, i + 5)
+  const prefix = status === "ARCHIVED_JOB" ? "arch-priv" : status === "LIVE_JOB" ? "live-priv" : "ver-priv"
+  const id = `${prefix}-bc-${i + 1}`
+  return {
+    id,
+    title: role,
+    company: company as string,
+    logo: (company as string).slice(0, 2).toUpperCase(),
+    color: color as string,
+    location: loc,
+    type: "Full Time",
+    exp: pick(BLUE_COLLAR_EXP, i),
+    salary: pick(BLUE_COLLAR_SALARIES, i),
+    cat,
+    skills: BLUE_COLLAR_SKILLS[cat] || [],
+    jobStatus: status,
+    // Generated demo inventory — never a real opening (see provenance.ts).
+    provenance: "SYNTHETIC",
+    applyUrl: status === "ARCHIVED_JOB" ? "#" : `https://careers.example.com/${id}`,
+    desc: `${role} required at ${company} (${loc}).`,
+    posted: status === "ARCHIVED_JOB" ? "Archived" : `${(i % 14) + 1} days ago`,
+    verified: false,
+    source: status === "ARCHIVED_JOB" ? "Archived Inventory" : status === "LIVE_JOB" ? "Live Feed" : company as string,
+    board: "private",
+    badge: status === "ARCHIVED_JOB" ? undefined : syntheticOpenLabel(id),
+  }
+}
+
+function generateBlueCollarInventory(): Job[] {
+  const live = Array.from({ length: 40 }, (_, i) => buildBlueCollarJob(i, "LIVE_JOB"))
+  const verified = Array.from({ length: 20 }, (_, i) => buildBlueCollarJob(i + 40, "VERIFIED_JOB"))
+  return [...live, ...verified]
+}
+
 const LOCATIONS = ["Bangalore", "Hyderabad", "Pune", "Chennai", "Mumbai", "Delhi NCR", "Kolkata", "Ahmedabad", "Noida", "Gurgaon", "Coimbatore", "Indore"]
 const JOB_TYPES = ["Full Time", "Part Time", "Contract", "Internship"]
 const EXP_LEVELS = ["Fresher", "0-2 Yrs", "1-3 Years", "2-5 Years", "3-6 Years", "5-8 Years"]
@@ -150,7 +238,7 @@ function generatePrivateInventory(): Job[] {
   const verified = Array.from({ length: PRIVATE_VERIFIED_COUNT }, (_, i) => buildPrivateJob(i + PRIVATE_LIVE_COUNT, "VERIFIED_JOB"))
   const archived = Array.from({ length: PRIVATE_ARCHIVED_COUNT }, (_, i) =>
     buildPrivateJob(i + PRIVATE_LIVE_COUNT + PRIVATE_VERIFIED_COUNT, "ARCHIVED_JOB"))
-  return [...seed, ...live, ...verified, ...archived]
+  return [...seed, ...live, ...verified, ...archived, ...generateBlueCollarInventory()]
 }
 
 // ── WFH ───────────────────────────────────────────────────────────────

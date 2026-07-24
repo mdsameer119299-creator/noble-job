@@ -40,19 +40,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (p?.[0] === "featured") {
-      if (useLocalInventoryOnly()) {
-        return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4, syntheticVisible) })
-      }
-      const { createClient } = await import("@/lib/supabase/server")
-      const sb = await createClient()
-      if (!sb) return NextResponse.json({ data: getPrivateJobsFeaturedLocal(4, syntheticVisible) })
-      const { data } = await sb
-        .from("jobs")
-        .select("*")
-        .eq("status", "active")
-        .order("posted_at", { ascending: false })
-        .limit(4)
-      return NextResponse.json({ data: data?.length ? data : getPrivateJobsFeaturedLocal(4, syntheticVisible) })
+      const { getFeaturedPrivateJobs } = await import("@/lib/services/featuredJobs")
+      return NextResponse.json({ data: await getFeaturedPrivateJobs(4) })
     }
 
     if (p?.[0] === "count") {
