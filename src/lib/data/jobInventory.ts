@@ -63,7 +63,7 @@ const PRIVATE_COMPANIES = [
   ["BYJU'S", "#7c3aed"], ["Swiggy", "#f97316"], ["Razorpay", "#1847d4"], ["PhonePe", "#5b21b6"],
 ] as const
 
-const PRIVATE_CATEGORIES = [
+export const PRIVATE_CATEGORIES = [
   "IT", "Software", "Sales", "Marketing", "HR", "Finance",
   "Customer Support", "Operations", "Logistics", "Healthcare", "Education", "Manufacturing",
 ] as const
