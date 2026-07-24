@@ -19,6 +19,7 @@ export function JobSearchBar() {
       <select value={category} onChange={e => setFilter("category", e.target.value)}
         style={{ border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#374151', background: '#fff' }}>
         <option value="">All Categories</option>
+        <option value="blue-collar">Blue Collar Jobs (All)</option>
         {JOB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
       <select onChange={e => setFilter("type", e.target.value)}

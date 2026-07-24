@@ -9,7 +9,7 @@
 import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
-import { PRIVATE_INVENTORY, WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
+import { PRIVATE_INVENTORY, WFH_INVENTORY, ABROAD_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import type {
   CategoryIllustrationSlug,
   CategoryCardConfig,
@@ -44,6 +44,13 @@ function privateRoles(needles: string[]): number {
       j.jobStatus !== "ARCHIVED_JOB" &&
       matchesCat(j.cat || j.category || "", needles),
   ).length
+}
+
+const BLUE_COLLAR_SET = new Set<string>(BLUE_COLLAR_CATEGORIES)
+
+/** Blue-collar umbrella count — exact category match, not the substring `matchesCat` heuristic. */
+function blueCollarRoles(): number {
+  return PRIVATE_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB" && BLUE_COLLAR_SET.has(j.cat)).length
 }
 
 function wfhRoles(needles: string[]): number {
@@ -87,6 +94,7 @@ export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplace
     { slug: "railway", vacancies: govtVacancies("railway") },
     { slug: "aviation", vacancies: abroadRoles(["uae", "qatar", "saudi", "aviation", "cabin"]) },
     { slug: "hospitality", vacancies: privateRoles(["hospitality", "hotel", "retail"]) },
+    { slug: "blue-collar-jobs", vacancies: blueCollarRoles() },
   ]
 
   return stats.map(s => ({
@@ -112,6 +120,7 @@ const CARD_META: Omit<CategoryCardConfig, "count">[] = [
   { slug: "railway", name: "Railway", href: "/jobs/govt/category/railway" },
   { slug: "aviation", name: "Aviation", href: "/jobs/abroad?category=Aviation" },
   { slug: "hospitality", name: "Hospitality", href: "/jobs/private?category=Hospitality" },
+  { slug: "blue-collar-jobs", name: "Blue Collar Jobs", href: "/jobs/private?category=blue-collar" },
 ]
 
 /** Homepage cards with unified stats + badges. DB-first for govt. */

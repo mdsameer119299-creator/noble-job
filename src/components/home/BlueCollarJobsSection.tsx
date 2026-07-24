@@ -15,6 +15,19 @@ const CATEGORY_ICON: Record<string, string> = {
   Cook: '👨‍🍳',
   Maid: '🏠',
   'Warehouse Staff': '📦',
+  Carpenter: '🪚',
+  Welder: '🔩',
+  Mechanic: '🔧',
+  'Factory Worker': '🏭',
+  'Packing Staff': '📦',
+  Loader: '🚚',
+  Telecaller: '☎️',
+  'Retail Sales': '🛍️',
+  'Field Sales': '📈',
+  Cashier: '💵',
+  Beautician: '💇',
+  'Nursing Assistant': '🩺',
+  'Lab Technician': '🧪',
 }
 
 /** Renders nothing when there's no blue-collar inventory to show yet. */

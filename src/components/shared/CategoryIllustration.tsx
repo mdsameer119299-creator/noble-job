@@ -1,5 +1,6 @@
 import {
   type CategoryIllustrationSlug,
+  CATEGORY_EMOJI_FALLBACK,
   categoryIllustrationSrc,
   categoryIllustrationSrcSvg,
   resolveCategoryIllustrationSlug,
@@ -23,6 +24,7 @@ export function CategoryIllustration({
   alt,
 }: CategoryIllustrationProps) {
   const resolved = resolveCategoryIllustrationSlug(String(slug))
+  const emojiFallback = CATEGORY_EMOJI_FALLBACK[resolved]
   const webp = categoryIllustrationSrc(resolved)
   const svg = categoryIllustrationSrcSvg(resolved)
   const label = alt || `${resolved.replace(/-/g, " ")} category`
@@ -33,19 +35,29 @@ export function CategoryIllustration({
       style={{ width: size, height: size }}
     >
       <div className="cat-illus-frame__scene">
-        <picture>
-          <source srcSet={webp} type="image/webp" />
-          <img
-            src={svg}
-            alt={label}
-            width={size}
-            height={size}
-            className="cat-illus-frame__img"
-            loading={priority ? "eager" : "lazy"}
-            decoding="async"
-            draggable={false}
-          />
-        </picture>
+        {emojiFallback ? (
+          <span
+            role="img"
+            aria-label={label}
+            style={{ fontSize: size * 0.6, lineHeight: 1 }}
+          >
+            {emojiFallback}
+          </span>
+        ) : (
+          <picture>
+            <source srcSet={webp} type="image/webp" />
+            <img
+              src={svg}
+              alt={label}
+              width={size}
+              height={size}
+              className="cat-illus-frame__img"
+              loading={priority ? "eager" : "lazy"}
+              decoding="async"
+              draggable={false}
+            />
+          </picture>
+        )}
       </div>
     </div>
   )

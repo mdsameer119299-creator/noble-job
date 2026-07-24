@@ -101,9 +101,11 @@ const PRIVATE_SKILLS: Record<string, string[]> = {
 // Blue-collar / frontline roles — the private catalog was entirely white-collar
 // until this addition; these are real category+role combinations, not filler.
 export const BLUE_COLLAR_CATEGORIES = [
-  "Driver", "Delivery Boy", "Security Guard", "Housekeeping", "Helper",
-  "Electrician", "Plumber", "Shop Assistant", "Office Boy", "Receptionist",
-  "Cook", "Maid", "Warehouse Staff",
+  "Driver", "Delivery Boy", "Security Guard", "Office Boy", "Shop Assistant",
+  "Warehouse Staff", "Housekeeping", "Maid", "Cook", "Electrician", "Plumber",
+  "Carpenter", "Welder", "Mechanic", "Factory Worker", "Helper", "Packing Staff",
+  "Loader", "Receptionist", "Telecaller", "Retail Sales", "Field Sales",
+  "Cashier", "Beautician", "Nursing Assistant", "Lab Technician",
 ] as const
 
 const BLUE_COLLAR_COMPANIES = [
@@ -111,38 +113,67 @@ const BLUE_COLLAR_COMPANIES = [
   ["Quess Corp", "#7c3aed"], ["TeamLease", "#0369a1"], ["Taj Hotels", "#b45309"], ["Oberoi Group", "#1e3a8a"],
   ["Apollo Hospitals", "#dc2626"], ["Reliance Retail", "#1e3a8a"], ["DMart", "#059669"], ["Big Bazaar", "#f59e0b"],
   ["G4S Security", "#374151"], ["SIS Security", "#0f172a"], ["Blue Dart", "#1d4ed8"], ["Delhivery", "#7c3aed"],
+  ["Maruti Suzuki", "#0369a1"], ["Tata Motors", "#0d9488"], ["L&T", "#047857"], ["Havells", "#dc2626"],
+  ["Lakme Salon", "#be185d"], ["Naturals Salon", "#7c3aed"], ["Max Healthcare", "#dc2626"], ["Fortis Healthcare", "#1e3a8a"],
+  ["Lenskart", "#1847d4"], ["Vodafone Idea Store", "#dc2626"],
 ] as const
 
 const BLUE_COLLAR_ROLES: Record<string, string[]> = {
   Driver: ["Personal Driver", "Commercial Driver", "Delivery Van Driver", "Cab Driver"],
   "Delivery Boy": ["Delivery Executive", "Food Delivery Rider", "Courier Delivery Boy", "E-commerce Delivery Partner"],
   "Security Guard": ["Security Guard", "Security Supervisor", "Night Security Guard", "Corporate Security Officer"],
+  "Office Boy": ["Office Boy", "Peon", "Office Assistant", "Pantry Boy"],
+  "Shop Assistant": ["Shop Assistant", "Store Assistant", "Counter Sales Staff", "Billing Assistant"],
+  "Warehouse Staff": ["Warehouse Worker", "Warehouse Supervisor", "Inventory Assistant", "Stock Assistant"],
   Housekeeping: ["Housekeeping Staff", "Housekeeping Supervisor", "Hotel Housekeeping Attendant", "Office Housekeeping"],
-  Helper: ["General Helper", "Kitchen Helper", "Loading Helper", "Store Helper"],
+  Maid: ["Domestic Help", "Part-Time Maid", "Live-in Maid", "Nanny cum Housekeeper"],
+  Cook: ["Cook", "Kitchen Cook", "Tandoor Chef", "Catering Cook"],
   Electrician: ["Electrician", "Wireman", "Maintenance Electrician", "Site Electrician"],
   Plumber: ["Plumber", "Pipe Fitter", "Maintenance Plumber", "Site Plumber"],
-  "Shop Assistant": ["Shop Assistant", "Retail Sales Assistant", "Store Assistant", "Counter Sales Staff"],
-  "Office Boy": ["Office Boy", "Peon", "Office Assistant", "Pantry Boy"],
+  Carpenter: ["Carpenter", "Furniture Carpenter", "Site Carpenter", "Wood Polisher"],
+  Welder: ["Welder", "Arc Welder", "Gas Welder", "Fabrication Welder"],
+  Mechanic: ["Two-Wheeler Mechanic", "Car Mechanic", "Diesel Mechanic", "AC Mechanic"],
+  "Factory Worker": ["Factory Worker", "Production Line Worker", "Machine Operator", "Assembly Line Worker"],
+  Helper: ["General Helper", "Kitchen Helper", "Loading Helper", "Store Helper"],
+  "Packing Staff": ["Packing Staff", "Packaging Operator", "Box Packing Assistant", "Quality Packer"],
+  Loader: ["Loader", "Truck Loader", "Warehouse Loader", "Goods Loader"],
   Receptionist: ["Front Desk Receptionist", "Hotel Receptionist", "Clinic Receptionist", "Office Receptionist"],
-  Cook: ["Cook", "Kitchen Cook", "Tandoor Chef", "Catering Cook"],
-  Maid: ["Domestic Help", "Part-Time Maid", "Live-in Maid", "Nanny cum Housekeeper"],
-  "Warehouse Staff": ["Warehouse Worker", "Packing Staff", "Warehouse Loader", "Inventory Assistant"],
+  Telecaller: ["Telecaller", "Telesales Executive", "Customer Support Telecaller", "Outbound Calling Executive"],
+  "Retail Sales": ["Retail Sales Executive", "Store Sales Associate", "Mall Sales Staff", "Showroom Sales Executive"],
+  "Field Sales": ["Field Sales Executive", "Door-to-Door Sales", "Territory Sales Officer", "Field Marketing Executive"],
+  Cashier: ["Cashier", "Store Cashier", "Billing Cashier", "Supermarket Cashier"],
+  Beautician: ["Beautician", "Salon Beautician", "Hair Stylist", "Makeup Artist"],
+  "Nursing Assistant": ["Nursing Assistant", "Patient Care Assistant", "Home Nursing Attendant", "Ward Assistant"],
+  "Lab Technician": ["Lab Technician", "Pathology Lab Assistant", "Diagnostic Lab Technician", "Sample Collection Technician"],
 }
 
 const BLUE_COLLAR_SKILLS: Record<string, string[]> = {
   Driver: ["Valid Driving License", "Route Knowledge", "Vehicle Maintenance"],
   "Delivery Boy": ["Two-Wheeler License", "Smartphone Navigation", "Time Management"],
   "Security Guard": ["Vigilance", "Physical Fitness", "Basic Reporting"],
+  "Office Boy": ["Basic Communication", "Punctuality", "Multitasking"],
+  "Shop Assistant": ["Customer Service", "Billing", "Inventory"],
+  "Warehouse Staff": ["Inventory Management", "Forklift (basic)", "Physical Stamina"],
   Housekeeping: ["Cleaning Equipment", "Time Management", "Attention to Detail"],
-  Helper: ["Physical Stamina", "Teamwork", "Basic Safety"],
+  Maid: ["Cooking", "Cleaning", "Childcare"],
+  Cook: ["Indian Cuisine", "Food Hygiene", "Menu Planning"],
   Electrician: ["Wiring", "Fault Diagnosis", "ITI Certified"],
   Plumber: ["Pipe Fitting", "Leak Repair", "Basic Tools"],
-  "Shop Assistant": ["Customer Service", "Billing", "Inventory"],
-  "Office Boy": ["Basic Communication", "Punctuality", "Multitasking"],
+  Carpenter: ["Woodworking", "Furniture Making", "Measuring & Cutting"],
+  Welder: ["Arc Welding", "Gas Welding", "Safety Compliance"],
+  Mechanic: ["Engine Repair", "Diagnostics", "Spare Parts Knowledge"],
+  "Factory Worker": ["Machine Operation", "Assembly Line", "Safety Procedures"],
+  Helper: ["Physical Stamina", "Teamwork", "Basic Safety"],
+  "Packing Staff": ["Packaging Standards", "Quality Check", "Speed & Accuracy"],
+  Loader: ["Physical Stamina", "Load Handling", "Safety Procedures"],
   Receptionist: ["Communication", "MS Office", "Telephone Etiquette"],
-  Cook: ["Indian Cuisine", "Food Hygiene", "Menu Planning"],
-  Maid: ["Cooking", "Cleaning", "Childcare"],
-  "Warehouse Staff": ["Inventory Management", "Forklift (basic)", "Physical Stamina"],
+  Telecaller: ["Communication", "CRM Software", "Persuasion"],
+  "Retail Sales": ["Customer Service", "Billing", "Product Knowledge"],
+  "Field Sales": ["Negotiation", "Territory Management", "Cold Calling"],
+  Cashier: ["Cash Handling", "Billing Software", "Accuracy"],
+  Beautician: ["Hair & Skin Care", "Makeup", "Client Handling"],
+  "Nursing Assistant": ["Patient Care", "Basic First Aid", "Vitals Monitoring"],
+  "Lab Technician": ["Sample Collection", "Lab Equipment", "Report Documentation"],
 }
 
 const BLUE_COLLAR_SALARIES = ["₹10,000-15,000/mo", "₹12,000-18,000/mo", "₹15,000-22,000/mo", "₹18,000-28,000/mo", "₹20,000-32,000/mo"]
@@ -150,9 +181,12 @@ const BLUE_COLLAR_EXP = ["Fresher", "0-1 Years", "1-3 Years", "2-5 Years"]
 
 function buildBlueCollarJob(i: number, status: JobStatus): Job {
   const [company, color] = pick(BLUE_COLLAR_COMPANIES, i)
+  // Decorrelated strides (category vs location) so every category actually
+  // spreads across many locations instead of a fixed diagonal pairing —
+  // required for city x category pages to have real coverage.
   const cat = pick(BLUE_COLLAR_CATEGORIES, i)
-  const role = pick(BLUE_COLLAR_ROLES[cat], i + 2)
-  const loc = pick(LOCATIONS, i + 5)
+  const role = pick(BLUE_COLLAR_ROLES[cat], i * 3 + 2)
+  const loc = pick(LOCATIONS, i * 7 + 11)
   const prefix = status === "ARCHIVED_JOB" ? "arch-priv" : status === "LIVE_JOB" ? "live-priv" : "ver-priv"
   const id = `${prefix}-bc-${i + 1}`
   return {
@@ -181,8 +215,10 @@ function buildBlueCollarJob(i: number, status: JobStatus): Job {
 }
 
 function generateBlueCollarInventory(): Job[] {
-  const live = Array.from({ length: 40 }, (_, i) => buildBlueCollarJob(i, "LIVE_JOB"))
-  const verified = Array.from({ length: 20 }, (_, i) => buildBlueCollarJob(i + 40, "VERIFIED_JOB"))
+  // Larger + more evenly spread pool than the original 60 — 26 categories
+  // now, and city x category pages need real coverage across many combos.
+  const live = Array.from({ length: 400 }, (_, i) => buildBlueCollarJob(i, "LIVE_JOB"))
+  const verified = Array.from({ length: 200 }, (_, i) => buildBlueCollarJob(i + 400, "VERIFIED_JOB"))
   return [...live, ...verified]
 }
 
@@ -195,7 +231,11 @@ function buildPrivateJob(i: number, status: JobStatus): Job {
   const [company, color] = pick(PRIVATE_COMPANIES, i)
   const cat = pick(PRIVATE_CATEGORIES, i)
   const role = pick(PRIVATE_ROLES[cat], i + 3)
-  const loc = pick(LOCATIONS, i)
+  // Decorrelated stride — cat and LOCATIONS are both length 12, so picking
+  // location by the same plain `i` created a fixed diagonal pairing (every
+  // category always landed in exactly one city). See buildBlueCollarJob for
+  // the same fix applied there.
+  const loc = pick(LOCATIONS, i * 7 + 11)
   const prefix = status === "ARCHIVED_JOB" ? "arch-priv" : status === "LIVE_JOB" ? "live-priv" : "ver-priv"
   return {
     id: `${prefix}-${i + 1}`,

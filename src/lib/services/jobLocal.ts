@@ -1,10 +1,12 @@
 /**
  * Local-only private job helpers (no Supabase imports).
  */
-import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
+import { PRIVATE_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
+
+const BLUE_COLLAR_SET = new Set<string>(BLUE_COLLAR_CATEGORIES)
 
 function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
   const { q, category, location, exp, type: jType } = filter
@@ -18,7 +20,11 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
         (j.desc || "").toLowerCase().includes(term),
     )
   }
-  if (category && category !== "all") list = list.filter(j => j.cat === category)
+  // "blue-collar" is a synthetic umbrella filter value (not a real category)
+  // matching any of the frontline categories — used by the homepage card and
+  // Blue Collar landing hub, same pattern as the "all" sentinel.
+  if (category === "blue-collar") list = list.filter(j => BLUE_COLLAR_SET.has(j.cat))
+  else if (category && category !== "all") list = list.filter(j => j.cat === category)
   if (location && location !== "All Locations") {
     list = list.filter(j => j.location.toLowerCase().includes(location.toLowerCase()))
   }
