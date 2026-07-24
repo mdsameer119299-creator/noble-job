@@ -71,8 +71,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
       (candidate as { resume_url?: string | null }).resume_url
     )
     if (!url) return NextResponse.json({ error: "Resume not available" }, { status: 404 })
-    // Audit: which admin opened which candidate's resume.
-    console.info(`[admin-resume-access] admin=${auth.user?.id} candidate=${candidateId}`)
+    // Audit: which admin opened which candidate's resume — persisted, not just logged.
+    const { logResumeAccess } = await import("@/lib/services/resumeAccessLog")
+    void logResumeAccess({ candidateId, accessedByUserId: auth.user?.id, accessorRole: "admin" })
     return NextResponse.json({ url })
   }
 

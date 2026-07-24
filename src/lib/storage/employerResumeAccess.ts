@@ -1,5 +1,6 @@
 import type { ServerSupabaseClient } from "@/lib/supabase/server"
 import { resolveResumeSignedUrl } from "@/lib/storage/resumeStorage"
+import { logResumeAccess } from "@/lib/services/resumeAccessLog"
 
 /**
  * Employer may access resume only when the candidate has applied to that
@@ -37,11 +38,21 @@ export async function getEmployerApplicantResumeSignedUrl(
     .single()
   if (!candidate) return null
 
-  return resolveResumeSignedUrl(
+  const url = await resolveResumeSignedUrl(
     sb,
     candidateId,
     (candidate as { resume_url: string | null }).resume_url
   )
+  if (url) {
+    void logResumeAccess({
+      candidateId,
+      accessedByUserId: employerUserId,
+      accessorRole: "employer",
+      employerId: (employer as { id: string }).id,
+      applicationId: (application as { id: string }).id,
+    })
+  }
+  return url
 }
 
 export async function getEmployerResumeSignedUrlByApplication(

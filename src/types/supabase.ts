@@ -388,6 +388,12 @@ export interface Database {
         Update: { id?: string; job_id?: string; candidate_id?: string; employer_id?: string | null; status?: string; applied_at?: string; notes?: string | null; board?: string }
         Relationships: []
       }
+      resume_access_log: {
+        Row: { id: string; candidate_id: string; accessed_by_user_id: string | null; accessor_role: string; employer_id: string | null; application_id: string | null; created_at: string }
+        Insert: { id?: string; candidate_id: string; accessed_by_user_id?: string | null; accessor_role: string; employer_id?: string | null; application_id?: string | null; created_at?: string }
+        Update: { id?: string; candidate_id?: string; accessed_by_user_id?: string | null; accessor_role?: string; employer_id?: string | null; application_id?: string | null; created_at?: string }
+        Relationships: []
+      }
       contact_messages: {
         Row: { id: string; first_name: string; last_name: string; email: string; phone: string | null; subject: string; message: string; inquiry_type: string; user_type: string; routed_to_email: string; status: string; created_at: string }
         Insert: { id?: string; first_name: string; last_name: string; email: string; phone?: string | null; subject: string; message: string; inquiry_type?: string; user_type?: string; routed_to_email?: string; status?: string; created_at?: string }
