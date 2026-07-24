@@ -62,9 +62,13 @@ export async function POST(req: NextRequest) {
 
   const d = parsed.data
 
-  // Resume is mandatory for the internal application flow (private + wfh) —
-  // enforced server-side so the rule can't be bypassed by calling the API directly.
-  const INTERNAL_FLOW_BOARDS = new Set(["private", "wfh"])
+  // Resume is mandatory for the internal application flow — enforced server-side
+  // so the rule can't be bypassed by calling the API directly. "abroad" is
+  // included here too: AGGREGATED abroad jobs never reach this route at all
+  // (they redirect externally — see AbroadApplySlot), so any abroad application
+  // that does arrive here is, by construction, going through the same internal
+  // resume-collection UI as private/wfh.
+  const INTERNAL_FLOW_BOARDS = new Set(["private", "wfh", "abroad"])
   if (INTERNAL_FLOW_BOARDS.has(d.board) && !(candidate as { resume_url?: string | null }).resume_url) {
     return NextResponse.json({ error: "Please upload your resume before applying" }, { status: 400 })
   }
@@ -170,8 +174,8 @@ export async function POST(req: NextRequest) {
   // owned job (jobs/wfh_jobs/abroad_jobs with employer_id set), so a synthetic or
   // curated listing's "Apply Now" can never trigger this — no employer_id, no email.
   if (employerId) {
-    const { data: owner } = await sb.from("employers").select("user_id, users(email)").eq("id", employerId).single()
-    const ownerRow = owner as { user_id?: string; users?: { email?: string } | null } | null
+    const { data: owner } = await sb.from("employers").select("user_id, verified, users(email)").eq("id", employerId).single()
+    const ownerRow = owner as { user_id?: string; verified?: boolean; users?: { email?: string } | null } | null
     if (ownerRow?.user_id) {
       await createNotification(
         ownerRow.user_id,
@@ -180,7 +184,10 @@ export async function POST(req: NextRequest) {
         `A candidate applied for ${d.jobTitle || "your job"}`
       )
     }
-    const employerEmail = ownerRow?.users?.email
+    // The resume link is only ever emailed to a Noble Job admin-verified
+    // employer — an unverified employer still gets the in-app notification
+    // above (so they know a candidate applied) but not the resume itself.
+    const employerEmail = ownerRow?.verified ? ownerRow?.users?.email : undefined
     if (employerEmail) {
       try {
         const cand = candidate as { resume_url?: string | null; first_name?: string | null; last_name?: string | null }
