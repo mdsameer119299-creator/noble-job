@@ -341,9 +341,11 @@ export interface Database {
           apply_url: string
           status: string
           posted_at: string
+          employer_id: string | null
+          provenance: string | null
         }
-        Insert: { id: string; title: string; company: string; status?: string }
-        Update: { id?: string; title?: string; status?: string }
+        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null }
+        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null }
         Relationships: []
       }
       abroad_jobs: {
@@ -363,9 +365,11 @@ export interface Database {
           skills: string[]
           status: string
           posted_at: string
+          employer_id: string | null
+          provenance: string | null
         }
-        Insert: { id: string; title: string; company: string; country: string; status?: string }
-        Update: { id?: string; title?: string; country?: string; status?: string }
+        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null }
+        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null }
         Relationships: []
       }
       applications: {

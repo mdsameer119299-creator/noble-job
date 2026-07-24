@@ -9,7 +9,10 @@ type Job = {
   location?: string
   description?: string
   status: string
+  board: 'private' | 'wfh' | 'abroad'
 }
+
+const BOARD_LABEL: Record<Job['board'], string> = { private: 'Private', wfh: 'Work From Home', abroad: 'Abroad' }
 
 export function PendingJobModal() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -33,8 +36,8 @@ export function PendingJobModal() {
     load()
   }, [])
 
-  const act = async (id: string, action: 'approve' | 'reject') => {
-    const res = await fetch(`/api/admin/${id}/${action}`, { method: 'POST' })
+  const act = async (id: string, action: 'approve' | 'reject', board: Job['board']) => {
+    const res = await fetch(`/api/admin/${id}/${action}?board=${board}`, { method: 'POST' })
     if (res.ok) {
       toast.success(action === 'approve' ? 'Job approved' : 'Job rejected')
       setSelected(null)
@@ -70,7 +73,7 @@ export function PendingJobModal() {
               }}
             >
               <div style={{ fontWeight: 700, fontSize: 13, color: '#0d1f4e' }}>{j.title}</div>
-              <div style={{ fontSize: 11, color: '#6b7280' }}>{j.company}</div>
+              <div style={{ fontSize: 11, color: '#6b7280' }}>{j.company} · {BOARD_LABEL[j.board]}</div>
             </button>
           ))
         )}
@@ -82,7 +85,7 @@ export function PendingJobModal() {
             {selected.title}
           </h2>
           <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 16 }}>
-            {selected.company} · {selected.location}
+            {selected.company} · {selected.location} · <strong>{BOARD_LABEL[selected.board]}</strong>
           </p>
           {selected.description && (
             <p style={{ color: '#374151', fontSize: 13, lineHeight: 1.6, marginBottom: 20, maxHeight: 200, overflow: 'auto' }}>
@@ -93,14 +96,14 @@ export function PendingJobModal() {
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               type="button"
-              onClick={() => act(selected.id, 'approve')}
+              onClick={() => act(selected.id, 'approve', selected.board)}
               style={{ background: '#15803d', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 10, fontWeight: 800, cursor: 'pointer' }}
             >
               Approve
             </button>
             <button
               type="button"
-              onClick={() => act(selected.id, 'reject')}
+              onClick={() => act(selected.id, 'reject', selected.board)}
               style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '10px 20px', borderRadius: 10, fontWeight: 800, cursor: 'pointer' }}
             >
               Reject

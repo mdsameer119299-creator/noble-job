@@ -6,7 +6,27 @@
  * along the safe transitions below but can NEVER set 'active'/'rejected'
  * directly — approval is the admin's job. `pending`/`draft` both sit behind the
  * admin approval gate.
+ *
+ * This same lifecycle now applies to all three employer-postable boards —
+ * private (`jobs`), work-from-home (`wfh_jobs`) and abroad (`abroad_jobs`) —
+ * see `20260724000001_wfh_abroad_employer_ownership.sql`. `JOB_BOARD_TABLE`
+ * is the single source of truth for board → table mapping, reused by both
+ * the employer posting API and the admin approval API so they can never
+ * drift apart.
  */
+
+/** Employer-postable boards (govt is never employer-postable). */
+export type EmployerJobBoard = "private" | "wfh" | "abroad"
+
+export const JOB_BOARD_TABLE: Record<EmployerJobBoard, "jobs" | "wfh_jobs" | "abroad_jobs"> = {
+  private: "jobs",
+  wfh: "wfh_jobs",
+  abroad: "abroad_jobs",
+}
+
+export function isEmployerJobBoard(v: unknown): v is EmployerJobBoard {
+  return v === "private" || v === "wfh" || v === "abroad"
+}
 
 export type JobLifecycleStatus =
   | "draft"

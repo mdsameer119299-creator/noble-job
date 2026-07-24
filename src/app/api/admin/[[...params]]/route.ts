@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireAdminApi } from "@/lib/auth/verifyAdminApi"
 import { getAdminStats, approveJob, rejectJob, toggleEmployerStatus } from "@/lib/services/adminService"
+import { isEmployerJobBoard } from "@/lib/services/jobLifecycle"
 import { hasRealApplyUrl } from "@/lib/jobs/provenance"
 import { GOVT_LIST_COLUMNS } from "@/lib/config/govtColumns"
 import {
@@ -150,13 +151,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   }
 
   if (route === "pending-jobs") {
-    const { data, error } = await supabaseAdmin
-      .from("jobs")
-      .select("*")
-      .eq("status", "pending")
-      .order("posted_at", { ascending: false })
-    if (error) return dbError(error.message)
-    return NextResponse.json({ data: data || [] })
+    const [privateRes, wfhRes, abroadRes] = await Promise.all([
+      supabaseAdmin.from("jobs").select("*").eq("status", "pending").order("posted_at", { ascending: false }),
+      supabaseAdmin.from("wfh_jobs").select("*").eq("status", "pending").order("posted_at", { ascending: false }),
+      supabaseAdmin.from("abroad_jobs").select("*").eq("status", "pending").order("posted_at", { ascending: false }),
+    ])
+    if (privateRes.error) return dbError(privateRes.error.message)
+    if (wfhRes.error) return dbError(wfhRes.error.message)
+    if (abroadRes.error) return dbError(abroadRes.error.message)
+    const tag = (rows: Record<string, unknown>[] | null, board: string): Record<string, unknown>[] =>
+      (rows || []).map(r => ({ ...r, board }))
+    const data = [
+      ...tag(privateRes.data, "private"),
+      ...tag(wfhRes.data, "wfh"),
+      ...tag(abroadRes.data, "abroad"),
+    ].sort((a, b) => new Date(b.posted_at as string).getTime() - new Date(a.posted_at as string).getTime())
+    return NextResponse.json({ data })
   }
 
   if (route === "jobs") {
@@ -293,11 +303,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
   if (auth.error) return auth.error
   const { params: p } = await params
   const route = p?.join("/") || ""
+  const board = req.nextUrl.searchParams.get("board")
+  const jobBoard = isEmployerJobBoard(board) ? board : "private"
 
   if (route.includes("/approve")) {
     const id = p?.[0]
     if (!isUuid(id)) return NextResponse.json({ error: "Valid job id required" }, { status: 400 })
-    const result = await approveJob(id)
+    const result = await approveJob(id, jobBoard)
     if (result?.error) return dbError(result.error.message)
     return NextResponse.json({ success: true })
   }
@@ -305,7 +317,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ par
   if (route.includes("/reject")) {
     const id = p?.[0]
     if (!isUuid(id)) return NextResponse.json({ error: "Valid job id required" }, { status: 400 })
-    const result = await rejectJob(id)
+    const result = await rejectJob(id, jobBoard)
     if (result?.error) return dbError(result.error.message)
     return NextResponse.json({ success: true })
   }
