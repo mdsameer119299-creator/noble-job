@@ -33,7 +33,7 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const job = await getGovtJobBySlug(id)
-  if (!job) return { title: "Government Job Not Found — Noble Job" }
+  if (!job) return { title: "Government Job Not Found — Noble Job", robots: { index: false, follow: false } }
   const desc = `${job.org} ${job.title}: ${job.vacancies} vacancies for ${job.post}. Qualification: ${job.qualification}. Last date: ${job.lastDate}. Check eligibility, salary, age limit, fee & apply online.`
   return buildPageMetadata({
     title: `${job.title} — ${job.vacancies} Posts`,

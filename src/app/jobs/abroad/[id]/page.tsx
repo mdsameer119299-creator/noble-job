@@ -16,7 +16,7 @@ interface Props { params: Promise<{ id: string }> }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const job = await getAbroadJobById(id)
-  if (!job) return { title: 'Abroad Job Not Found — Noble Job' }
+  if (!job) return { title: 'Abroad Job Not Found — Noble Job', robots: { index: false, follow: false } }
   return buildPageMetadata({
     title: `${job.title} in ${job.country} at ${job.company} — Abroad Jobs`,
     description: `Apply for ${job.title} at ${job.company} in ${job.location || job.country}. Salary ${job.salary}. Eligibility, skills, salary, benefits, visa guidance, how to apply & FAQs on Noble Job.`,
