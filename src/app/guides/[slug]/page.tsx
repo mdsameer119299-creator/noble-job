@@ -17,7 +17,14 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const a = getArticle(slug)
-  if (!a) return { title: "Guide Not Found — Noble Job" }
+  if (!a) {
+    return buildPageMetadata({
+      title: "Guide Not Found — Noble Job",
+      description: "This career guide could not be found on Noble Job. Browse our full library of career guides.",
+      path: `/guides/${slug}`,
+      noIndex: true,
+    })
+  }
   return buildPageMetadata({
     title: a.metaTitle,
     description: a.metaDescription,

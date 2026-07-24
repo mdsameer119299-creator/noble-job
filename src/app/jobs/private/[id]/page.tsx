@@ -17,7 +17,14 @@ interface Props { params: Promise<{ id: string }> }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const job = await getJobById(id)
-  if (!job) return { title: 'Job Not Found — Noble Job' }
+  if (!job) {
+    return buildPageMetadata({
+      title: 'Job Not Found — Noble Job',
+      description: 'This private job listing could not be found on Noble Job. Browse current private job openings across India.',
+      path: `/jobs/private/${id}`,
+      noIndex: true,
+    })
+  }
   const salary = job.salary || formatSalary((job as { salary_min?: number }).salary_min, (job as { salary_max?: number }).salary_max)
   return buildPageMetadata({
     title: `${job.title} at ${job.company} in ${job.location} — Private Jobs India`,
