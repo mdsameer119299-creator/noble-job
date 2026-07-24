@@ -17,7 +17,14 @@ interface Props { params: Promise<{ id: string }> }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const job = await getWfhJobById(id)
-  if (!job) return { title: 'WFH Job Not Found — Noble Job', robots: { index: false, follow: false } }
+  if (!job) {
+    return buildPageMetadata({
+      title: 'WFH Job Not Found — Noble Job',
+      description: 'This work-from-home job listing could not be found on Noble Job. Browse current remote job openings.',
+      path: `/jobs/wfh/${id}`,
+      noIndex: true,
+    })
+  }
   return buildPageMetadata({
     title: `${job.title} at ${job.company} — Work From Home Jobs India`,
     description: `Apply for ${job.title} (${job.cat}) — a remote work-from-home role at ${job.company}. Salary ${job.salary}. Eligibility, skills, salary, benefits, how to apply & FAQs on Noble Job.`,
