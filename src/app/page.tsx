@@ -46,14 +46,16 @@ export default function HomePage() {
       {/* Featured Jobs — genuine-employer jobs only, hides itself when empty */}
       <FeaturedJobsSection />
 
+      {/* Blue Collar Jobs — Driver, Delivery, Security, Housekeeping, etc. —
+          kept high on the page (not a buried/isolated section) per the full
+          job-ecosystem integration this catalog got this session. */}
+      <BlueCollarJobsSection />
+
       {/* 4. AI Employer Teaser — dark card, 3-col: steps + JD card + candidates */}
       <AiEmployerTeaser />
 
       {/* 5. Latest Jobs Grid — 4 cols: Private, Govt, WFH, Abroad */}
       <LatestJobsGrid />
-
-      {/* Blue Collar Jobs — Driver, Delivery, Security, Housekeeping, etc. */}
-      <BlueCollarJobsSection />
 
       {/* 6. Category Chips — expanded categories + View All */}
       <CategoryChips />
