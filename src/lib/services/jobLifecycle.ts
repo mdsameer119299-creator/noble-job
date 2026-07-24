@@ -54,6 +54,8 @@ export const EMPLOYER_PROTECTED_JOB_FIELDS = [
   "posted_at",
   "created_at",
   "approved_at",
+  "provenance",
+  "views_count",
 ] as const
 
 /** Remove protected fields from an employer-supplied job update. */
