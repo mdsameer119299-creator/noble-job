@@ -23,7 +23,11 @@ export async function tailCityMetadata(citySlug: string): Promise<Metadata> {
   if (!city) {
     return buildPageMetadata({ title: "Jobs Not Found — Noble Job", description: "This city page could not be found.", path: `/jobs-in/${citySlug}`, noIndex: true })
   }
-  const jobs = await getTailCityJobs(city, TAIL_CITY_MIN_JOBS)
+  // Fetched at the page body's default limit (not the TAIL_CITY_MIN_JOBS gate
+  // limit) so the title/description show the same real count the page renders,
+  // instead of an artificial "5+" on every qualifying city regardless of its
+  // actual total.
+  const jobs = await getTailCityJobs(city)
   if (jobs.length < TAIL_CITY_MIN_JOBS) {
     return buildPageMetadata({ title: `Jobs in ${city.city} — Noble Job`, description: `Jobs in ${city.city}, ${city.state}.`, path: `/jobs-in/${citySlug}`, noIndex: true })
   }
