@@ -7,6 +7,11 @@ import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
 import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
 import { getQualifyingCategorySlugsForCity } from "@/lib/seo/cityCategoryLanding"
+import {
+  TAIL_CITIES,
+  getQualifyingTailCitySlugs,
+  getQualifyingCategorySlugsForTailCity,
+} from "@/lib/seo/tailCityLanding"
 import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 import { isIndexable } from "@/lib/jobs/provenance"
@@ -89,6 +94,33 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           lastModified: now,
           changeFrequency: "weekly" as const,
           priority: 0.6,
+        }))
+      }),
+    )
+  ).flat()
+
+  // Tail-city hubs (/jobs-in/[city]) — the long tail beyond the 8 hand-authored
+  // city pages, gated on TAIL_CITY_MIN_JOBS real jobs (getQualifyingTailCitySlugs
+  // is the single source of truth shared with generateStaticParams).
+  const qualifyingTailCitySlugs = await getQualifyingTailCitySlugs()
+  const tailCityRoutes: MetadataRoute.Sitemap = qualifyingTailCitySlugs.map(slug => ({
+    url: `${base}/jobs-in/${slug}`,
+    lastModified: now,
+    changeFrequency: "daily" as const,
+    priority: 0.75,
+  }))
+
+  // Tail-city x category pages (/jobs-in/[city]/[category]) — same gate as
+  // the hand-authored cities' city x category pages.
+  const tailCityCategoryRoutes: MetadataRoute.Sitemap = (
+    await Promise.all(
+      TAIL_CITIES.map(async city => {
+        const slugs = await getQualifyingCategorySlugsForTailCity(city)
+        return slugs.map(categorySlug => ({
+          url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
+          lastModified: now,
+          changeFrequency: "weekly" as const,
+          priority: 0.55,
         }))
       }),
     )
@@ -230,6 +262,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticRoutes,
     ...landingRoutes,
     ...cityCategoryRoutes,
+    ...tailCityRoutes,
+    ...tailCityCategoryRoutes,
     ...guideRoutes,
     ...govtCategoryRoutes,
     ...govtStateRoutes,

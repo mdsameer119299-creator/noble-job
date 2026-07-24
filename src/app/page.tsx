@@ -14,6 +14,7 @@ import { FeaturedJobsSection } from '@/components/home/FeaturedJobsSection'
 import { LatestJobsGrid } from '@/components/home/LatestJobsGrid'
 import { BlueCollarJobsSection } from '@/components/home/BlueCollarJobsSection'
 import { CategoryChips } from '@/components/home/CategoryChips'
+import { PopularCitiesSection } from '@/components/home/PopularCitiesSection'
 import { AiCandidateTeaser } from '@/components/home/AiCandidateTeaser'
 import { EmployerCta } from '@/components/home/EmployerCta'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
@@ -56,6 +57,9 @@ export default function HomePage() {
 
       {/* 6. Category Chips — expanded categories + View All */}
       <CategoryChips />
+
+      {/* Popular Cities — internal-link entry point into the tail-city pages */}
+      <PopularCitiesSection />
 
       {/* 7. AI Candidate (cv-strip) — ring chart + features + Upload CTA */}
       <AiCandidateTeaser />

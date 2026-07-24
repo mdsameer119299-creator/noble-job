@@ -222,7 +222,16 @@ function generateBlueCollarInventory(): Job[] {
   return [...live, ...verified]
 }
 
-const LOCATIONS = ["Bangalore", "Hyderabad", "Pune", "Chennai", "Mumbai", "Delhi NCR", "Kolkata", "Ahmedabad", "Noida", "Gurgaon", "Coimbatore", "Indore"]
+// Kept in sync with src/lib/data/cityTaxonomy.ts — every city page (the 8
+// hand-authored hubs plus the generated tail-city hubs) needs real inventory
+// jobs in that city or its page is gated out (no thin/empty page).
+const LOCATIONS = [
+  "Bangalore", "Hyderabad", "Pune", "Chennai", "Mumbai", "Delhi NCR", "Kolkata", "Ahmedabad",
+  "Noida", "Gurgaon", "Coimbatore", "Indore", "Surat", "Jaipur", "Lucknow", "Kanpur", "Bhopal",
+  "Chandigarh", "Patna", "Kochi", "Thiruvananthapuram", "Nagpur", "Nashik", "Visakhapatnam",
+  "Vijayawada", "Bhubaneswar", "Guwahati", "Dehradun", "Ranchi", "Raipur", "Amritsar",
+  "Ludhiana", "Mysore", "Faridabad", "Vadodara", "Varanasi",
+]
 const JOB_TYPES = ["Full Time", "Part Time", "Contract", "Internship"]
 const EXP_LEVELS = ["Fresher", "0-2 Yrs", "1-3 Years", "2-5 Years", "3-6 Years", "5-8 Years"]
 const SALARIES = ["₹3-6 LPA", "₹4-8 LPA", "₹6-12 LPA", "₹8-15 LPA", "₹10-18 LPA", "₹12-22 LPA", "₹15-30 LPA"]

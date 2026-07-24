@@ -17,6 +17,27 @@ import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import { jobDetailHref } from "@/lib/jobs/provenance"
 import type { Job } from "@/types/job"
 
+/**
+ * Minimal city shape these builders actually need — narrower than the full
+ * hand-authored CityLanding so the tail-city taxonomy (data-derived pages,
+ * no 1500-word editorial content) can share this machinery too.
+ */
+export interface MinimalCity {
+  slug: string
+  city: string
+  state: string
+  accent: string
+  locationQuery: string
+  govtStateSlug?: string
+  /**
+   * URL path this city's hub lives at (no leading content beyond the base),
+   * e.g. "/jobs-in-delhi" for the 8 hand-authored hubs vs "/jobs-in/kolkata"
+   * for the generated tail-city taxonomy. Defaults to `/${slug}` (the
+   * legacy hand-authored layout) when omitted.
+   */
+  hrefBase?: string
+}
+
 /** A page below this real job count is not generated — gate, not a thin page. */
 export const CITY_CATEGORY_MIN_JOBS = 3
 
@@ -46,7 +67,7 @@ const privateCard = (j: Job) => ({
 })
 
 /** Fetch jobs for a city+category combo. Also used to decide the min-count gate. */
-export async function getCityCategoryJobs(city: CityLanding, categoryLabel: string, limit = 24): Promise<Job[]> {
+export async function getCityCategoryJobs(city: MinimalCity, categoryLabel: string, limit = 24): Promise<Job[]> {
   const r = await getJobs({ location: city.locationQuery, category: categoryLabel, limit, sort: "latest" })
   return r.jobs
 }
@@ -58,11 +79,12 @@ export async function getCityCategoryJobs(city: CityLanding, categoryLabel: stri
  * combos confirmed to clear the minimum-job gate, never a possible 404.
  */
 export function buildCityCategoryView(
-  city: CityLanding,
+  city: MinimalCity,
   categoryLabel: string,
   jobs: Job[],
   qualifyingCategorySlugsInCity: string[] = [],
 ): LandingView {
+  const base = city.hrefBase ?? `/${city.slug}`
   const slug = `${city.slug}/${categoryToSlug(categoryLabel)}`
   const count = jobs.length
   const companies = [...new Set(jobs.map(j => j.company).filter(Boolean))].slice(0, 8)
@@ -94,7 +116,7 @@ export function buildCityCategoryView(
     accent: city.accent,
     breadcrumb: [
       { label: "Home", href: "/" },
-      { label: `Jobs in ${city.city}`, href: `/${city.slug}` },
+      { label: `Jobs in ${city.city}`, href: base },
       { label: `${categoryLabel} Jobs` },
     ],
     h1: `${categoryLabel} Jobs in ${city.city}`,
@@ -127,11 +149,11 @@ export function buildCityCategoryView(
     // Only ever link to combos already confirmed to clear the min-job gate —
     // never a slug that might 404.
     relatedCategories: qualifyingCategorySlugsInCity
-      .filter(slug => slug !== categoryToSlug(categoryLabel))
+      .filter(s => s !== categoryToSlug(categoryLabel))
       .slice(0, 4)
-      .map(slug => ({ label: `${categoryFromSlug(slug) || slug} Jobs in ${city.city}`, href: `/${city.slug}/${slug}` })),
+      .map(s => ({ label: `${categoryFromSlug(s) || s} Jobs in ${city.city}`, href: `${base}/${s}` })),
     relatedCities: [
-      { label: `All Jobs in ${city.city}`, href: `/${city.slug}` },
+      { label: `All Jobs in ${city.city}`, href: base },
       { label: `Browse Private Jobs`, href: "/jobs/private" },
     ],
     relatedGuides: [],
@@ -149,7 +171,7 @@ export function buildCityCategoryJobBlocks(jobs: Job[]): LandingJobBlocks {
 /** Category slugs (for a given city) that clear CITY_CATEGORY_MIN_JOBS — used
  * by both generateStaticParams (build) and the sitemap (so the two can never
  * disagree about which combos are "real"). */
-export async function getQualifyingCategorySlugsForCity(city: CityLanding): Promise<string[]> {
+export async function getQualifyingCategorySlugsForCity(city: MinimalCity): Promise<string[]> {
   const results = await Promise.all(
     CITY_CATEGORY_LIST.map(async label => {
       const jobs = await getCityCategoryJobs(city, label, CITY_CATEGORY_MIN_JOBS)
