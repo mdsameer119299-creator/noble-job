@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   const { data: candidate } = await sb
     .from("candidates")
-    .select("id, resume_url, category")
+    .select("id, resume_url, category, first_name, last_name")
     .eq("user_id", user.id)
     .single()
   if (!candidate) return NextResponse.json({ error: "Candidate profile not found" }, { status: 404 })
@@ -67,19 +67,30 @@ export async function POST(req: NextRequest) {
   const isUuid = UUID_RE.test(d.jobId)
   const candidateId = (candidate as { id: string }).id
   let employerId: string | null = null
-  // Only set applications.job_id when the job actually exists in the `jobs` table.
-  // Live/imported jobs (e.g. Himalayas) can have UUID-shaped ids that are NOT in
-  // `jobs`; inserting those would violate the job_id → jobs(id) foreign key. Such
-  // applications are stored as ownerless imported records (job_id = NULL + metadata).
+  // Only set applications.job_id when the job actually exists in the `jobs` table —
+  // the job_id -> jobs(id) foreign key can't reference wfh_jobs/abroad_jobs. Live/
+  // imported jobs (e.g. Himalayas) can have UUID-shaped ids that are NOT in `jobs`
+  // either. Such applications are stored as ownerless imported records (job_id =
+  // NULL + metadata) UNLESS the job is a real employer-owned WFH/Abroad posting,
+  // in which case job_id stays NULL (FK constraint) but employer_id is still
+  // resolved so the application correctly reaches that employer.
   let jobExists = false
   let jobCategory: string | null = null
 
   if (isUuid) {
-    const { data: job } = await sb.from("jobs").select("employer_id, title, category").eq("id", d.jobId).single()
-    if (job) {
-      jobExists = true
-      employerId = (job as { employer_id?: string })?.employer_id ?? null
-      jobCategory = (job as { category?: string | null })?.category ?? null
+    if (d.board === "wfh") {
+      const { data: job } = await sb.from("wfh_jobs").select("employer_id").eq("id", d.jobId).single()
+      employerId = (job as { employer_id?: string | null } | null)?.employer_id ?? null
+    } else if (d.board === "abroad") {
+      const { data: job } = await sb.from("abroad_jobs").select("employer_id").eq("id", d.jobId).single()
+      employerId = (job as { employer_id?: string | null } | null)?.employer_id ?? null
+    } else {
+      const { data: job } = await sb.from("jobs").select("employer_id, title, category").eq("id", d.jobId).single()
+      if (job) {
+        jobExists = true
+        employerId = (job as { employer_id?: string })?.employer_id ?? null
+        jobCategory = (job as { category?: string | null })?.category ?? null
+      }
     }
   }
 
@@ -148,15 +159,39 @@ export async function POST(req: NextRequest) {
     if (catErr) console.warn("[apply] category derivation skipped:", catErr.message)
   }
 
+  // A real employer's resume/application must actually reach them — not just an
+  // in-app notification. Gated on the identical `employerId` condition used for
+  // the notification above: this is only ever non-null for a genuine EMPLOYER-
+  // owned job (jobs/wfh_jobs/abroad_jobs with employer_id set), so a synthetic or
+  // curated listing's "Apply Now" can never trigger this — no employer_id, no email.
   if (employerId) {
-    const { data: owner } = await sb.from("employers").select("user_id").eq("id", employerId).single()
-    if ((owner as { user_id?: string })?.user_id) {
+    const { data: owner } = await sb.from("employers").select("user_id, users(email)").eq("id", employerId).single()
+    const ownerRow = owner as { user_id?: string; users?: { email?: string } | null } | null
+    if (ownerRow?.user_id) {
       await createNotification(
-        (owner as { user_id: string }).user_id,
+        ownerRow.user_id,
         "application",
         "New application",
         `A candidate applied for ${d.jobTitle || "your job"}`
       )
+    }
+    const employerEmail = ownerRow?.users?.email
+    if (employerEmail) {
+      try {
+        const cand = candidate as { resume_url?: string | null; first_name?: string | null; last_name?: string | null }
+        const { resolveResumeSignedUrl } = await import("@/lib/storage/resumeStorage")
+        const resumeUrl = await resolveResumeSignedUrl(sb, candidateId, cand.resume_url)
+        const { sendApplicationEmail } = await import("@/lib/services/emailService")
+        await sendApplicationEmail(employerEmail, {
+          jobTitle: d.jobTitle || "your job",
+          candidateName: [cand.first_name, cand.last_name].filter(Boolean).join(" ") || undefined,
+          resumeUrl,
+        })
+      } catch (e) {
+        // Best-effort — the application itself already succeeded above; a failed
+        // email must never surface as a failed application submission.
+        console.warn("[apply] employer email failed:", e instanceof Error ? e.message : e)
+      }
     }
   }
 
