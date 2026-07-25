@@ -8,6 +8,7 @@ import { isActiveStatus, ARCHIVED_ALT_LABEL, syntheticOpenLabel } from '@/lib/co
 import { isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
+import { JobLinkPendingDot } from './JobLinkPendingDot'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
 
@@ -42,6 +43,7 @@ export function JobCard({ job, onSave }: JobCardProps) {
               style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' }}
               className="hover:text-noble-blue">
               {job.title}
+              <JobLinkPendingDot />
             </Link>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {job.jobStatus && (
@@ -102,6 +104,7 @@ export function JobCard({ job, onSave }: JobCardProps) {
             <Link href={detailHref || similarHref}
               style={{ background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
               {detailHref ? 'View Details' : 'Similar Jobs →'}
+              <JobLinkPendingDot />
             </Link>
           )}
         </div>

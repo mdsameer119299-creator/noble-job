@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getBlueCollarJobs } from '@/lib/services/blueCollarJobs'
+import { JobLinkPendingDot } from '@/components/jobs/JobLinkPendingDot'
 
 const CATEGORY_ICON: Record<string, string> = {
   Driver: '🚗',
@@ -72,6 +73,7 @@ export async function BlueCollarJobsSection() {
                 <div style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.company} · {job.location}</div>
                 <div style={{ fontSize: 11.5, color: '#15803d', fontWeight: 700, marginTop: 2 }}>{job.salary}</div>
               </div>
+              <JobLinkPendingDot />
             </Link>
           ))}
         </div>
