@@ -11,6 +11,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
 import { isIndexable } from '@/lib/jobs/provenance'
+import { incrementJobViews } from '@/lib/services/jobViews'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -41,6 +42,7 @@ export default async function JobDetailPage({ params }: Props) {
   const { id } = await params
   const job = await getJobById(id)
   if (!job) notFound()
+  void incrementJobViews('private', id)
 
   const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; job_type?: string; experience_required?: string; description?: string }
   const salary = job.salary || formatSalary(row.salary_min, row.salary_max)

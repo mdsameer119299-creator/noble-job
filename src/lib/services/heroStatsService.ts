@@ -135,13 +135,16 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
           { key: "verified", label: "Featured Openings", value: c.verified },
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
+        // `accent` here is a short icon rendered as visible text next to the
+        // label (see CategoryHeroView.tsx) — same contract the WFH/Abroad/Govt
+        // variants use below (emoji, never a raw color value).
         floatingCards: [
-          { label: "TCS", sub: "IT Services", accent: "#1847d4" },
-          { label: "Infosys", sub: "Consulting", accent: "#f59e0b" },
-          { label: "Wipro", sub: "Technology", accent: "#8b5cf6" },
-          { label: "Amazon", sub: "E-Commerce", accent: "#f97316" },
-          { label: "Accenture", sub: "Global", accent: "#7c3aed" },
-          { label: "HCL", sub: "Enterprise", accent: "#0e7490" },
+          { label: "TCS", sub: "IT Services", accent: "💻" },
+          { label: "Infosys", sub: "Consulting", accent: "💼" },
+          { label: "Wipro", sub: "Technology", accent: "⚙️" },
+          { label: "Amazon", sub: "E-Commerce", accent: "🛒" },
+          { label: "Accenture", sub: "Global", accent: "🌐" },
+          { label: "HCL", sub: "Enterprise", accent: "🏢" },
         ],
       }
     }

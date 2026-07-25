@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { getInventoryCounts } from "@/lib/data/jobInventory"
 import { notifyUser } from "@/lib/services/adminNotifyService"
+import { JOB_BOARD_TABLE, type EmployerJobBoard } from "@/lib/services/jobLifecycle"
 import type { AdminStats } from "@/types/admin"
 
 function fallbackStats(): AdminStats {
@@ -69,9 +70,10 @@ export async function setJobStatus(id: string, jobStatus: "LIVE_JOB" | "VERIFIED
   return supabaseAdmin.from("jobs").update({ job_status: jobStatus }).eq("id", id)
 }
 
-async function notifyJobDecision(jobId: string, approved: boolean) {
+async function notifyJobDecision(board: EmployerJobBoard, jobId: string, approved: boolean) {
   try {
-    const { data: job } = await supabaseAdmin.from("jobs").select("title, employer_id").eq("id", jobId).single()
+    const table = JOB_BOARD_TABLE[board]
+    const { data: job } = await supabaseAdmin.from(table).select("title, employer_id").eq("id", jobId).single()
     const employerId = (job as { employer_id?: string | null })?.employer_id
     const title = (job as { title?: string })?.title || "your job"
     if (!employerId) return
@@ -88,27 +90,32 @@ async function notifyJobDecision(jobId: string, approved: boolean) {
   }
 }
 
-export async function approveJob(id: string) {
-  const result = await supabaseAdmin.from("jobs").update({ status: "active" }).eq("id", id)
+export async function approveJob(id: string, board: EmployerJobBoard = "private") {
+  const table = JOB_BOARD_TABLE[board]
+  const result = await supabaseAdmin.from(table).update({ status: "active" }).eq("id", id)
   // Never notify (in-app + email) after a failed DB mutation.
   if (result.error) return result
-  await notifyJobDecision(id, true)
+  await notifyJobDecision(board, id, true)
   const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
   await notifyAdmins("job_approved", "Job approved", "A job posting was approved and is now live.")
   return result
 }
 
-export async function rejectJob(id: string) {
-  const result = await supabaseAdmin.from("jobs").update({ status: "rejected" }).eq("id", id)
+export async function rejectJob(id: string, board: EmployerJobBoard = "private") {
+  const table = JOB_BOARD_TABLE[board]
+  const result = await supabaseAdmin.from(table).update({ status: "rejected" }).eq("id", id)
   // Never notify after a failed DB mutation.
   if (result.error) return result
   // Keep dashboard counts consistent: Live/Verified/Total read `job_status`, so a
   // rejected job must leave those buckets. Best-effort + resilient — a missing
-  // job_status column (environments without that migration) must not fail the
-  // rejection itself, which already succeeded above.
-  const archived = await supabaseAdmin.from("jobs").update({ job_status: "ARCHIVED_JOB" }).eq("id", id)
-  if (archived.error) console.warn("[reject-job] job_status archive skipped:", archived.error.message)
-  await notifyJobDecision(id, false)
+  // job_status column (environments without that migration, or a board that has
+  // no job_status column at all — only `jobs` does) must not fail the rejection
+  // itself, which already succeeded above.
+  if (board === "private") {
+    const archived = await supabaseAdmin.from("jobs").update({ job_status: "ARCHIVED_JOB" }).eq("id", id)
+    if (archived.error) console.warn("[reject-job] job_status archive skipped:", archived.error.message)
+  }
+  await notifyJobDecision(board, id, false)
   const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
   await notifyAdmins("job_rejected", "Job rejected", "A job posting was rejected.")
   return result

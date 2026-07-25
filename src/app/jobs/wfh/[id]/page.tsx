@@ -11,6 +11,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
 import { isIndexable } from '@/lib/jobs/provenance'
+import { incrementJobViews } from '@/lib/services/jobViews'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -40,6 +41,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
   const { id } = await params
   const job = await getWfhJobById(id)
   if (!job) notFound()
+  void incrementJobViews('wfh', id)
 
   const content = buildJobContent({
     board: 'wfh',

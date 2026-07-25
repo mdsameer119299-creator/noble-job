@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 
 export type EmployerStats = {
   activeJobs: number
+  activeJobsByBoard?: { private: number; wfh: number; abroad: number }
   applications: number
   shortlisted: number
   interviews: number

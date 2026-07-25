@@ -14,6 +14,15 @@ const TABS: { id: ApplicationStatus | 'all'; label: string }[] = [
   { id: 'rejected', label: 'Rejected' },
 ]
 
+type Board = 'private' | 'wfh' | 'abroad'
+const BOARD_FILTERS: { id: Board | 'all'; label: string }[] = [
+  { id: 'all', label: 'All Boards' },
+  { id: 'private', label: 'Private' },
+  { id: 'wfh', label: 'Work From Home' },
+  { id: 'abroad', label: 'Abroad' },
+]
+const BOARD_LABEL: Record<Board, string> = { private: 'Private', wfh: 'WFH', abroad: 'Abroad' }
+
 const NEXT_STATUS: ApplicationStatus[] = ['shortlisted', 'interview', 'hired', 'rejected']
 
 // Application rows carry these columns via getApplicationsByEmployer (select '*').
@@ -21,6 +30,7 @@ type Row = Application & { candidate_id?: string; employer_id?: string }
 
 export function AppStatusTabs() {
   const [tab, setTab] = useState<ApplicationStatus | 'all'>('all')
+  const [board, setBoard] = useState<Board | 'all'>('all')
   const [apps, setApps] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -31,7 +41,10 @@ export function AppStatusTabs() {
   const load = () => {
     setLoading(true)
     setError(false)
-    const q = tab === 'all' ? '' : `?status=${tab}`
+    const params = new URLSearchParams()
+    if (tab !== 'all') params.set('status', tab)
+    if (board !== 'all') params.set('board', board)
+    const q = params.toString() ? `?${params.toString()}` : ''
     fetch(`/api/applications/employer${q}`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(d => setApps(d.data || []))
@@ -39,7 +52,7 @@ export function AppStatusTabs() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [tab, board]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: ApplicationStatus) => {
     const res = await fetch(`/api/applications/${id}`, {
@@ -65,6 +78,14 @@ export function AppStatusTabs() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        {BOARD_FILTERS.map(b => (
+          <button key={b.id} type="button" onClick={() => setBoard(b.id)}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1.5px solid', borderColor: board === b.id ? '#0d1f4e' : '#e2e8f0', background: board === b.id ? '#0d1f4e' : '#fff', color: board === b.id ? '#fff' : '#374151', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+            {b.label}
+          </button>
+        ))}
+      </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
         {TABS.map(t => (
           <button key={t.id} type="button" onClick={() => setTab(t.id)}
@@ -88,7 +109,12 @@ export function AppStatusTabs() {
           {apps.map(app => (
             <div key={app.id} style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #e2e8f0', padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontWeight: 800, color: '#0d1f4e' }}>{applicationJobTitle(app)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 800, color: '#0d1f4e' }}>{applicationJobTitle(app)}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1847d4', background: '#eff6ff', padding: '2px 8px', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+                    {BOARD_LABEL[(app.board as Board) || 'private']}
+                  </span>
+                </div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
                   {candidateName(app) || 'Candidate'} · {app.status}
                 </div>

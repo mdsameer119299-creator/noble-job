@@ -1,7 +1,14 @@
 import type { ServerSupabaseClient } from "@/lib/supabase/server"
 import { resolveResumeSignedUrl } from "@/lib/storage/resumeStorage"
+import { logResumeAccess } from "@/lib/services/resumeAccessLog"
 
-/** Employer may access resume only when the candidate has applied to that employer. */
+/**
+ * Employer may access resume only when the candidate has applied to that
+ * employer, AND that employer's account has been verified by Noble Job admin
+ * — an unverified employer can have jobs live (job content review and
+ * company identity verification are separate admin steps) but must not be
+ * able to pull a candidate's resume until verified.
+ */
 export async function getEmployerApplicantResumeSignedUrl(
   sb: ServerSupabaseClient,
   employerUserId: string,
@@ -9,10 +16,11 @@ export async function getEmployerApplicantResumeSignedUrl(
 ): Promise<string | null> {
   const { data: employer } = await sb
     .from("employers")
-    .select("id")
+    .select("id, verified")
     .eq("user_id", employerUserId)
     .single()
   if (!employer) return null
+  if (!(employer as { verified?: boolean }).verified) return null
 
   const { data: application } = await sb
     .from("applications")
@@ -30,11 +38,21 @@ export async function getEmployerApplicantResumeSignedUrl(
     .single()
   if (!candidate) return null
 
-  return resolveResumeSignedUrl(
+  const url = await resolveResumeSignedUrl(
     sb,
     candidateId,
     (candidate as { resume_url: string | null }).resume_url
   )
+  if (url) {
+    void logResumeAccess({
+      candidateId,
+      accessedByUserId: employerUserId,
+      accessorRole: "employer",
+      employerId: (employer as { id: string }).id,
+      applicationId: (application as { id: string }).id,
+    })
+  }
+  return url
 }
 
 export async function getEmployerResumeSignedUrlByApplication(

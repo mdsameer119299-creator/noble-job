@@ -8,6 +8,7 @@ import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemp
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { isIndexable } from '@/lib/jobs/provenance'
+import { incrementJobViews } from '@/lib/services/jobViews'
 import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
 import { JobActionBar } from '@/components/jobs/JobActionBar'
 
@@ -39,6 +40,7 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   const { id } = await params
   const job = await getAbroadJobById(id)
   if (!job) notFound()
+  void incrementJobViews('abroad', id)
 
   const content = buildJobContent({
     board: 'abroad',

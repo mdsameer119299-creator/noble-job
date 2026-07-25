@@ -8,4 +8,7 @@ export interface WfhJob {
   posted_at: string; status: 'active' | 'closed'; jobStatus?: JobStatus
   /** Real sourced opportunity vs generated demo content. See provenance.ts. */
   provenance?: Provenance
+  /** Owning employer id — evidence for EMPLOYER provenance genuineness checks. */
+  employer_id?: string | null
+  is_featured?: boolean
 }

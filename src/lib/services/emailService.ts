@@ -157,6 +157,37 @@ export async function sendJobDecisionEmail(
   })
 }
 
+/**
+ * Sent to a real employer when a candidate applies to one of their jobs.
+ * `resumeUrl` is a short-lived signed Supabase Storage link (see
+ * resolveResumeSignedUrl in resumeStorage.ts) — never a raw attachment, so
+ * access stays revocable and never sits unmanaged in an inbox. Callers must
+ * only invoke this for genuine EMPLOYER-owned jobs (gated on employer_id
+ * being set) — synthetic/curated listings never reach this function.
+ */
+export async function sendApplicationEmail(
+  to: string,
+  opts: { jobTitle: string; candidateName?: string; resumeUrl: string | null }
+): Promise<{ success: boolean; error?: string }> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://www.noblejob.in"
+  const candidate = opts.candidateName?.trim() || "A candidate"
+  const resumeBlock = opts.resumeUrl
+    ? `<p><a href="${opts.resumeUrl}" style="display:inline-block;background:#1847d4;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">View resume</a></p>
+<p style="color:#9ca3af;font-size:12px">This link expires in 1 hour. View the application anytime from your Noble Job dashboard.</p>`
+    : `<p style="color:#6b7280;font-size:13px">No resume was attached to this application. View full details on your dashboard.</p>`
+  return sendEmail({
+    to,
+    subject: `Noble Job — New application for ${opts.jobTitle}`,
+    html: layout(
+      "New application received",
+      `<p style="color:#374151">${candidate} applied for <strong>${opts.jobTitle}</strong> on Noble Job.</p>
+${resumeBlock}
+<p><a href="${appUrl}/employer/candidates" style="color:#1847d4;font-weight:700">View all applications</a></p>`
+    ),
+    text: `${candidate} applied for ${opts.jobTitle}. View: ${appUrl}/employer/candidates`,
+  })
+}
+
 export async function sendEmployerSuspendedEmail(
   to: string,
   companyName?: string

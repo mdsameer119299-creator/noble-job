@@ -16,9 +16,19 @@ export const CATEGORY_ILLUSTRATION_SLUGS = [
   "railway",
   "aviation",
   "hospitality",
+  "blue-collar-jobs",
 ] as const
 
 export type CategoryIllustrationSlug = (typeof CATEGORY_ILLUSTRATION_SLUGS)[number]
+
+/**
+ * Slugs with no authored /public/images/categories asset yet — CategoryIllustration
+ * renders this emoji instead of a broken <img>. Remove an entry once a real
+ * illustration is added for that slug.
+ */
+export const CATEGORY_EMOJI_FALLBACK: Partial<Record<CategoryIllustrationSlug, string>> = {
+  "blue-collar-jobs": "👷",
+}
 
 export interface CategoryBadge {
   emoji: string
@@ -107,6 +117,22 @@ export function resolveCategoryIllustrationSlug(
   if (k.includes("hotel") || k.includes("hospitality")) return "hospitality"
   if (k.includes("aviation") || k.includes("cabin") || k.includes("airline")) return "aviation"
   if (k.includes("wfh") || k.includes("remote") || k.includes("work from home")) return "work-from-home"
+  if (
+    k.includes("blue collar") ||
+    k.includes("blue-collar") ||
+    k.includes("driver") ||
+    k.includes("delivery") ||
+    k.includes("security guard") ||
+    k.includes("housekeeping") ||
+    k.includes("warehouse") ||
+    k.includes("electrician") ||
+    k.includes("plumber") ||
+    k.includes("carpenter") ||
+    k.includes("welder") ||
+    k.includes("mechanic") ||
+    k.includes("factory")
+  )
+    return "blue-collar-jobs"
   if (k.includes("govt") || k.includes("sarkari") || k.includes("ssc") || k.includes("upsc")) return "government-jobs"
   if (k.includes("software") || k.includes("developer") || k.includes("data")) return "it-software"
   return "it-software"

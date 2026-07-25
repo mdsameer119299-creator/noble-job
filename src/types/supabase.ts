@@ -70,6 +70,8 @@ export interface Database {
           source: string | null
           apply_url: string | null
           is_verified: boolean
+          is_featured: boolean
+          views_count: number
           badge: string | null
           posted_at: string
           expires_at: string | null
@@ -95,6 +97,8 @@ export interface Database {
           source?: string | null
           apply_url?: string | null
           is_verified?: boolean
+          is_featured?: boolean
+          views_count?: number
           badge?: string | null
           posted_at?: string
           expires_at?: string | null
@@ -120,6 +124,8 @@ export interface Database {
           source?: string | null
           apply_url?: string | null
           is_verified?: boolean
+          is_featured?: boolean
+          views_count?: number
           badge?: string | null
           posted_at?: string
           expires_at?: string | null
@@ -341,9 +347,13 @@ export interface Database {
           apply_url: string
           status: string
           posted_at: string
+          employer_id: string | null
+          provenance: string | null
+          is_featured: boolean
+          views_count: number
         }
-        Insert: { id: string; title: string; company: string; status?: string }
-        Update: { id?: string; title?: string; status?: string }
+        Insert: { id: string; title: string; company: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
+        Update: { id?: string; title?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
         Relationships: []
       }
       abroad_jobs: {
@@ -363,15 +373,25 @@ export interface Database {
           skills: string[]
           status: string
           posted_at: string
+          employer_id: string | null
+          provenance: string | null
+          is_featured: boolean
+          views_count: number
         }
-        Insert: { id: string; title: string; company: string; country: string; status?: string }
-        Update: { id?: string; title?: string; country?: string; status?: string }
+        Insert: { id: string; title: string; company: string; country: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
+        Update: { id?: string; title?: string; country?: string; status?: string; employer_id?: string | null; provenance?: string | null; is_featured?: boolean; views_count?: number }
         Relationships: []
       }
       applications: {
         Row: { id: string; job_id: string; candidate_id: string; employer_id: string | null; status: string; applied_at: string; notes: string | null; board: string }
         Insert: { id?: string; job_id: string; candidate_id: string; employer_id?: string | null; status?: string; applied_at?: string; notes?: string | null; board?: string }
         Update: { id?: string; job_id?: string; candidate_id?: string; employer_id?: string | null; status?: string; applied_at?: string; notes?: string | null; board?: string }
+        Relationships: []
+      }
+      resume_access_log: {
+        Row: { id: string; candidate_id: string; accessed_by_user_id: string | null; accessor_role: string; employer_id: string | null; application_id: string | null; created_at: string }
+        Insert: { id?: string; candidate_id: string; accessed_by_user_id?: string | null; accessor_role: string; employer_id?: string | null; application_id?: string | null; created_at?: string }
+        Update: { id?: string; candidate_id?: string; accessed_by_user_id?: string | null; accessor_role?: string; employer_id?: string | null; application_id?: string | null; created_at?: string }
         Relationships: []
       }
       contact_messages: {
@@ -614,7 +634,10 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_job_views: {
+        Args: { p_board: string; p_id: string }
+        Returns: void
+      }
     }
     Enums: {
       [_ in never]: never

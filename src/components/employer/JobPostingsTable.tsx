@@ -5,9 +5,15 @@ import { useToast } from '@/hooks/useToast'
 import { formatDate } from '@/lib/utils/formatters'
 import { EMPLOYER_TRANSITIONS, JOB_STATUS_COLOR, type JobLifecycleStatus } from '@/lib/services/jobLifecycle'
 
-type Job = { id: string; title: string; status: string; posted_at?: string; location?: string; job_type?: string }
+type Job = {
+  id: string; title: string; status: string; posted_at?: string; location?: string; job_type?: string
+  board: 'private' | 'wfh' | 'abroad'; is_featured?: boolean; views_count?: number; applications_count?: number
+}
 
 const statusColor = JOB_STATUS_COLOR
+const BOARD_LABEL: Record<Job['board'], string> = { private: 'Private', wfh: 'WFH', abroad: 'Abroad' }
+const BOARD_BG: Record<Job['board'], string> = { private: '#eff6ff', wfh: '#f0fdf4', abroad: '#fdf4ff' }
+const BOARD_FG: Record<Job['board'], string> = { private: '#1847d4', wfh: '#15803d', abroad: '#a21caf' }
 
 // Employer-facing label for each transition target.
 const ACTION_LABEL: Record<string, string> = {
@@ -38,20 +44,20 @@ export function JobPostingsTable() {
 
   useEffect(() => { load() }, [load])
 
-  const remove = async (id: string) => {
+  const remove = async (id: string, board: Job['board']) => {
     if (!confirm('Delete this job posting? This cannot be undone.')) return
     setBusy(id)
     try {
-      const res = await fetch(`/api/employer/jobs/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/employer/jobs/${id}?board=${board}`, { method: 'DELETE' })
       if (res.ok) { toast.success('Job deleted'); setJobs(j => j.filter(x => x.id !== id)) }
       else toast.error('Could not delete job')
     } finally { setBusy(null) }
   }
 
-  const transition = async (id: string, status: string) => {
+  const transition = async (id: string, status: string, board: Job['board']) => {
     setBusy(id)
     try {
-      const res = await fetch(`/api/employer/jobs/${id}/status`, {
+      const res = await fetch(`/api/employer/jobs/${id}/status?board=${board}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       })
@@ -81,30 +87,40 @@ export function JobPostingsTable() {
         <thead>
           <tr style={{ background: '#f8faff', textAlign: 'left' }}>
             <th style={{ padding: 12 }}>Title</th>
+            <th style={{ padding: 12 }}>Board</th>
             <th style={{ padding: 12 }}>Location</th>
             <th style={{ padding: 12 }}>Status</th>
+            <th style={{ padding: 12 }}>Featured</th>
+            <th style={{ padding: 12 }}>Views</th>
+            <th style={{ padding: 12 }}>Applications</th>
             <th style={{ padding: 12 }}>Posted</th>
             <th style={{ padding: 12 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {jobs.map(j => (
-            <tr key={j.id} style={{ borderTop: '1px solid #f0f4ff' }}>
+            <tr key={`${j.board}-${j.id}`} style={{ borderTop: '1px solid #f0f4ff' }}>
               <td style={{ padding: 12, fontWeight: 700, color: '#0d1f4e' }}>{j.title}</td>
+              <td style={{ padding: 12 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 8, background: BOARD_BG[j.board], color: BOARD_FG[j.board] }}>{BOARD_LABEL[j.board]}</span>
+              </td>
               <td style={{ padding: 12, color: '#6b7280' }}>{j.location || '—'}</td>
               <td style={{ padding: 12 }}>
                 <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'capitalize', color: statusColor[j.status] || '#64748b' }}>{j.status}</span>
               </td>
+              <td style={{ padding: 12 }}>{j.is_featured ? <span style={{ fontSize: 11, fontWeight: 800, color: '#92400e', background: '#fef3c7', padding: '2px 8px', borderRadius: 8 }}>⭐ Featured</span> : <span style={{ color: '#cbd5e1', fontSize: 12 }}>—</span>}</td>
+              <td style={{ padding: 12, color: '#374151', fontWeight: 700 }}>{j.views_count ?? 0}</td>
+              <td style={{ padding: 12, color: '#374151', fontWeight: 700 }}>{j.applications_count ?? 0}</td>
               <td style={{ padding: 12, color: '#6b7280' }}>{j.posted_at ? formatDate(j.posted_at) : '—'}</td>
               <td style={{ padding: 12 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Link href={`/employer/jobs/${j.id}/edit`} style={{ fontSize: 12, fontWeight: 700, color: '#1847d4', textDecoration: 'none' }}>Edit</Link>
+                  <Link href={`/employer/jobs/${j.id}/edit?board=${j.board}`} style={{ fontSize: 12, fontWeight: 700, color: '#1847d4', textDecoration: 'none' }}>Edit</Link>
                   {(EMPLOYER_TRANSITIONS[j.status as JobLifecycleStatus] || []).map(t => (
-                    <button key={t} type="button" onClick={() => transition(j.id, t)} disabled={busy === j.id} style={linkBtn(statusColor[t] || '#64748b')}>
+                    <button key={t} type="button" onClick={() => transition(j.id, t, j.board)} disabled={busy === j.id} style={linkBtn(statusColor[t] || '#64748b')}>
                       {ACTION_LABEL[t] || t}
                     </button>
                   ))}
-                  <button type="button" onClick={() => remove(j.id)} disabled={busy === j.id} style={linkBtn('#dc2626')}>Delete</button>
+                  <button type="button" onClick={() => remove(j.id, j.board)} disabled={busy === j.id} style={linkBtn('#dc2626')}>Delete</button>
                 </div>
               </td>
             </tr>

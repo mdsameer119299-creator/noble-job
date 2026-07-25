@@ -1,6 +1,6 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
-import { PRIVATE_INVENTORY } from "@/lib/data/jobInventory"
+import { PRIVATE_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
 import { classifyProvenance, KNOWN_PROVENANCE } from "@/lib/jobs/provenance"
@@ -69,7 +69,8 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     let query = sb.from("jobs").select("*", { count: "exact" }).eq("status", "active")
 
     if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`)
-    if (category && category !== "all") query = query.eq("category", category)
+    if (category === "blue-collar") query = query.in("category", [...BLUE_COLLAR_CATEGORIES])
+    else if (category && category !== "all") query = query.eq("category", category)
     if (location && location !== "All Locations") query = query.ilike("location", `%${location}%`)
     if (exp) query = query.eq("experience_required", exp)
     if (jType) query = query.eq("job_type", jType)

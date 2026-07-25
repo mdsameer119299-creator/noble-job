@@ -5,6 +5,13 @@ import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getGovtJobsFiltered, getGovtContent } from "@/lib/services/govtJobService"
 import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
 import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
+import { CITY_LANDINGS } from "@/lib/data/landingCities"
+import { getQualifyingCategorySlugsForCity } from "@/lib/seo/cityCategoryLanding"
+import {
+  TAIL_CITIES,
+  getQualifyingTailCitySlugs,
+  getQualifyingCategorySlugsForTailCity,
+} from "@/lib/seo/tailCityLanding"
 import { ARTICLE_SLUGS } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 import { isIndexable } from "@/lib/jobs/provenance"
@@ -73,6 +80,51 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.85,
     })),
   ]
+
+  // City x category pages (e.g. /jobs-in-delhi/driver) — only combos that clear
+  // CITY_CATEGORY_MIN_JOBS real jobs are listed, same gate the pages themselves
+  // enforce (getQualifyingCategorySlugsForCity is the single source of truth
+  // for both, so the sitemap and the pages can never disagree).
+  const cityCategoryRoutes: MetadataRoute.Sitemap = (
+    await Promise.all(
+      CITY_LANDINGS.map(async city => {
+        const slugs = await getQualifyingCategorySlugsForCity(city)
+        return slugs.map(categorySlug => ({
+          url: `${base}/${city.slug}/${categorySlug}`,
+          lastModified: now,
+          changeFrequency: "weekly" as const,
+          priority: 0.6,
+        }))
+      }),
+    )
+  ).flat()
+
+  // Tail-city hubs (/jobs-in/[city]) — the long tail beyond the 8 hand-authored
+  // city pages, gated on TAIL_CITY_MIN_JOBS real jobs (getQualifyingTailCitySlugs
+  // is the single source of truth shared with generateStaticParams).
+  const qualifyingTailCitySlugs = await getQualifyingTailCitySlugs()
+  const tailCityRoutes: MetadataRoute.Sitemap = qualifyingTailCitySlugs.map(slug => ({
+    url: `${base}/jobs-in/${slug}`,
+    lastModified: now,
+    changeFrequency: "daily" as const,
+    priority: 0.75,
+  }))
+
+  // Tail-city x category pages (/jobs-in/[city]/[category]) — same gate as
+  // the hand-authored cities' city x category pages.
+  const tailCityCategoryRoutes: MetadataRoute.Sitemap = (
+    await Promise.all(
+      TAIL_CITIES.map(async city => {
+        const slugs = await getQualifyingCategorySlugsForTailCity(city)
+        return slugs.map(categorySlug => ({
+          url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
+          lastModified: now,
+          changeFrequency: "weekly" as const,
+          priority: 0.55,
+        }))
+      }),
+    )
+  ).flat()
 
   // Topical-authority guides — index + 10 article pages.
   const guideRoutes: MetadataRoute.Sitemap = [
@@ -209,6 +261,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const all = [
     ...staticRoutes,
     ...landingRoutes,
+    ...cityCategoryRoutes,
+    ...tailCityRoutes,
+    ...tailCityCategoryRoutes,
     ...guideRoutes,
     ...govtCategoryRoutes,
     ...govtStateRoutes,

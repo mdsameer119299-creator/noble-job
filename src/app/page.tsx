@@ -10,8 +10,11 @@ import { SITE_FAQ } from '@/lib/seo/faq'
 import { HeroSearchBar } from '@/components/home/HeroSearchBar'
 import { StatsStrip } from '@/components/home/StatsStrip'
 import { AiEmployerTeaser } from '@/components/home/AiEmployerTeaser'
+import { FeaturedJobsSection } from '@/components/home/FeaturedJobsSection'
 import { LatestJobsGrid } from '@/components/home/LatestJobsGrid'
+import { BlueCollarJobsSection } from '@/components/home/BlueCollarJobsSection'
 import { CategoryChips } from '@/components/home/CategoryChips'
+import { PopularCitiesSection } from '@/components/home/PopularCitiesSection'
 import { AiCandidateTeaser } from '@/components/home/AiCandidateTeaser'
 import { EmployerCta } from '@/components/home/EmployerCta'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
@@ -40,14 +43,25 @@ export default function HomePage() {
       {/* 3. Stats strip — dark navy, 5 counters */}
       <StatsStrip />
 
+      {/* Featured Jobs — genuine-employer jobs only, hides itself when empty */}
+      <FeaturedJobsSection />
+
+      {/* Blue Collar Jobs — Driver, Delivery, Security, Housekeeping, etc. —
+          kept high on the page (not a buried/isolated section) per the full
+          job-ecosystem integration this catalog got this session. */}
+      <BlueCollarJobsSection />
+
       {/* 4. AI Employer Teaser — dark card, 3-col: steps + JD card + candidates */}
       <AiEmployerTeaser />
 
       {/* 5. Latest Jobs Grid — 4 cols: Private, Govt, WFH, Abroad */}
       <LatestJobsGrid />
 
-      {/* 6. Category Chips — 6 categories + View All */}
+      {/* 6. Category Chips — expanded categories + View All */}
       <CategoryChips />
+
+      {/* Popular Cities — internal-link entry point into the tail-city pages */}
+      <PopularCitiesSection />
 
       {/* 7. AI Candidate (cv-strip) — ring chart + features + Upload CTA */}
       <AiCandidateTeaser />
