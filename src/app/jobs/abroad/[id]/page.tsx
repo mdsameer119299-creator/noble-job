@@ -101,6 +101,7 @@ export default async function AbroadJobDetailPage({ params }: Props) {
         extra: [
           { href: '/jobs/abroad', label: 'All Abroad Job Listings' },
           { href: '/private-jobs', label: 'Private Jobs in India' },
+          { href: '/upload-resume', label: 'Free Resume Analyzer' },
         ],
       }}
       relatedTitle="Related Abroad Jobs"
