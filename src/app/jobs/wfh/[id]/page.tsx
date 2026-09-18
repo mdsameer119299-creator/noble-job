@@ -105,6 +105,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
         extra: [
           { href: '/jobs/wfh', label: `More ${job.cat} Remote Jobs` },
           { href: '/private-jobs', label: 'Private Jobs in India' },
+          { href: '/upload-resume', label: 'Free Resume Analyzer' },
         ],
       }}
       relatedTitle="Related WFH Jobs"
