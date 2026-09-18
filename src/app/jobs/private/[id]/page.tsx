@@ -103,6 +103,7 @@ export default async function JobDetailPage({ params }: Props) {
           { href: '/jobs/private', label: 'All Private Job Listings' },
           { href: '/fresher-jobs', label: 'Fresher Jobs' },
           { href: '/work-from-home-jobs', label: 'Work From Home Jobs' },
+          { href: '/upload-resume', label: 'Free Resume Analyzer' },
         ],
       }}
       relatedTitle="Related Private Jobs"
