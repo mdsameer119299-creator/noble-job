@@ -2,7 +2,7 @@
  * Local-only private job helpers (no Supabase imports).
  */
 import { PRIVATE_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
-import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
+import { sortByStatus, rotateJobOrder, countByStatus } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
 
@@ -13,21 +13,11 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
   let list = [...jobs]
   if (q) {
     const term = q.toLowerCase()
-    list = list.filter(
-      j =>
-        j.title.toLowerCase().includes(term) ||
-        j.company.toLowerCase().includes(term) ||
-        (j.desc || "").toLowerCase().includes(term),
-    )
+    list = list.filter(j => j.title.toLowerCase().includes(term) || j.company.toLowerCase().includes(term) || (j.desc || "").toLowerCase().includes(term))
   }
-  // "blue-collar" is a synthetic umbrella filter value (not a real category)
-  // matching any of the frontline categories — used by the homepage card and
-  // Blue Collar landing hub, same pattern as the "all" sentinel.
   if (category === "blue-collar") list = list.filter(j => BLUE_COLLAR_SET.has(j.cat))
   else if (category && category !== "all") list = list.filter(j => j.cat === category)
-  if (location && location !== "All Locations") {
-    list = list.filter(j => j.location.toLowerCase().includes(location.toLowerCase()))
-  }
+  if (location && location !== "All Locations") list = list.filter(j => j.location.toLowerCase().includes(location.toLowerCase()))
   if (exp) list = list.filter(j => (j.exp || "").toLowerCase().includes(exp.toLowerCase()))
   if (jType) list = list.filter(j => j.type === jType)
   return list
@@ -39,11 +29,8 @@ export function getPrivateJobsLocal(filter: JobFilter = {}, syntheticVisible = t
   const preStatus = filterPrivateJobs(applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible), filter)
   const counts = countByStatus(preStatus)
   const status = filter.status
-  let list =
-    status && status !== "all"
-      ? preStatus.filter(j => (j.jobStatus ?? "VERIFIED_JOB") === status)
-      : preStatus
-  list = sortByStatus(list)
+  let list = status && status !== "all" ? preStatus.filter(j => (j.jobStatus ?? "VERIFIED_JOB") === status) : preStatus
+  list = rotateJobOrder(sortByStatus(list), "private", 3)
   return {
     jobs: list.slice((page - 1) * limit, page * limit),
     total: list.length,
@@ -60,11 +47,9 @@ export function getPrivateJobByIdLocal(id: string, syntheticVisible = true): Job
 }
 
 export function getPrivateJobsFeaturedLocal(limit = 4, syntheticVisible = true): Job[] {
-  return sortByStatus(applySyntheticVisibility([...PRIVATE_INVENTORY], syntheticVisible)).slice(0, limit)
+  return rotateJobOrder(sortByStatus(applySyntheticVisibility([...PRIVATE_INVENTORY], syntheticVisible)), "private-featured", 3).slice(0, limit)
 }
 
 export function getPrivateJobsCountLocal(syntheticVisible = true): number {
-  return applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible).filter(
-    j => (j.jobStatus ?? "VERIFIED_JOB") !== "ARCHIVED_JOB",
-  ).length
+  return applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible).filter(j => (j.jobStatus ?? "VERIFIED_JOB") !== "ARCHIVED_JOB").length
 }

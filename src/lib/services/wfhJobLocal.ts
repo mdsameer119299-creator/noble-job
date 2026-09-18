@@ -2,57 +2,35 @@
  * Local-only WFH job helpers (no Supabase imports).
  */
 import { WFH_INVENTORY } from "@/lib/data/jobInventory"
-import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
+import { sortByStatus, rotateJobOrder, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 
 export interface WfhJobFilters {
-  q?: string
-  cat?: string
-  exp?: string
-  sort?: string
-  status?: JobStatus | "all"
-  page?: number
-  limit?: number
+  q?: string; cat?: string; exp?: string; sort?: string; status?: JobStatus | "all"; page?: number; limit?: number
 }
 
 function matchesWfhExperience(jobExp: string, filterExp: string): boolean {
   const e = jobExp.toLowerCase()
   switch (filterExp) {
-    case "fresher":
-      return e.includes("fresher")
-    case "0-2":
-      return /0-2|1-3|fresher/.test(e)
-    case "2-5":
-      return /2-5|3-6/.test(e)
-    case "5+":
-      return /5\+|5-8|5-/.test(e)
-    default:
-      return e.includes(filterExp.toLowerCase())
+    case "fresher": return e.includes("fresher")
+    case "0-2": return /0-2|1-3|fresher/.test(e)
+    case "2-5": return /2-5|3-6/.test(e)
+    case "5+": return /5\+|5-8|5-/.test(e)
+    default: return e.includes(filterExp.toLowerCase())
   }
 }
 
 function filterWfhWithCounts(jobs: WfhJob[], filters: WfhJobFilters) {
   const { q, cat, exp, status } = filters
   let pre = [...jobs]
-  if (q) {
-    const term = q.toLowerCase()
-    pre = pre.filter(
-      j =>
-        j.title.toLowerCase().includes(term) ||
-        j.company.toLowerCase().includes(term) ||
-        j.description.toLowerCase().includes(term),
-    )
-  }
+  if (q) { const term = q.toLowerCase(); pre = pre.filter(j => j.title.toLowerCase().includes(term) || j.company.toLowerCase().includes(term) || j.description.toLowerCase().includes(term)) }
   if (cat && cat !== "all") pre = pre.filter(j => j.cat === cat)
   if (exp && exp !== "all") pre = pre.filter(j => matchesWfhExperience(j.experience, exp))
   const counts = countByStatus(pre)
-  let list =
-    status && status !== "all"
-      ? pre.filter(j => (j.jobStatus ?? "VERIFIED_JOB") === status)
-      : pre
-  list = sortByStatus(list)
+  let list = status && status !== "all" ? pre.filter(j => (j.jobStatus ?? "VERIFIED_JOB") === status) : pre
+  list = rotateJobOrder(sortByStatus(list), "wfh", 3)
   return { list, counts }
 }
 

@@ -88,7 +88,7 @@ export function AiCandidateTeaser() {
 
           <div className="cv-analysis-section__cta-col" style={{ flexShrink: 0, textAlign: 'center' }}>
             <Link
-              href="/auth?role=candidate&tab=register"
+              href="/upload-resume"
               className="cv-upload-cta"
               style={{
                 display: 'inline-flex',

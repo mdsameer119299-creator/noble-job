@@ -41,7 +41,7 @@ export interface JobContent {
   howToApply: string[]
   importantDates: { label: string; value: string }[]
   faqs: { q: string; a: string }[]
-  validThrough: string          // ISO — also fed to JobPosting schema
+  validThrough?: string         // ISO — only emitted when a real expiry date is known
   /** HTML description for the JobPosting schema `description` field. */
   schemaDescriptionHtml: string
   wordCountHint: number
@@ -214,12 +214,6 @@ function isFresher(exp?: string) {
   return !exp || /fresher|0\s*-|^0|entry|trainee/i.test(exp)
 }
 
-function addDaysIso(fromIso: string | undefined, days: number): string {
-  const base = fromIso ? new Date(fromIso) : new Date()
-  const d = Number.isNaN(base.getTime()) ? new Date() : base
-  return new Date(d.getTime() + days * 86400000).toISOString()
-}
-
 function locationPhrase(input: JobContentInput): string {
   if (input.remote) return "on a fully remote / work-from-home basis from anywhere in India"
   if (!input.location) return "across India"
@@ -239,13 +233,14 @@ export function buildJobContent(input: JobContentInput): JobContent {
   const postedLabel = Number.isNaN(postedDate.getTime())
     ? new Date().toDateString()
     : postedDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
-  const validThrough = addDaysIso(input.postedAt, 30)
-  const validLabel = new Date(validThrough).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+  // Never invent an application deadline. Google requires validThrough only when a real expiry date is known.
+  const validThrough = undefined
+  const validLabel = "Check the official application page for the current closing date"
 
   const overview: string[] = [
     `${company} is hiring for the position of ${input.title} ${where}. This is a ${empType.toLowerCase()} opportunity in the ${cat} domain, listed on Noble Job — India's trusted job portal by NCC Foundation. ${fresher ? "Freshers and early-career candidates are encouraged to apply." : `Candidates with ${input.experience} of relevant experience are preferred.`} ${parsedSalary ? `The role offers a competitive package of ${describeSalary(parsedSalary)}.` : "Compensation is competitive and discussed during the interview."}`,
     `As a ${input.title}, you will work within ${company}'s ${profile.domain} function. ${input.description ? input.description.trim() + " " : ""}The position is well suited to professionals who are organised, dependable and keen to grow their career in ${cat}. You will use ${profile.tools} as part of your everyday work and collaborate closely with a supportive team.`,
-    `This listing covers everything you need before applying — the full job overview, responsibilities, eligibility and required skills, salary and benefits, the selection process, step-by-step application instructions, and answers to the most frequently asked questions. Review the details below and apply before the closing date of ${validLabel}.`,
+    `This listing covers everything you need before applying — the full job overview, responsibilities, eligibility and required skills, salary and benefits, the selection process, step-by-step application instructions, and answers to the most frequently asked questions. Review the details below and check the official application page for the current closing date.`,
   ]
 
   const aboutOrg = `${company} is a recognised employer in the ${cat} space and a sought-after destination for ${input.board === "abroad" ? "international" : "Indian"} job seekers. The organisation invests in its people through structured onboarding, mentoring and clear growth paths. By hiring through Noble Job, ${company} reaches verified, job-ready candidates across India. Always confirm the latest company and role information on the official application page before submitting your application.`
@@ -294,7 +289,7 @@ export function buildJobContent(input: JobContentInput): JobContent {
     "Keep an updated resume highlighting your relevant skills, experience and achievements ready.",
     `Click the "Apply Now" button on this page to proceed to ${applyVerb}.`,
     "Fill in the application form accurately and attach your resume and any required documents.",
-    `Submit your application before the closing date of ${validLabel} and watch your email for next steps.`,
+    `Submit your application through the listed application route after confirming the current closing date and watch your email for next steps.`,
   ]
 
   const importantDates = [
@@ -372,7 +367,7 @@ function buildFaqs(
     },
     {
       q: `What is the last date to apply?`,
-      a: `Applications for this ${title} role close on ${ctx.validLabel}. We recommend applying early, as employers may close listings once enough applications are received.`,
+      a: `Check the official application page for the current closing date. Employers may close listings once enough applications are received.`,
     },
     {
       q: `Is there any fee to apply through Noble Job?`,
