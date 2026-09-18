@@ -11,6 +11,8 @@ export function PrivateJobJsonLd({ job, content }: { job: Job; content: JobConte
   const base = siteUrl()
   const url = `${base}/jobs/private/${job.id}`
   const row = job as Job & { posted_at?: string; job_type?: string; experience_required?: string }
+  const datePosted = row.posted_at || job.posted
+  if (!datePosted) return null
   const s = content.parsedSalary
 
   return (
@@ -19,11 +21,10 @@ export function PrivateJobJsonLd({ job, content }: { job: Job; content: JobConte
         title: job.title,
         description: content.schemaDescriptionHtml,
         url,
-        datePosted: row.posted_at || job.posted || new Date().toISOString(),
+        datePosted,
         validThrough: content.validThrough,
         employmentType: (row.job_type || job.type || "FULL_TIME").replace(/\s+/g, "_").toUpperCase(),
         organizationName: job.company,
-        organizationUrl: row.apply_url || job.applyUrl,
         location: job.location || "India",
         addressLocality: job.location,
         addressCountry: "IN",
