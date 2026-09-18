@@ -28,6 +28,7 @@ const HUBS = [
   { label: "Private Jobs", href: "/private-jobs" },
   { label: "Work From Home Jobs", href: "/work-from-home-jobs" },
   { label: "Fresher Jobs", href: "/fresher-jobs" },
+  { label: "Free Resume Analyzer", href: "/upload-resume" },
   { label: "Jobs in Delhi", href: "/jobs-in-delhi" },
   { label: "Jobs in Gurgaon", href: "/jobs-in-gurgaon" },
   { label: "Jobs in Bangalore", href: "/jobs-in-bangalore" },
