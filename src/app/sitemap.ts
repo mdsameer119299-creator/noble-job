@@ -129,6 +129,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Topical-authority guides — index + 10 article pages.
   const guideRoutes: MetadataRoute.Sitemap = [
     { url: `${base}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/upload-resume`, lastModified: now, changeFrequency: "weekly", priority: 0.85 },
     ...ARTICLE_SLUGS.map(slug => ({
       url: `${base}/guides/${slug}`,
       lastModified: now,
