@@ -19,7 +19,7 @@ function isoFor(country?: string): string | undefined {
 
 export function AbroadJobJsonLd({ job, content }: { job: AbroadJob; content: JobContent }) {
   // Synthetic/demo or non-open rows never carry JobPosting schema.
-  if (!isSchemaEligible(job)) return null
+  if (!isSchemaEligible(job) || !job.posted_at) return null
   const url = `${siteUrl()}/jobs/abroad/${job.id}`
   const s = content.parsedSalary
   return (
@@ -32,7 +32,6 @@ export function AbroadJobJsonLd({ job, content }: { job: AbroadJob; content: Job
         validThrough: content.validThrough,
         employmentType: (job.type || "FULL_TIME").replace(/\s+/g, "_").toUpperCase(),
         organizationName: job.company,
-        organizationUrl: job.apply_url,
         location: job.location || job.country,
         addressLocality: job.location || job.country,
         addressRegion: job.country,
