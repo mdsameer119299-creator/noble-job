@@ -323,9 +323,9 @@ test("builders + postingDate never READ an ingestion/creation timestamp (static 
     assert.doesNotMatch(code, forbidden, `${f} must not reference an ingestion/creation timestamp`)
   }
 })
-test("the VISIBLE posting date is unchanged — the page still shows posted_at; only JobPosting.datePosted moved", () => {
+test("the page still passes the stored row date to the visible dates block (labelled 'Listed on Noble Job', never as the posting date)", () => {
   const pg = readFileSync(join(process.cwd(), "src/app/jobs/private/[id]/page.tsx"), "utf8")
-  assert.match(pg, /postedAt:\s*row\.posted_at/, "visible 'Job Posted On' still comes from the stored row date")
+  assert.match(pg, /postedAt:\s*row\.posted_at/, "the visible 'Listed on Noble Job' date comes from the stored row date")
 })
 test("private: a junk or future stored source date → NO JobPosting", () => {
   for (const source_posted_at of ["Job 1", "5 days ago", "not-a-date", "", "1999-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {

@@ -20,9 +20,9 @@ const TABLE: Record<SitemapJobBoard, "jobs" | "wfh_jobs" | "abroad_jobs"> = {
 const BASE_COLUMNS: Record<SitemapJobBoard, string> = {
   // title/company/description/location|country: the completeness columns the
   // "no empty jobs" gate needs, so an incomplete row can never be listed.
-  private: "id, posted_at, provenance, apply_url, employer_id, is_verified, job_status, status, source, title, company, description, location",
-  wfh: "id, posted_at, provenance, apply_url, employer_id, status, title, company, description",
-  abroad: "id, posted_at, provenance, apply_url, employer_id, status, title, company, description, country",
+  private: "id, provenance, apply_url, employer_id, is_verified, job_status, status, source, title, company, description, location",
+  wfh: "id, provenance, apply_url, employer_id, status, title, company, description",
+  abroad: "id, provenance, apply_url, employer_id, status, title, company, description, country",
 }
 
 export const SITEMAP_ROWS_PER_BOARD = 2000
@@ -53,6 +53,8 @@ export async function readSitemapJobRows(board: SitemapJobBoard): Promise<Sitema
       .from(TABLE[board])
       .select(columns as "*")
       .eq("status", "active")
+      // Only to pick the newest rows when a board exceeds the cap — the value is never
+      // emitted (it is the insertion time, not a modification date; see SitemapJobRow).
       .order("posted_at", { ascending: false })
       .limit(SITEMAP_ROWS_PER_BOARD)
 

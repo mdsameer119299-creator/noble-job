@@ -132,7 +132,13 @@ export function finalizeSitemap(entries: SitemapEntry[], opts: FinalizeOptions):
 /** A raw `jobs` / `wfh_jobs` / `abroad_jobs` row as read for the sitemap. */
 export interface SitemapJobRow {
   id: string
-  posted_at?: string | null
+  // NOTE: `posted_at` is deliberately NOT part of this shape. On jobs / wfh_jobs /
+  // abroad_jobs it is `TIMESTAMPTZ NOT NULL DEFAULT NOW()` — the moment the row was
+  // INSERTED (an employer's submission, or an ingestion / import run) — not the
+  // original publication date and not a content-modification date. It is never
+  // bumped when the content is edited, and a bulk import stamps every row alike.
+  // None of the job tables has a content-change column (only `govt_jobs` does:
+  // `content_changed_at`), so a job URL has no trustworthy lastmod.
   provenance?: string | null
   apply_url?: string | null
   employer_id?: string | null
@@ -160,8 +166,15 @@ export type SitemapJobBoard = "private" | "wfh" | "abroad"
  * `isIndexable` is the same predicate the detail page's robots + JobPosting use,
  * so a URL is listed if and only if the page is indexable. It already rejects
  * synthetic / unclassified rows, non-`active` lifecycle status, archived jobs and a
- * real past `application_deadline`. `lastmod` is the row's stored `posted_at` (a real
- * date); a row without a valid one is listed WITHOUT `lastmod`.
+ * real past `application_deadline`.
+ *
+ * `lastmod` is ALWAYS omitted for private / WFH / abroad jobs: no stored column
+ * records when their content last changed (see SitemapJobRow — `posted_at` is the row's
+ * insertion time, so it would turn every ingestion or import run into a fresh
+ * "modified" signal). Never derive one from `posted_at`, `created_at`, `updated_at`,
+ * `source_posted_at` (the ORIGINAL publication date, not a modification date),
+ * `last_confirmed_open_at` or the clock. Govt records carry a real
+ * `content_changed_at` and keep theirs.
  */
 export function jobRowsToSitemapEntries(
   board: SitemapJobBoard,
@@ -193,7 +206,6 @@ export function jobRowsToSitemapEntries(
     if (!isRenderableJob({ ...r, ...c }, board)) continue
     out.push({
       url: `${root}/jobs/${board}/${r.id}`,
-      lastModified: toLastModified([r.posted_at], now),
       changeFrequency: "weekly",
       priority: board === "private" ? 0.8 : 0.7,
     })

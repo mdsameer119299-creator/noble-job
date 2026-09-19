@@ -41,9 +41,12 @@ export const revalidate = 3600
  *     unclassified, closed, archived and deadline-expired rows are never listed.
  *   • Private / WFH / abroad jobs are read from Supabase — NOT from the local
  *     synthetic inventory — so a real job posted to any board is listed.
- *   • `lastmod` is a REAL content date (a job's stored posting date, a govt
- *     record's `content_changed_at`, an article's `dateModified`, a hub's newest
- *     child) or it is OMITTED. It is never the generation time.
+ *   • `lastmod` is a REAL content-change date (a govt record's `content_changed_at`,
+ *     an article's `dateModified`, a govt hub's newest child) or it is OMITTED. It is
+ *     never the generation time, and never a job row's `posted_at` (that is the
+ *     INSERTION time — an ingestion run would look like a content change). Private /
+ *     WFH / abroad job URLs and their hubs therefore carry NO lastmod: their tables
+ *     store no content-change date.
  *   • Auth, API, dashboard and 404 paths, redirect sources, filtered and paginated
  *     variants are excluded.
  *   • If the database cannot be read the generation FAILS, so the previously good
@@ -94,22 +97,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const govtRows = await readOrThrow(() => getActiveGovtRowsStrict(), [] as GovtJob[], "govt pool")
   const govtIndexable = govtRows.filter(j => isIndexable(govtClassifiable(j)))
 
-  const newest = {
-    private: latestDate(jobEntries.private.map(e => e.lastModified)),
-    wfh: latestDate(jobEntries.wfh.map(e => e.lastModified)),
-    abroad: latestDate(jobEntries.abroad.map(e => e.lastModified)),
-    govt: latestDate(govtIndexable.map(j => govtChangedAt(j, now))),
-  }
-  const newestAny = latestDate([newest.private, newest.wfh, newest.abroad, newest.govt])
+  // Only government records store a real content-change date. Private / WFH / abroad
+  // rows do not, so their hubs have no lastmod either (nothing to take the newest of).
+  const newestGovt = latestDate(govtIndexable.map(j => govtChangedAt(j, now)))
 
-  // Static pages carry no real modification date → no lastmod. Board hubs and the
-  // homepage take the newest genuine listing they show.
+  // Static pages carry no real modification date → no lastmod. The government hub and
+  // the homepage take the newest real government content change they show.
   const staticRoutes: SitemapEntry[] = [
-    { url: base, lastModified: newestAny, changeFrequency: "daily", priority: 1 },
-    { url: `${base}/jobs/private`, lastModified: newest.private, changeFrequency: "hourly", priority: 0.95 },
-    { url: `${base}/jobs/govt`, lastModified: newest.govt, changeFrequency: "daily", priority: 0.95 },
-    { url: `${base}/jobs/wfh`, lastModified: newest.wfh, changeFrequency: "daily", priority: 0.95 },
-    { url: `${base}/jobs/abroad`, lastModified: newest.abroad, changeFrequency: "daily", priority: 0.95 },
+    { url: base, lastModified: newestGovt, changeFrequency: "daily", priority: 1 },
+    { url: `${base}/jobs/private`, changeFrequency: "hourly", priority: 0.95 },
+    { url: `${base}/jobs/govt`, lastModified: newestGovt, changeFrequency: "daily", priority: 0.95 },
+    { url: `${base}/jobs/wfh`, changeFrequency: "daily", priority: 0.95 },
+    { url: `${base}/jobs/abroad`, changeFrequency: "daily", priority: 0.95 },
     { url: `${base}/contact`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/about`, changeFrequency: "monthly", priority: 0.65 },
     { url: `${base}/editorial-policy`, changeFrequency: "yearly", priority: 0.4 },

@@ -41,9 +41,13 @@ const read = (p: string) => readFileSync(join(root, p), "utf8")
 const BASE = "https://www.noblejob.in"
 const NOW = new Date("2026-09-19T10:00:00.000Z")
 
-/** A COMPLETE genuine row: has the title / company / description / location / country a real job page needs. */
+/**
+ * A COMPLETE genuine row: has the title / company / description / location / country a real job page needs.
+ * It still carries `posted_at` (as a `select *` row would): that column is the row's INSERTION time and
+ * must never reach the sitemap — see the lastmod tests.
+ */
 const genuine = (id: string, posted: string, over: Partial<SitemapJobRow> = {}): SitemapJobRow => ({
-  id, posted_at: posted, provenance: "EMPLOYER", employer_id: "emp-1", is_verified: true, status: "active",
+  id, ...({ posted_at: posted } as object), provenance: "EMPLOYER", employer_id: "emp-1", is_verified: true, status: "active",
   title: "Accounts Executive", company: "Acme Pvt Ltd", location: "Delhi", country: "UAE",
   description: "Maintain the company ledgers in Tally and reconcile vendor and bank statements every month.",
   ...over,
@@ -77,10 +81,11 @@ test("closed / paused / pending / archived / deadline-expired jobs are excluded 
   ]
   assert.deepEqual(jobRowsToSitemapEntries("private", rows, BASE, { now: NOW }), [])
 })
-test("a genuine open job IS listed, on its own board path, with its REAL posting date as lastmod", () => {
+test("a genuine open job IS listed, on its own board path — WITHOUT lastmod (no stored content-change date exists for jobs)", () => {
   const [e] = jobRowsToSitemapEntries("wfh", [genuine("abc", "2026-08-01T05:30:00Z")], BASE, { now: NOW })
   assert.equal(e.url, `${BASE}/jobs/wfh/abc`)
-  assert.equal(e.lastModified?.toISOString(), "2026-08-01T05:30:00.000Z")
+  assert.equal(e.lastModified, undefined)
+  assert.ok(!("lastModified" in e), "the key is absent, so no <lastmod> element is emitted")
 })
 test("a job with a future (real) deadline is still listed", () => {
   const rows = [genuine("ok", "2026-08-01T00:00:00Z", { application_deadline: "2026-12-31T00:00:00Z" })]
@@ -102,17 +107,40 @@ test("lastmod is NOT the generation time: sitemap.ts never assigns `now` as last
   assert.doesNotMatch(src, /lastModified:\s*new Date\(\)/)
   assert.doesNotMatch(src, /new Date\([^)]*\|\|\s*now/)
 })
-test("lastmod comes from real per-row dates and therefore DIFFERS across URLs", () => {
-  const rows = [
-    genuine("a", "2026-07-01T00:00:00Z"),
-    genuine("b", "2026-07-15T00:00:00Z"),
-    genuine("c", "2026-08-01T00:00:00Z"),
-    genuine("d", "2026-08-20T00:00:00Z"),
-    genuine("e", "2026-09-10T00:00:00Z"),
-  ]
-  const entries = jobRowsToSitemapEntries("private", rows, BASE, { now: NOW })
-  assert.equal(new Set(entries.map(e => e.lastModified!.getTime())).size, 5)
-  assert.deepEqual(validateSitemapEntries(entries, { base: BASE, now: NOW }).errors, [])
+test("private / WFH / abroad job lastmod is omitted on EVERY board — whatever timestamps the row carries", () => {
+  // posted_at is `DEFAULT NOW()` (insertion time): an employer's submission, or the moment an ingestion / import
+  // run inserted the row. None of the job tables stores a content-change date. So an ingestion run — or a bulk
+  // import that stamps every row alike — must never look like a content change.
+  const stamps = {
+    posted_at: "2026-09-19T09:59:00Z", created_at: "2026-09-19T09:59:00Z", updated_at: "2026-09-19T09:59:30Z",
+    source_posted_at: "2026-08-01T00:00:00Z", last_confirmed_open_at: "2026-09-19T09:58:00Z", fetched_at: "2026-09-19T09:59:59Z",
+  }
+  const rows = ["a", "b", "c"].map(id => ({ ...genuine(id, "2026-09-19T09:59:00Z"), ...stamps }) as SitemapJobRow)
+  for (const board of ["private", "wfh", "abroad"] as const) {
+    const entries = jobRowsToSitemapEntries(board, rows, BASE, { now: NOW })
+    assert.equal(entries.length, 3, board)
+    for (const e of entries) assert.equal(e.lastModified, undefined, `${board} ${e.url}`)
+    // …so nothing in the output depends on when ingestion ran
+    const later = rows.map(r => ({ ...r, ...Object.fromEntries(Object.keys(stamps).map(k => [k, "2026-09-19T10:00:00Z"])) }) as SitemapJobRow)
+    assert.deepEqual(jobRowsToSitemapEntries(board, later, BASE, { now: NOW }), entries, `${board}: re-stamping every timestamp changes nothing`)
+  }
+})
+test("the job-row reader does not even SELECT posted_at (it is only an ORDER BY to pick the newest rows) and sitemap.ts never uses a job date as lastmod", () => {
+  const reader = read("src/lib/seo/sitemapJobs.ts")
+  const cols = reader.slice(reader.indexOf("const BASE_COLUMNS"), reader.indexOf("export const SITEMAP_ROWS_PER_BOARD"))
+  assert.doesNotMatch(cols, /posted_at|created_at|updated_at|source_posted_at/)
+  assert.match(reader, /\.order\("posted_at"/, "ordering by insertion time only selects WHICH rows; it is never emitted")
+  const src = read("src/app/sitemap.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
+  assert.doesNotMatch(src, /posted_at|postedAt|created_at|createdAt|updated_at|updatedAt|source_posted_at|fetched/)
+  // the private / WFH / abroad hubs (whose only children are dateless jobs) carry no lastmod either
+  for (const b of ["private", "wfh", "abroad"]) {
+    const line = src.split("\n").find(l => l.includes(`\${base}/jobs/${b}\``)) ?? ""
+    assert.ok(line.includes("url:"), `hub line for ${b} found`)
+    assert.doesNotMatch(line, /lastModified/, `${b} hub`)
+  }
+  assert.doesNotMatch(src, /jobEntries\.(private|wfh|abroad)\.map\(e => e\.lastModified\)/)
+  // and the policy no longer even models a job date
+  assert.doesNotMatch(read("src/lib/seo/sitemapPolicy.ts").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""), /posted_at/)
 })
 test("validator REJECTS a sitemap stamped with the generation time on every URL", () => {
   const stamped: SitemapEntry[] = Array.from({ length: 8 }, (_, i) => ({ url: `${BASE}/p${i}`, lastModified: new Date(NOW) }))
@@ -126,15 +154,9 @@ test("validator REJECTS a sitemap stamped with the generation time on every URL"
   const v = validateSitemapEntries(few, { base: BASE, now: NOW })
   assert.deepEqual(v.errors, []); assert.ok(v.warnings.some(w => /identical lastmod/.test(w)))
 })
-test("a row with no valid posting date is listed WITHOUT lastmod (never a made-up one)", () => {
-  const rows = [
-    genuine("nodate", ""),
-    genuine("junk", "2 days ago"),
-    genuine("future", "2099-01-01T00:00:00Z"),
-  ]
-  for (const e of jobRowsToSitemapEntries("private", rows, BASE, { now: NOW })) {
-    assert.equal(e.lastModified, undefined, e.url)
-  }
+test("a junk / future / missing posted_at can never produce a lastmod either (never a made-up one)", () => {
+  const rows = [genuine("nodate", ""), genuine("junk", "2 days ago"), genuine("future", "2099-01-01T00:00:00Z")]
+  for (const e of jobRowsToSitemapEntries("private", rows, BASE, { now: NOW })) assert.equal(e.lastModified, undefined, e.url)
 })
 test("toLastModified: first REAL non-future date wins; junk/empty → undefined", () => {
   assert.equal(toLastModified([undefined, "", "junk", "2026-08-01"], NOW)?.toISOString(), "2026-08-01T00:00:00.000Z")
@@ -143,10 +165,19 @@ test("toLastModified: first REAL non-future date wins; junk/empty → undefined"
   assert.equal(latestDate([undefined, new Date("2026-01-01"), new Date("2026-06-01")])?.toISOString(), "2026-06-01T00:00:00.000Z")
   assert.equal(latestDate([]), undefined)
 })
-test("govt lastmod is content_changed_at only — never updated_at or now", () => {
+test("govt lastmod is content_changed_at only — never updated_at, created_at, ingestion / fetch time or now", () => {
   const src = read("src/app/sitemap.ts")
-  assert.match(src, /j\.contentChangedAt/)
-  assert.doesNotMatch(src, /updatedAt|updated_at/)
+  assert.match(src, /const govtChangedAt = \(j: GovtJob, now: Date\) => toLastModified\(\[j\.contentChangedAt\], now\)/)
+  assert.doesNotMatch(src, /updatedAt|updated_at|createdAt|created_at|fetched|verifiedAt|sourcePublishedAt/)
+  // both govt detail pages and the govt hub use it; the hub takes the newest of those real dates
+  assert.match(src, /lastModified: govtChangedAt\(j, now\)/)
+  assert.match(src, /newestGovt = latestDate\(govtIndexable\.map\(j => govtChangedAt\(j, now\)\)\)/)
+  assert.match(src, /`\$\{base\}\/jobs\/govt`, lastModified: newestGovt/)
+  // behaviour: the stored change date is used verbatim; none / junk / future → omitted (never invented)
+  const changed = "2026-09-01T08:15:00.000Z"
+  assert.equal(toLastModified([changed], NOW)?.toISOString(), changed)
+  assert.equal(toLastModified([undefined], NOW), undefined)
+  assert.equal(toLastModified(["2099-12-31T00:00:00Z"], NOW), undefined)
 })
 
 /* ------------------------------- exclusions ------------------------------- */

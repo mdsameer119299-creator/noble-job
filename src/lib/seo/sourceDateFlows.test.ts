@@ -201,6 +201,8 @@ test("the visible page shows the date JobPosting cites ('Originally Posted On'),
   assert.ok(!labels.includes("Job Posted On"))
   const without = buildJobContent(base)
   assert.ok(!without.importantDates.some(d => /Originally/.test(d.label)), "no source date → no 'Originally posted' claim")
+  const wl = without.importantDates.map(d => d.label)
+  assert.ok(wl.includes("Listed on Noble Job") && !wl.includes("Job Posted On"), "no source date → the stored row date is labelled as NobleJob's listing date, never as the job's posting date")
 })
 test("the visible page shows the identifier JobPosting cites (Job ID), and the govt JobPosting carries none", () => {
   const c = buildJobContent({ board: "private", title: "t", company: "c", location: "Delhi", jobId: "abc-123" } as never)

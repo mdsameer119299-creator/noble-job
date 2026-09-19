@@ -438,7 +438,7 @@ test("API count / stats never use a raw `status = active` row count", () => {
 /* ----------------- sitemap / JobPosting / indexing: no empty SEO pages ----------------- */
 
 const row = (over: Partial<SitemapJobRow> = {}): SitemapJobRow => ({
-  id: "row-1", posted_at: "2026-08-01T00:00:00Z", provenance: "EMPLOYER", employer_id: "e", is_verified: true, status: "active",
+  id: "row-1", ...({ posted_at: "2026-08-01T00:00:00Z" } as object), provenance: "EMPLOYER", employer_id: "e", is_verified: true, status: "active",
   title: "Accounts Executive", company: "Acme", location: "Delhi", country: "UAE", description: DESC, ...over,
 })
 

@@ -382,7 +382,9 @@ export function buildJobContent(input: JobContentInput): JobContent {
           ...(postedLabel && postedLabel !== sourcePostedLabel ? [{ label: "Listed on Noble Job", value: postedLabel }] : []),
         ]
       : postedLabel
-        ? [{ label: "Job Posted On", value: postedLabel }]
+        // The stored row date is when the listing was ADDED to Noble Job, not the source's
+        // publication date — so it is labelled as exactly that.
+        ? [{ label: "Listed on Noble Job", value: postedLabel }]
         : []),
     {
       label: "Application Closes",
