@@ -1,15 +1,20 @@
 /**
  * Unified counts for homepage category cards, framed honestly as "roles to
- * explore" (a browsable-catalog figure) — NEVER as genuine/verified vacancies.
- * Govt sectors contribute real vacancies (sumRealVacancies over active rows);
- * private/WFH/abroad sectors contribute their actual catalog listing counts.
- * There is no fabricated multiplier or invented floor: synthetic demo content
- * is countable only as "roles to explore", never as a genuine open vacancy.
+ * explore" — NEVER as genuine/verified vacancies.
+ *
+ * COUNT INTEGRITY: a card's number is the size of the list its link opens. Private,
+ * WFH and abroad cards are therefore counted by the SAME list pipeline that serves the
+ * destination (renderable records only, the destination's own category filter, the
+ * synthetic-listings switch honoured — see visibleCounts.ts), with the same non-archived
+ * (Live + Verified tabs) semantics. There is no substring heuristic ("it" matching
+ * "hospitality"), no mixing of government vacancies into a private-jobs link, no invented
+ * floor or multiplier, and a category with nothing to open shows no number at all.
+ * Govt cards contribute real stated vacancies (sumRealVacancies over servable rows).
  */
 import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
-import { renderablePrivateInventory, renderableWfhInventory, renderableAbroadInventory, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { getPrivateVisibleCounts, getWfhVisibleCounts, getAbroadVisibleCounts, type StatusCounts } from "@/lib/services/visibleCounts"
 import type {
   CategoryIllustrationSlug,
   CategoryCardConfig,
@@ -32,69 +37,46 @@ function fmtRoles(n: number): string {
   return `${n.toLocaleString("en-IN")} Roles to Explore`
 }
 
-function matchesCat(jobCat: string, needles: string[]): boolean {
-  const hay = jobCat.toLowerCase()
-  return needles.some(n => hay.includes(n.toLowerCase()))
-}
+/** Open (Live + Verified tab) jobs of a list — exactly what its default tabs show. */
+const open = (c: StatusCounts): number => Math.max(0, c.live + c.verified)
 
-/** Actual count of browsable (non-archived) private catalog listings in a category. */
-function privateRoles(needles: string[]): number {
-  return renderablePrivateInventory().filter(
-    j =>
-      j.jobStatus !== "ARCHIVED_JOB" &&
-      matchesCat(j.cat || j.category || "", needles),
-  ).length
-}
-
-const BLUE_COLLAR_SET = new Set<string>(BLUE_COLLAR_CATEGORIES)
-
-/** Blue-collar umbrella count — exact category match, not the substring `matchesCat` heuristic. */
-function blueCollarRoles(): number {
-  return renderablePrivateInventory().filter(j => j.jobStatus !== "ARCHIVED_JOB" && BLUE_COLLAR_SET.has(j.cat)).length
-}
-
-function wfhRoles(needles: string[]): number {
-  return renderableWfhInventory().filter(j => j.jobStatus !== "ARCHIVED_JOB" && matchesCat(j.cat, needles)).length
-}
-
-function abroadRoles(needles: string[]): number {
-  return renderableAbroadInventory().filter(
-    j =>
-      j.jobStatus !== "ARCHIVED_JOB" &&
-      (matchesCat(j.category || "", needles) || needles.some(n => (j.country || "").toLowerCase().includes(n))),
-  ).length
-}
-
-/** Single source of truth for all category card vacancy numbers. DB-first for govt. */
+/** Single source of truth for all category card numbers. DB-first for govt. */
 export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplaceStat[]> {
   const pool = await getActiveGovtRows()
   const govtVacancies = (categorySlug?: string): number => {
     const jobs = categorySlug ? pool.filter(j => jobMatchesCategorySlug(j, categorySlug)) : pool
     return sumRealVacancies(jobs.filter(isVacancyBearingJob))
   }
+  // Each private card links to /jobs/private?category=<label>; count that very list.
+  const priv = async (category: string) => open(await getPrivateVisibleCounts({ category }))
+
+  const [it, banking, teaching, engineering, healthcare, sales, hospitality, blueCollar, wfh, aviation] = await Promise.all([
+    priv("IT / Software"),
+    priv("Banking"),
+    priv("Teaching"),
+    priv("Engineering"),
+    priv("Healthcare"),
+    priv("Sales & Marketing"),
+    priv("Hospitality"),
+    priv("blue-collar"),
+    getWfhVisibleCounts().then(open),
+    getAbroadVisibleCounts({ category: "Aviation" }).then(open),
+  ])
+
   const stats: { slug: CategoryIllustrationSlug; vacancies: number }[] = [
-    { slug: "it-software", vacancies: privateRoles(["software", "it", "developer", "devops"]) },
-    {
-      slug: "banking",
-      vacancies: govtVacancies("banking") + privateRoles(["bank", "finance"]),
-    },
-    {
-      slug: "teaching",
-      vacancies: govtVacancies("teaching") + privateRoles(["education", "teach"]),
-    },
-    {
-      slug: "engineering",
-      vacancies: govtVacancies("engineering") + govtVacancies("psu") + privateRoles(["engineer", "manufacturing"]),
-    },
-    { slug: "healthcare", vacancies: privateRoles(["health", "nurse", "medical"]) },
-    { slug: "sales-marketing", vacancies: privateRoles(["sales", "marketing"]) },
+    { slug: "it-software", vacancies: it },
+    { slug: "banking", vacancies: banking },
+    { slug: "teaching", vacancies: teaching },
+    { slug: "engineering", vacancies: engineering },
+    { slug: "healthcare", vacancies: healthcare },
+    { slug: "sales-marketing", vacancies: sales },
     { slug: "government-jobs", vacancies: govtVacancies() },
-    { slug: "work-from-home", vacancies: wfhRoles(["it", "software", "content", "customer", "data", "design", "finance", "hr", "health", "sales", "teach"]) },
+    { slug: "work-from-home", vacancies: wfh },
     { slug: "defence", vacancies: govtVacancies("defence") },
     { slug: "railway", vacancies: govtVacancies("railway") },
-    { slug: "aviation", vacancies: abroadRoles(["uae", "qatar", "saudi", "aviation", "cabin"]) },
-    { slug: "hospitality", vacancies: privateRoles(["hospitality", "hotel", "retail"]) },
-    { slug: "blue-collar-jobs", vacancies: blueCollarRoles() },
+    { slug: "aviation", vacancies: aviation },
+    { slug: "hospitality", vacancies: hospitality },
+    { slug: "blue-collar-jobs", vacancies: blueCollar },
   ]
 
   return stats.map(s => ({
@@ -130,7 +112,8 @@ export async function buildPremiumCategoryCards(): Promise<(CategoryCardConfig &
     const stat = bySlug[meta.slug]
     return {
       ...meta,
-      count: fmtRoles(stat?.vacancies ?? 0),
+      // Nothing to open → no number (never "0 Roles to Explore", never a padded figure).
+      count: (stat?.vacancies ?? 0) > 0 ? fmtRoles(stat!.vacancies) : "",
       badge: stat?.badge,
     }
   })

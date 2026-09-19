@@ -14,6 +14,12 @@
 -- rows stay NULL until a real source date is captured (adapter-supplied feed date,
 -- or an explicit editorial/employer entry).
 --
+-- Who writes it (never a default, never a trigger, never derived from another column):
+--   • sourced / aggregated / curated jobs → the SOURCE's own publication date, captured
+--     by an adapter or an explicit editorial entry;
+--   • employer-authored jobs (EMPLOYER provenance + employer_id) → stamped ONCE by the
+--     application (adminService.approveJob) at first approval = first public availability.
+--
 -- Counterpart of govt_jobs.source_published_at (migration 20260727000001).
 --
 -- ADDITIVE · IDEMPOTENT · REVERSIBLE. Not applied to any database by this change;
@@ -27,10 +33,10 @@ ALTER TABLE public.wfh_jobs    ADD COLUMN IF NOT EXISTS source_posted_at TIMESTA
 ALTER TABLE public.abroad_jobs ADD COLUMN IF NOT EXISTS source_posted_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN public.jobs.source_posted_at
-  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at.';
+  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at. Sourced jobs: the date the source published the job. Employer-authored jobs: stamped once by the app at FIRST admin approval (first public availability).';
 COMMENT ON COLUMN public.wfh_jobs.source_posted_at
-  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at.';
+  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at. Sourced jobs: the date the source published the job. Employer-authored jobs: stamped once by the app at FIRST admin approval (first public availability).';
 COMMENT ON COLUMN public.abroad_jobs.source_posted_at
-  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at.';
+  IS 'ORIGINAL employer/source publication date (JobPosting.datePosted). NULL = unknown. Never backfilled from posted_at/created_at. Sourced jobs: the date the source published the job. Employer-authored jobs: stamped once by the app at FIRST admin approval (first public availability).';
 
 COMMIT;

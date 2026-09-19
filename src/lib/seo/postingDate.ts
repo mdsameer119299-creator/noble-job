@@ -20,6 +20,17 @@
  * and the caller emits NO JobPosting — we never substitute a date.
  *
  * The visible "Posted …" date on pages is a separate concern and is unchanged.
+ *
+ * EMPLOYER-AUTHORED jobs (created by an employer directly on NobleJob, so they exist
+ * nowhere else): NobleJob's row-creation time is still NOT the date — the row is
+ * created when the employer SUBMITS it (often as a draft, then held `pending` for
+ * review), well before anything is public. The one event that legitimately is the
+ * employer's original posting is the FIRST PUBLICATION: the first time an approved
+ * EMPLOYER-owned job becomes publicly available. `employerPublicationStamp()` below is
+ * the only thing that decides that instant; the admin approval step writes it once into
+ * `source_posted_at` (see adminService.approveJob). Existing rows are never backfilled,
+ * so a job approved before this stamp existed has no date and no JobPosting until a real
+ * date is recorded.
  */
 import { parseRealDate } from "./jobPostingRules"
 
@@ -62,4 +73,30 @@ export function originalPostingDate(
   if (!iso) return undefined
   if (new Date(iso).getTime() > now.getTime() + FUTURE_TOLERANCE_MS) return undefined
   return iso
+}
+
+/** The row fields the publication stamp decision reads. */
+export interface PublicationStampInput {
+  provenance?: string | null
+  employer_id?: string | null
+  source_posted_at?: string | null
+}
+
+/**
+ * The ISO instant to record as `source_posted_at` when an EMPLOYER-authored job is
+ * FIRST published (admin approval), or `null` when nothing may be written:
+ *   • not EMPLOYER provenance, or no owning `employer_id` → the job was not authored on
+ *     NobleJob, so NobleJob's clock says nothing about when it was originally posted
+ *     (curated / aggregated jobs must carry the SOURCE's own date);
+ *   • a source date already exists → never overwritten (re-approval, admin correction).
+ */
+export function employerPublicationStamp(
+  row: PublicationStampInput | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!row) return null
+  if ((row.provenance ?? "").toString().trim().toUpperCase() !== "EMPLOYER") return null
+  if (!(row.employer_id ?? "").toString().trim()) return null
+  if (parseRealDate(row.source_posted_at)) return null
+  return now.toISOString()
 }

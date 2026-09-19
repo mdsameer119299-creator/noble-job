@@ -16,6 +16,7 @@ import type { CityLanding } from "@/lib/seo/landingTypes"
 import type { LandingJobBlocks } from "@/lib/seo/landing"
 import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal, displayValue } from "@/lib/jobs/renderable"
 import type { Job } from "@/types/job"
 
 /**
@@ -67,8 +68,8 @@ const privateCard = (j: Job) => ({
   href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
-  meta: [j.location, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.location, j.salary),
+  badge: displayValue(j.badge),
 })
 
 /** GENUINE open jobs for a city+category combo. Also used to decide the min-count gate. */

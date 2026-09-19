@@ -8,6 +8,7 @@ import { JobActionBar } from '@/components/jobs/JobActionBar'
 import { PrivateJobJsonLd } from '@/components/seo/PrivateJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { originalPostingDate } from '@/lib/seo/postingDate'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
@@ -56,6 +57,7 @@ export default async function JobDetailPage({ params }: Props) {
 
   const content = buildJobContent({
     board: 'private',
+    jobId: job.id,
     title: job.title,
     company: job.company,
     category: job.cat,
@@ -67,6 +69,8 @@ export default async function JobDetailPage({ params }: Props) {
     description: row.description || job.desc,
     // Stored posting timestamp only — `job.posted` is a display string, not a date.
     postedAt: row.posted_at,
+    // The ORIGINAL source date (the one JobPosting datePosted uses) — shown so the schema date is visible.
+    sourcePostedAt: originalPostingDate(job, 'private'),
     // The employer's real deadline only — never derived from the posting date.
     applicationDeadline: row.application_deadline ?? undefined,
     sample: isSample,

@@ -8,7 +8,7 @@ import {
   getWfhJobByIdLocal,
   type WfhJobFilters,
 } from "@/lib/services/wfhJobLocal"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { isSyntheticJobsVisible, applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { WfhJob } from "@/types/wfhJob"
 
 export type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
@@ -39,7 +39,8 @@ export async function getWfhJobsPaginated(filters: WfhJobFilters = {}) {
 }
 
 export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]> {
-  const local = getWfhJobsPaginatedLocal(filters, await isSyntheticJobsVisible()).items
+  const syntheticVisible = await isSyntheticJobsVisible()
+  const local = getWfhJobsPaginatedLocal(filters, syntheticVisible).items
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
 
   try {
@@ -57,7 +58,7 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
     // Incomplete / placeholder / unknown-provenance rows are not exposed (they stay
     // in the database); everything downstream — lists, related, counts — sees only
     // renderable rows.
-    let remote = sortByStatus(filterRenderable(data as unknown as WfhJob[], "wfh"))
+    let remote = sortByStatus(applySyntheticVisibility(filterRenderable(data as unknown as WfhJob[], "wfh"), syntheticVisible))
     if (filters.exp && filters.exp !== "all") {
       remote = remote.filter(j => matchesWfhExperience(j.experience, filters.exp!))
     }
@@ -76,7 +77,7 @@ export async function getWfhJobById(id: string): Promise<WfhJob | null> {
     if (!sb) return local
     const { data } = await sb.from("wfh_jobs").select("*").eq("id", id).maybeSingle()
     // Exists but incomplete → not found (never an empty job page, never a local swap).
-    if (data) return renderableOrNull(data as unknown as WfhJob, "wfh")
+    if (data) return renderableOrNull(applySyntheticVisibility([data as unknown as WfhJob], await isSyntheticJobsVisible())[0] ?? null, "wfh")
     return local
   } catch {
     return local

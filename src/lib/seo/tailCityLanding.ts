@@ -11,6 +11,7 @@ import { TAIL_CITY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { TAIL_CITIES, getTailCityBySlug, type TailCityDef } from "@/lib/data/cityTaxonomy"
 import { getQualifyingCategorySlugsForCity, categoryFromSlug } from "@/lib/seo/cityCategoryLanding"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal, displayValue } from "@/lib/jobs/renderable"
 import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import type { LandingJobBlocks } from "@/lib/seo/landing"
 import type { Job } from "@/types/job"
@@ -37,8 +38,8 @@ const privateCard = (j: Job) => ({
   href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
-  meta: [j.location, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.location, j.salary),
+  badge: displayValue(j.badge),
 })
 
 export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCategorySlugs: string[] = []): LandingView {

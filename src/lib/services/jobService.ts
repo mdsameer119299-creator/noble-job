@@ -6,7 +6,7 @@ import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
 import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { isSyntheticJobsVisible, applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
 
 /**
@@ -104,8 +104,12 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     // Map WITHOUT inventing values, drop every record that cannot be shown as a
     // job (incomplete / placeholder / unknown provenance) — the rows stay in the
     // database, they are just not exposed — then count and paginate the SAME set.
+    // The admin "synthetic jobs visible" switch applies to database rows too.
     const pool = sortByStatus(
-      filterRenderable(data.map(row => mapPrivateJobRow(row as Record<string, unknown>)), "private"),
+      applySyntheticVisibility(
+        filterRenderable(data.map(row => mapPrivateJobRow(row as Record<string, unknown>)), "private"),
+        syntheticVisible,
+      ),
     )
     if (shouldFallbackToLocal(pool.length, renderablePrivateInventory().length)) return localResult()
     const start = (page - 1) * limit
@@ -137,7 +141,7 @@ export async function getJobById(id: string): Promise<Job | null> {
     }
     // A row that EXISTS but is incomplete is "not found" — never an empty job page,
     // and never silently swapped for a different (local) record.
-    if (data) return renderableOrNull(mapPrivateJobRow(data as Record<string, unknown>), "private")
+    if (data) return renderableOrNull(applySyntheticVisibility([mapPrivateJobRow(data as Record<string, unknown>)], await isSyntheticJobsVisible())[0] ?? null, "private")
     return local
   } catch (err) {
     logQueryFallback("getJobById", err)

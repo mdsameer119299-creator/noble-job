@@ -35,6 +35,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   }
 
   if (route === "recommended") {
+    // A recommendation links to /jobs/private/<id>. Those pages resolve database rows only
+    // when the site serves the database (NEXT_PUBLIC_JOB_DATA_SOURCE=supabase); otherwise a
+    // database job would be a dead link, so nothing is recommended.
+    const { useLocalInventoryOnly } = await import("@/lib/supabase/useLocalInventory")
+    if (useLocalInventoryOnly()) return NextResponse.json({ data: [] })
     const category = (candidate as any).category
     let q = sb.from("jobs").select("*").eq("status", "active")
     if (category) q = q.eq("category", category)

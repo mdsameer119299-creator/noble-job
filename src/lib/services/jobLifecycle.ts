@@ -55,6 +55,13 @@ export const EMPLOYER_PROTECTED_JOB_FIELDS = [
   "created_at",
   "approved_at",
   "provenance",
+  // The original-publication date behind JobPosting `datePosted`. For employer-authored
+  // jobs it is recorded ONCE by the admin approval step (postingDate.employerPublicationStamp);
+  // an employer must not be able to choose or rewrite the date structured data cites.
+  "source_posted_at",
+  "sourcePostedAt",
+  "source_published_at",
+  "sourcePublishedAt",
   "views_count",
   // Lifecycle bookkeeping is NobleJob-internal. `application_deadline` stays
   // employer-editable: it is the employer's own real closing date.

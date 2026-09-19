@@ -28,6 +28,18 @@ export interface JobContentInput {
   /** REAL stored posting date. When absent the page shows no posted date. */
   postedAt?: string
   /**
+   * The ORIGINAL employer/source publication date (`source_posted_at`) — the only date
+   * JobPosting `datePosted` is built from. When present it is shown on the page too, so
+   * the structured-data date is always visible; NobleJob's own listing date (`postedAt`)
+   * is then labelled as such.
+   */
+  sourcePostedAt?: string
+  /**
+   * The job's identifier, shown on the page as "Job ID" — the same value JobPosting
+   * `identifier` carries, so the structured-data identifier is always visible.
+   */
+  jobId?: string
+  /**
    * The employer's REAL application deadline, if the record has one. NobleJob
    * never derives a deadline from the posting date, and its internal review date
    * must never be passed here.
@@ -249,6 +261,7 @@ export function buildJobContent(input: JobContentInput): JobContent {
   const empType = input.employmentType || "Full Time"
   // Dates come ONLY from the stored record. No "today" / "+30 days" fallbacks.
   const postedLabel = formatDateLabel(parseRealDate(input.postedAt))
+  const sourcePostedLabel = formatDateLabel(parseRealDate(input.sourcePostedAt))
   const validThrough = parseRealDate(input.applicationDeadline)
   const validLabel = formatDateLabel(validThrough)
 
@@ -326,13 +339,21 @@ export function buildJobContent(input: JobContentInput): JobContent {
         { label: "Applications", value: "Not accepted for this listing" },
       ]
     : [
-    ...(postedLabel ? [{ label: "Job Posted On", value: postedLabel }] : []),
+    ...(sourcePostedLabel
+      ? [
+          { label: "Originally Posted On", value: sourcePostedLabel },
+          ...(postedLabel && postedLabel !== sourcePostedLabel ? [{ label: "Listed on Noble Job", value: postedLabel }] : []),
+        ]
+      : postedLabel
+        ? [{ label: "Job Posted On", value: postedLabel }]
+        : []),
     {
       label: "Application Closes",
       value: validLabel ?? "Not stated by the employer — confirm on the application page",
     },
     { label: "Mode of Application", value: "Online" },
     { label: "Job Type", value: empType },
+    ...(input.jobId ? [{ label: "Job ID", value: input.jobId }] : []),
   ]
 
   const faqs = buildFaqs(input, { parsedSalary, fresher, validLabel, cat, where, company })

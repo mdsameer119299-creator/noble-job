@@ -6,6 +6,7 @@ import { getJobs } from '@/lib/services/jobService'
 import { AbroadJobJsonLd } from '@/components/seo/AbroadJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { originalPostingDate } from '@/lib/seo/postingDate'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
@@ -49,6 +50,7 @@ export default async function AbroadJobDetailPage({ params }: Props) {
 
   const content = buildJobContent({
     board: 'abroad',
+    jobId: job.id,
     title: job.title,
     company: job.company,
     category: job.category,
@@ -59,6 +61,7 @@ export default async function AbroadJobDetailPage({ params }: Props) {
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    sourcePostedAt: originalPostingDate(job, 'abroad'),
     applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
     sample: isSample,
   })

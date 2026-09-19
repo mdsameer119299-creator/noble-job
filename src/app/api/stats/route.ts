@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { getMarketplaceTotals } from "@/lib/data/jobInventory"
+import { getVisibleBoardCounts } from "@/lib/services/visibleCounts"
 
 /**
  * Public stats. TWO HONEST BUCKETS (see src/lib/jobs/provenance.ts):
@@ -11,8 +11,8 @@ import { getMarketplaceTotals } from "@/lib/data/jobInventory"
  *    It is explicitly a "roles to explore" figure — NOT a genuine-openings claim.
  */
 export async function GET() {
-  const marketplace = getMarketplaceTotals()
-  const catalogJobs = marketplace.opportunities
+  // Counted by the list pipeline (renderable only, synthetic switch honoured).
+  const catalogJobs = (await getVisibleBoardCounts()).total.all
 
   const empty = {
     totalJobs: 0,

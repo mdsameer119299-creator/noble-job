@@ -7,7 +7,7 @@
  * previous good sitemap" rather than silently publishing one with every job
  * URL missing.
  */
-import { isSupabaseConfigured } from "@/lib/supabase/config"
+import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import type { SitemapJobBoard, SitemapJobRow } from "@/lib/seo/sitemapPolicy"
 
@@ -27,9 +27,23 @@ const BASE_COLUMNS: Record<SitemapJobBoard, string> = {
 
 export const SITEMAP_ROWS_PER_BOARD = 2000
 
-/** Newest genuine-candidate rows for a board. Returns [] only when Supabase is not configured. */
+/**
+ * Do the job DETAIL routes serve database rows? Only with Supabase configured AND
+ * `NEXT_PUBLIC_JOB_DATA_SOURCE=supabase` — otherwise `getJobById` & co. resolve ids
+ * against the local inventory alone, so a database job would 404. A sitemap URL (and a
+ * "live jobs" count) must never point at a page that does not open, so both use the
+ * same switch the detail pages use.
+ */
+export function detailPagesServeDatabase(): boolean {
+  return !useLocalInventoryOnly()
+}
+
+/**
+ * Newest genuine-candidate rows for a board. Returns [] when Supabase is not configured
+ * or the detail pages are not serving database rows (see detailPagesServeDatabase).
+ */
 export async function readSitemapJobRows(board: SitemapJobBoard): Promise<SitemapJobRow[]> {
-  if (!isSupabaseConfigured()) return []
+  if (!detailPagesServeDatabase()) return []
   const { supabaseAdmin } = await import("@/lib/supabase/admin")
 
   // `application_deadline` arrives with migration 20260727000002; read it when it

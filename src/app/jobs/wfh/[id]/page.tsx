@@ -8,6 +8,8 @@ import { JobActionBar } from '@/components/jobs/JobActionBar'
 import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { originalPostingDate } from '@/lib/seo/postingDate'
+import { countryDisplayName, resolveApplicantCountry } from '@/lib/seo/jobPostingRules'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
@@ -51,6 +53,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
 
   const content = buildJobContent({
     board: 'wfh',
+    jobId: job.id,
     title: job.title,
     company: job.company,
     category: job.cat,
@@ -62,6 +65,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    sourcePostedAt: originalPostingDate(job, 'wfh'),
     applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
     sample: isSample,
     remote: true,
@@ -95,6 +99,11 @@ export default async function WfhJobDetailPage({ params }: Props) {
   )
 
   const salaryBadge = content.parsedSalary ? describeSalary(content.parsedSalary) : displayValue(job.salary)
+  // The permitted country JobPosting.applicantLocationRequirements is built from must be
+  // visible: shown whenever the record STATES it (stored field or its own text), never assumed.
+  const applicantCountry = countryDisplayName(
+    resolveApplicantCountry((job as { applicant_country?: string | null }).applicant_country, job.type, job.title, job.description),
+  )
 
   return (
     <JobDetailTemplate
@@ -108,6 +117,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
       subtitle={joinReal(job.company, job.cat, 'Remote (Work From Home)')}
       badges={[
         '🏠 Work From Home',
+        applicantCountry ? `🌏 Open to candidates in ${applicantCountry}` : '',
         displayValue(job.type) ? `💼 ${displayValue(job.type)}` : '',
         salaryBadge ? `💰 ${salaryBadge}` : '',
         displayValue(job.qualification) ? `🎓 ${displayValue(job.qualification)}` : '',

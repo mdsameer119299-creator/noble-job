@@ -271,8 +271,10 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     ...jobLocation,
     ...remoteFields,
     ...baseSalary,
+    // The id is NobleJob's own posting id (it appears in the page URL) — not an id issued
+    // by the hiring organisation — so the PropertyValue is attributed to NobleJob.
     ...(job.identifier
-      ? { identifier: { "@type": "PropertyValue", name: job.organizationName, value: job.identifier } }
+      ? { identifier: { "@type": "PropertyValue", name: SITE_NAME, value: job.identifier } }
       : {}),
     url: job.url.startsWith("http") ? job.url : `${base}${job.url}`,
     ...(job.industry ? { industry: job.industry } : {}),

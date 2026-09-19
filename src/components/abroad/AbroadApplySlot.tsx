@@ -1,6 +1,7 @@
 'use client'
 import type { AbroadJob } from '@/types/abroadJob'
 import { classifyProvenance } from '@/lib/jobs/provenance'
+import { applyRouteFor } from '@/lib/jobs/applyRoute'
 import { ApplyButton } from '@/components/jobs/ApplyButton'
 
 interface AbroadApplySlotProps { job: AbroadJob }
@@ -13,13 +14,16 @@ interface AbroadApplySlotProps { job: AbroadJob }
  * same as private/WFH. SYNTHETIC (demo) listings show an unavailable state.
  */
 export function AbroadApplySlot({ job }: AbroadApplySlotProps) {
-  const isAggregated = classifyProvenance(job) === 'AGGREGATED'
+  // Same decision JobPosting eligibility uses (lib/jobs/applyRoute.ts): the external
+  // career-page link appears ONLY for a genuine AGGREGATED job with a real URL — never
+  // an href="#" — so the page and its structured data can never disagree about Apply.
+  const isExternal = applyRouteFor('abroad', job) === 'external'
 
-  if (isAggregated) {
+  if (isExternal) {
     return (
       <div>
         <a
-          href={job.apply_url || '#'}
+          href={job.apply_url}
           target="_blank"
           rel="noopener noreferrer"
           style={{

@@ -6,7 +6,6 @@ import {
   getPrivateJobsLocal,
   getPrivateJobByIdLocal,
   getPrivateJobsFeaturedLocal,
-  getPrivateJobsCountLocal,
 } from "@/lib/services/jobLocal"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
@@ -48,14 +47,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (p?.[0] === "count") {
-      if (useLocalInventoryOnly()) {
-        return NextResponse.json({ count: getPrivateJobsCountLocal(syntheticVisible) })
-      }
-      // NO EMPTY JOBS: the count is the size of the SAME renderable set the list
-      // shows — never a raw `status = active` row count (which includes incomplete rows).
+      // NO EMPTY JOBS / count integrity: the number of OPEN jobs in the SAME renderable,
+      // switch-honouring set the list serves (its Live + Verified tabs) — in local and
+      // database mode alike. Never a raw row count.
       const { getJobs } = await import("@/lib/services/jobService")
-      const { total } = await getJobs({ page: 1, limit: 1 })
-      return NextResponse.json({ count: total })
+      const { counts } = await getJobs({ page: 1, limit: 1 })
+      return NextResponse.json({ count: Math.max(0, (counts?.all ?? 0) - (counts?.archived ?? 0)) })
     }
 
     const filter = {

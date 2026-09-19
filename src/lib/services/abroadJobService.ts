@@ -7,7 +7,7 @@ import {
   getAbroadJobByIdLocal,
   type AbroadJobFilters,
 } from "@/lib/services/abroadJobLocal"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { isSyntheticJobsVisible, applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { AbroadJob } from "@/types/abroadJob"
 
 export type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -22,7 +22,8 @@ export async function getAbroadJobsPaginated(filters: AbroadJobFilters = {}) {
 }
 
 export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<AbroadJob[]> {
-  const local = getAbroadJobsPaginatedLocal(filters, await isSyntheticJobsVisible()).items
+  const syntheticVisible = await isSyntheticJobsVisible()
+  const local = getAbroadJobsPaginatedLocal(filters, syntheticVisible).items
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
 
   try {
@@ -36,7 +37,7 @@ export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<Abr
     const { data, error } = await q
     if (error || !data?.length) return local
     // Incomplete rows stay in the database but are never exposed.
-    const remote = sortByStatus(filterRenderable(data as unknown as AbroadJob[], "abroad"))
+    const remote = sortByStatus(applySyntheticVisibility(filterRenderable(data as unknown as AbroadJob[], "abroad"), syntheticVisible))
     return remote.length ? remote : local
   } catch {
     return local
@@ -52,7 +53,7 @@ export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
     if (!sb) return local
     const { data } = await sb.from("abroad_jobs").select("*").eq("id", id).maybeSingle()
     // Exists but incomplete → not found (never an empty job page, never a local swap).
-    if (data) return renderableOrNull(data as unknown as AbroadJob, "abroad")
+    if (data) return renderableOrNull(applySyntheticVisibility([data as unknown as AbroadJob], await isSyntheticJobsVisible())[0] ?? null, "abroad")
     return local
   } catch {
     return local

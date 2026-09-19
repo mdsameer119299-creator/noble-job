@@ -24,7 +24,7 @@ export interface GenuineJobCounts {
   total: number
 }
 
-export async function getGenuineJobCounts(): Promise<GenuineJobCounts> {
+export async function getGenuineJobCounts(opts: { govt?: boolean } = {}): Promise<GenuineJobCounts> {
   const perBoard = await Promise.all(
     BOARDS.map(async b => {
       try {
@@ -37,6 +37,7 @@ export async function getGenuineJobCounts(): Promise<GenuineJobCounts> {
   )
   let govt = 0
   try {
+    if (opts.govt === false) throw new Error("govt not requested")
     const { getActiveGovtRows } = await import("@/lib/services/govtStatsSource")
     govt = filterActionable(await getActiveGovtRows(), "govt").length
   } catch {

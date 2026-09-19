@@ -274,6 +274,18 @@ export function resolveApplicantCountry(
   return resolveCountryIso(stored) ?? explicitApplicantCountry(...texts)
 }
 
+/** English display name for an ISO 3166-1 alpha-2 code ("IN" → "India"), or undefined. */
+export function countryDisplayName(iso: string | null | undefined): string | undefined {
+  const code = (iso ?? "").trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) return undefined
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(code)
+    return name && name !== code ? name : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Employer identity                                                   */
 /* ------------------------------------------------------------------ */

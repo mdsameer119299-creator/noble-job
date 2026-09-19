@@ -21,7 +21,8 @@ import {
 import { buildGovtFactsDescription, buildStoredDescription } from "./jobPostingDescription"
 import { originalPostingDate } from "./postingDate"
 import { isRenderableJob } from "../jobs/renderable"
-import { isDeliveredToEmployerViaPlatform, isSchemaEligible } from "../jobs/provenance"
+import { isSchemaEligible } from "../jobs/provenance"
+import { applyRouteFor, govtApplyRoute, isGenuineApplyRoute } from "../jobs/applyRoute"
 import { govtClassifiable, isSchemaEligible as isGovtSchemaEligible } from "../jobs/govtProvenance"
 import { canEmitJobPosting, govtRecordTypeOf } from "../govt/recordType"
 import { parseSalary } from "./salary"
@@ -44,7 +45,14 @@ type SalaryFields = Partial<{
  * without a substantive stored description yields no JobPosting.
  */
 
-function salaryFields(s: JobContent["parsedSalary"]): SalaryFields {
+/**
+ * baseSalary from the STORED salary text, and only when that text states BOTH the
+ * currency and the pay period. The lenient page-copy parser (`content.parsedSalary`)
+ * defaults an unstated currency to INR and an unstated period to "per year"; those
+ * guesses must never reach structured data, so the schema re-parses in explicit mode.
+ */
+function salaryFields(salaryText: unknown): SalaryFields {
+  const s = parseSalary(typeof salaryText === "string" ? salaryText : undefined, { requireExplicit: true })
   return s ? { salaryMin: s.minValue, salaryMax: s.maxValue, salaryCurrency: s.currency, salaryUnit: s.unitText } : {}
 }
 
@@ -56,6 +64,11 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
   // Synthetic/demo, unclassified, closed or non-open rows never carry JobPosting;
   // neither does a record too incomplete to be shown as a job at all.
   if (!isSchemaEligible(job) || !isRenderableJob(job, "private")) return null
+  // A JobPosting promises the candidate can apply. Only an employer-delivered NobleJob
+  // application (or an external redirect to the employer/source) is a real route; the
+  // private-board Apply control stores aggregated / curated applications ownerless.
+  const route = applyRouteFor("private", job)
+  if (!isGenuineApplyRoute(route)) return null
   const row = job as Job & {
     source_posted_at?: string | null
     description?: string
@@ -89,15 +102,18 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
     applyUrl: row.apply_url || job.applyUrl,
     // The employer's own logo only — `job.logo` may be initials, not a URL.
     organizationLogo: cleanHttpUrl(job.logoUrl) || cleanHttpUrl(job.logo),
-    location: job.location || "India",
+    location: job.location,
     addressLocality: job.location,
+    // The private board is India-only ("Private Jobs India" — the page title, and the
+    // location is an Indian city/state), so the country is the board's, not a guess.
     addressCountry: "IN",
-    ...salaryFields(content.parsedSalary),
-    industry: job.cat || "Private Sector",
-    qualifications: row.experience_required || job.exp,
+    ...salaryFields(job.salary),
+    // Category is shown on the page; no invented industry when the record has none.
+    industry: job.cat || undefined,
+    // `qualifications` is education/credentials — the record stores experience only.
     experienceRequirements: row.experience_required || job.exp,
     identifier: job.id,
-    directApply: isDeliveredToEmployerViaPlatform(job),
+    directApply: route === "employer",
   })
 }
 
@@ -107,6 +123,9 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
 
 export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
   if (!isSchemaEligible(job) || !isRenderableJob(job, "wfh")) return null
+  // Only a genuine application route (see private board above; same WFH Apply control).
+  const route = applyRouteFor("wfh", job)
+  if (!isGenuineApplyRoute(route)) return null
   // TELECOMMUTE only when the STORED record establishes the role is fully (100%)
   // remote: positive evidence in its type / description, and no hybrid, on-site or
   // office-day wording anywhere. Being on the WFH board is not evidence; a hybrid or
@@ -144,13 +163,13 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
     location: "Remote",
     remote: true,
     applicantCountry,
-    ...salaryFields(content.parsedSalary),
-    industry: job.cat || "Work From Home",
-    qualifications: job.qualification || job.experience,
+    ...salaryFields(job.salary),
+    industry: job.cat || undefined,
+    qualifications: job.qualification || undefined,
     educationRequirements: job.qualification,
     experienceRequirements: job.experience,
     identifier: job.id,
-    directApply: isDeliveredToEmployerViaPlatform(job),
+    directApply: route === "employer",
   })
 }
 
@@ -160,6 +179,10 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
 
 export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
   if (!isSchemaEligible(job) || !isRenderableJob(job, "abroad")) return null
+  // Employer-delivered application, or the external employer career page the abroad
+  // Apply control really opens (AGGREGATED). Curated abroad postings apply ownerless.
+  const route = applyRouteFor("abroad", job)
+  if (!isGenuineApplyRoute(route)) return null
   const iso = resolveCountryIso(job.country)
   // The location is a city only when it is not just the country repeated.
   const loc = (job.location ?? "").trim()
@@ -190,12 +213,11 @@ export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
     location: job.location || job.country,
     ...(locIsCountry ? {} : { addressLocality: loc }),
     addressCountry: iso, // unresolvable country → no JobPosting
-    ...salaryFields(content.parsedSalary),
-    industry: job.category || "International",
-    qualifications: job.experience,
+    ...salaryFields(job.salary),
+    industry: job.category || undefined,
     experienceRequirements: job.experience,
     identifier: job.id,
-    directApply: isDeliveredToEmployerViaPlatform(job),
+    directApply: route === "employer",
   })
 }
 
@@ -220,6 +242,9 @@ export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) 
   if (!isGovtSchemaEligible(govtClassifiable(job))) return null
   if (!isRenderableJob(job as never, "govt")) return null
   if (!canEmitJobPosting(govtRecordTypeOf(job))) return null
+  // The candidate must be sent to a real, recruiting-body destination (never the generic
+  // catch-all portal the link resolver falls back to).
+  if (!isGenuineApplyRoute(govtApplyRoute(job))) return null
   // The official source's real publication date only (never fetch / created / updated time).
   const datePosted = originalPostingDate(job, "govt")
   if (!datePosted) return null
@@ -244,7 +269,6 @@ export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) 
   })
   if (!description) return null
 
-  const s = parseSalary(job.salary)
   return jobPostingSchema({
     title: job.title,
     description,
@@ -261,11 +285,14 @@ export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) 
     addressLocality: helpers.localityFor(job.location, job.state),
     addressRegion: helpers.regionFor(job.state),
     addressCountry: "IN",
-    ...(s ? { salaryMin: s.minValue, salaryMax: s.maxValue, salaryCurrency: s.currency, salaryUnit: s.unitText } : {}),
+    ...salaryFields(job.salary),
+    // "Government" is the board itself, stated on the page (H1/breadcrumb/org).
     industry: "Government",
-    qualifications: job.qualification,
+    // The qualification is an education requirement (parsed below), not free-form
+    // "qualifications" — emit it once, in the field Google reads for it.
     educationRequirements: job.qualification,
-    identifier: job.id,
+    // No `identifier`: the government page does not display a notification/job id, and
+    // a structured-data field must be visible on the page.
     // Applications are made on the official portal, not delivered via NobleJob.
     directApply: false,
   })

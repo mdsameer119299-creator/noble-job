@@ -5,7 +5,7 @@ import { CategoryHero } from '@/components/heroes/CategoryHero'
 import { AbroadJobsPanel } from '@/components/abroad/AbroadJobsPanel'
 import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
-import { getAbroadCountryCounts } from '@/lib/data/jobInventory'
+import { getVisibleAbroadCountryCounts } from '@/lib/services/visibleCounts'
 
 type SP = { searchParams: Promise<Record<string, string | string[] | undefined>> }
 
@@ -16,7 +16,7 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
 
 export default async function AbroadJobsPage({ searchParams }: SP) {
   const page = pageFromSearchParams(await searchParams)
-  const countries = getAbroadCountryCounts()
+  const countries = await getVisibleAbroadCountryCounts()
   return (
     <div style={{ background: '#f8faff', minHeight: '100vh' }}>
       <CategoryHero variant="abroad" />

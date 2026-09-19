@@ -1,13 +1,21 @@
-import { getWfhInventoryCounts, WFH_CATEGORY_LIST } from "@/lib/data/jobInventory"
+import { WFH_CATEGORY_LIST } from "@/lib/data/jobInventory"
+import { getWfhVisibleCounts } from "@/lib/services/visibleCounts"
+import { getGenuineJobCounts } from "@/lib/services/genuineCounts"
 import { formatCounter } from "@/lib/config/jobStrategy"
 
-export function WfhStatsHero() {
-  const c = getWfhInventoryCounts()
+/**
+ * WFH stats strip. Counts come from the list pipeline (renderable only, synthetic switch
+ * honoured); "Live Remote" is the GENUINE live count and is omitted when there is none.
+ */
+export async function WfhStatsHero() {
+  const [c, genuine] = await Promise.all([
+    getWfhVisibleCounts(),
+    getGenuineJobCounts({ govt: false }).then(g => g.wfh).catch(() => 0),
+  ])
   const stats = [
-    { num: formatCounter(c.all), label: "WFH Jobs", icon: "💼" },
+    { num: formatCounter(c.all), label: "WFH Roles to Explore", icon: "💼" },
     { num: String(WFH_CATEGORY_LIST.length), label: "Categories", icon: "📂" },
-    { num: formatCounter(c.live), label: "Live Remote", icon: "🟢" },
-    { num: formatCounter(c.live + c.verified), label: "Active Listings", icon: "✅" },
+    ...(genuine > 0 ? [{ num: formatCounter(genuine), label: "Live Remote", icon: "🟢" }] : []),
   ]
   return (
     <div style={{ background: "#fff", borderBottom: "2px solid #f0f4ff", padding: "14px 0" }}>

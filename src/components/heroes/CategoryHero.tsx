@@ -16,23 +16,24 @@ interface CategoryHeroProps {
 
 function buildDynamicBullets(variant: HeroVariant, stats: HeroStatsPayload, govtSlug?: string) {
   const n = (key: string) => stats.counters.find(c => c.key === key)?.value ?? 0
+  // Every figure is a real count (see heroStatsService): the catalog is "roles to
+  // explore"; "live" appears only when GENUINE openings exist. No "verified" claim is
+  // derived from a count of sample listings.
   if (variant === 'private') {
     return [
-      `${n('all').toLocaleString('en-IN')}+ Opportunities`,
-      `${n('live').toLocaleString('en-IN')}+ Live Jobs`,
-      `${n('verified').toLocaleString('en-IN')}+ Verified Jobs`,
+      `${n('all').toLocaleString('en-IN')} Roles to Explore`,
+      ...(n('live') > 0 ? [`${n('live').toLocaleString('en-IN')} Live Jobs`] : []),
     ]
   }
   if (variant === 'wfh') {
     return [
-      `${n('all').toLocaleString('en-IN')}+ Opportunities`,
-      `${n('live').toLocaleString('en-IN')}+ Live Remote Jobs`,
-      `${n('verified').toLocaleString('en-IN')}+ Verified Companies`,
+      `${n('all').toLocaleString('en-IN')} Remote Roles to Explore`,
+      ...(n('live') > 0 ? [`${n('live').toLocaleString('en-IN')} Live Remote Jobs`] : []),
     ]
   }
   if (variant === 'abroad') {
-    const top = stats.countryCards?.slice(0, 3).map(c => c.name) ?? []
-    return [`${n('countries')}+ Countries`, ...top, `${n('all').toLocaleString('en-IN')}+ Global Jobs`].filter(Boolean)
+    const top = stats.countryCards?.filter(c => c.jobs > 0).slice(0, 3).map(c => c.name) ?? []
+    return [`${n('countries')} Countries`, ...top, `${n('all').toLocaleString('en-IN')} Roles to Explore`].filter(Boolean)
   }
   if (variant === 'govt' || !!govtSlug) {
     return [

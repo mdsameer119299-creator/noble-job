@@ -110,20 +110,6 @@ function applyUrlOf(j: Classifiable): string {
   return (j.applyUrl ?? j.apply_url ?? "").toString().trim()
 }
 
-function officialUrlOf(j: Classifiable): string {
-  return (
-    j.officialUrl ??
-    j.official_url ??
-    j.notificationUrl ??
-    j.notification_url ??
-    j.notificationPdf ??
-    j.notification_pdf ??
-    ""
-  )
-    .toString()
-    .trim()
-}
-
 function sourceOf(j: Classifiable): string {
   return (j.source ?? "").toString().trim().toLowerCase()
 }
@@ -139,9 +125,26 @@ export function hasRealApplyUrl(url?: string | null): boolean {
   return /^https?:\/\//i.test(u)
 }
 
-/** Real official/notification URL evidence (government). */
+/**
+ * The catch-all portal `resolveGovtJobLinks` falls back to when it cannot match a
+ * row to a recruiting body (or matches only a generic municipal / PSC bucket). It
+ * is a directory homepage, NOT the recruiting body's own site or notification, so
+ * it is never evidence that a government row is a real, sourced opportunity.
+ */
+export function isGenericGovPortalUrl(url?: string | null): boolean {
+  const u = (url ?? "").trim()
+  if (!u) return false
+  return /^https?:\/\/(www\.)?india\.gov\.in\/?(\?.*)?(#.*)?$/i.test(u)
+}
+
+/** Real official/notification URL evidence (government). A generic catch-all portal is not evidence. */
 function hasRealOfficialUrl(j: Classifiable): boolean {
-  return hasRealApplyUrl(officialUrlOf(j))
+  return [
+    j.officialUrl, j.official_url, j.notificationUrl, j.notification_url, j.notificationPdf, j.notification_pdf,
+  ].some(v => {
+    const u = (v ?? "").toString().trim()
+    return hasRealApplyUrl(u) && !isGenericGovPortalUrl(u)
+  })
 }
 
 /** Trusted employer ownership + verification evidence. */

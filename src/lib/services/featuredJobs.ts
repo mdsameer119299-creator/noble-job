@@ -1,4 +1,6 @@
-import { isSupabaseConfigured } from "@/lib/supabase/config"
+// Detail pages resolve database rows only when the site serves the database — a card that
+// links to a page that would 404 is an empty job, so the same switch gates every list here.
+import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
 import { filterActionable, displayValue } from "@/lib/jobs/renderable"
 import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
@@ -34,7 +36,7 @@ const privateActionable = (rows: unknown[]): Job[] =>
 export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
   const localGenuineFeatured = () => filterActionable(getPrivateJobsFeaturedLocal(200, true), "private").slice(0, limit)
 
-  if (!isSupabaseConfigured()) return localGenuineFeatured()
+  if (useLocalInventoryOnly()) return localGenuineFeatured()
 
   try {
     const { createClient } = await import("@/lib/supabase/server")
@@ -67,7 +69,7 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
 }
 
 async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
-  if (!isSupabaseConfigured()) return []
+  if (useLocalInventoryOnly()) return []
   try {
     const { createClient } = await import("@/lib/supabase/server")
     const sb = await createClient()
@@ -95,7 +97,7 @@ async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
 }
 
 async function getFeaturedAbroadJobs(limit = 4): Promise<AbroadJob[]> {
-  if (!isSupabaseConfigured()) return []
+  if (useLocalInventoryOnly()) return []
   try {
     const { createClient } = await import("@/lib/supabase/server")
     const sb = await createClient()
@@ -165,7 +167,7 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
  * an honest empty state rather than made-up openings.
  */
 export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promise<FeaturedJobCard[]> {
-  if (!isSupabaseConfigured()) return []
+  if (useLocalInventoryOnly()) return []
   const table = board === "private" ? "jobs" : board === "wfh" ? "wfh_jobs" : "abroad_jobs"
   try {
     const { createClient } = await import("@/lib/supabase/server")

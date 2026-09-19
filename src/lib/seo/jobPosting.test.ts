@@ -133,8 +133,10 @@ const wfhJob = (over: Obj = {}): WfhJob =>
     source_posted_at: POSTED,
     apply_url: "https://careers.remoteco.example/apply/1",
     description: WFH_DESC,
-    provenance: "AGGREGATED",
-    source: "himalayas",
+    // Employer-authored: the Apply flow reaches the owning employer (route "employer").
+    provenance: "EMPLOYER",
+    employer_id: "emp-1",
+    source: "employer",
     status: "active",
     ...over,
   }) as unknown as WfhJob
@@ -400,7 +402,6 @@ test("private description = the STORED employer description + stored facts", () 
 test("description never carries generated employer claims, benefits, responsibilities or stages", () => {
   const cases: Array<[string, unknown]> = [
     ["private", buildPrivateJobPosting(employerJob(), contentFor(employerJob(), { postedAt: POSTED }))],
-    ["aggregated", buildPrivateJobPosting(aggregatedJob(), contentFor(aggregatedJob(), { postedAt: POSTED }))],
     ["wfh", buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), contentFor(employerJob(), { postedAt: POSTED }))],
     ["abroad", buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED }))],
     ["govt", buildGovtJobPosting(govtJob(), govtHelpers)],
@@ -480,12 +481,16 @@ test("employer job delivered through NobleJob → directApply true", () => {
   const j = employerJob()
   assert.equal(asObj(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED }))).directApply, true)
 })
-test("aggregated / curated jobs → directApply FALSE (candidates apply on a third-party site)", () => {
+test("aggregated abroad job (Apply → employer's own page) → directApply FALSE", () => {
+  const p = asObj(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.equal(p["@type"], "JobPosting")
+  assert.equal(p.directApply, false)
+})
+test("aggregated / curated PRIVATE jobs → NO JobPosting (their Apply form is not delivered to anyone)", () => {
   const a = aggregatedJob()
-  assert.equal(asObj(buildPrivateJobPosting(a, contentFor(a, { postedAt: POSTED }))).directApply, false)
+  assert.equal(buildPrivateJobPosting(a, contentFor(a, { postedAt: POSTED })), null)
   const c = employerJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", applyUrl: "https://careers.zenith-industries.in/apply" })
-  const pc = asObj(buildPrivateJobPosting(c, contentFor(c, { postedAt: POSTED })))
-  assert.equal(pc.directApply, false)
+  assert.equal(buildPrivateJobPosting(c, contentFor(c, { postedAt: POSTED })), null)
 })
 test("government JobPosting → directApply false", () => {
   assert.equal(asObj(buildGovtJobPosting(govtJob(), govtHelpers)).directApply, false)
@@ -510,9 +515,8 @@ test("hiringOrganization.sameAs can NEVER be the apply URL", () => {
     datePosted: POSTED, addressCountry: "IN", applyUrl: url, organizationSameAs: url,
   }))
   assert.ok(!("sameAs" in asObj(p.hiringOrganization)))
-  const a = aggregatedJob()
-  const pa = asObj(buildPrivateJobPosting(a, contentFor(a, { postedAt: POSTED })))
-  assert.ok(!("sameAs" in asObj(pa.hiringOrganization)), "aggregated builder never derives sameAs from applyUrl")
+  const pa = asObj(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.ok(!("sameAs" in asObj(pa.hiringOrganization)), "aggregated abroad builder never derives sameAs from applyUrl")
 })
 test("sameAs is only the employer/source website (government: origin of the official site)", () => {
   const p = asObj(buildGovtJobPosting(govtJob({ officialUrl: "https://www.ibps.in/deep/path/notice.pdf" }), govtHelpers))
