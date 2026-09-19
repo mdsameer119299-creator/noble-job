@@ -8,6 +8,7 @@ import { getWfhJobs } from "@/lib/services/wfhJobService"
 import { getAbroadJobs } from "@/lib/services/abroadJobService"
 import type { CategoryLanding, CityLanding, Landing, LandingJobCard, LandingView } from "@/lib/seo/landingTypes"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal, isRealDisplayValue, displayValue } from "@/lib/jobs/renderable"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
@@ -75,29 +76,29 @@ const govtCard = (j: { slug?: string; id: string; title: string; org: string; va
   href: `/jobs/govt/${j.slug || j.id}`,
   title: j.title,
   company: j.org,
-  meta: [j.vacancies ? `${j.vacancies} posts` : null, j.qualification].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(isRealDisplayValue(j.vacancies) ? `${j.vacancies} posts` : undefined, j.qualification),
+  badge: displayValue(j.badge),
 })
 const privateCard = (j: Job): LandingJobCard => ({
   href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
-  meta: [j.location, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.location, j.salary),
+  badge: displayValue(j.badge),
 })
 const wfhCard = (j: WfhJob): LandingJobCard => ({
   href: jobDetailHref("wfh", j),
   title: j.title,
   company: j.company,
-  meta: [j.cat, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.cat, j.salary),
+  badge: displayValue(j.badge),
 })
 const abroadCard = (j: AbroadJob): LandingJobCard => ({
   href: jobDetailHref("abroad", j),
   title: j.title,
   company: j.company,
-  meta: [j.country, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.country, j.salary),
+  badge: displayValue(j.badge),
 })
 
 export interface LandingJobBlocks {

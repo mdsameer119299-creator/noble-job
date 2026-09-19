@@ -2,10 +2,15 @@
 // Queries job_alerts table and sends matching job summaries via Resend
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { sendEmail } from "@/lib/services/emailService"
+import { mapPrivateJobRow } from "@/lib/services/jobMapper"
+import { isActionableJob, joinReal } from "@/lib/jobs/renderable"
 
 export async function dispatchJobAlerts(jobId: string): Promise<void> {
   const { data: job } = await supabaseAdmin.from("jobs").select("*").eq("id", jobId).single()
   if (!job) return
+  // NO EMPTY JOBS: never email a candidate a link to an incomplete, sample or closed
+  // job — only an actionable job (complete, genuine, open, real application route).
+  if (!isActionableJob(mapPrivateJobRow(job as Record<string, unknown>), "private")) return
 
   const { data: alerts } = await supabaseAdmin.from("job_alerts")
     .select("*").eq("is_active", true)
@@ -16,7 +21,7 @@ export async function dispatchJobAlerts(jobId: string): Promise<void> {
     await sendEmail({
       to: (alert as any).email,
       subject: `New Job Alert: ${(job as any).title} at ${(job as any).company}`,
-      html: `<p>A new job matching your alert is available on Noble Job.</p><p><strong>${(job as any).title}</strong><br>${(job as any).location} · ${(job as any).salary_min ? `₹${(job as any).salary_min / 100000}L` : "Competitive"}</p><a href="${process.env.NEXT_PUBLIC_APP_URL}/jobs/private/${(job as any).id}">View Job</a>`,
+      html: `<p>A new job matching your alert is available on Noble Job.</p><p><strong>${(job as any).title}</strong><br>${joinReal((job as any).location, (job as any).salary_min ? `₹${(job as any).salary_min / 100000}L` : "")}</p><a href="${process.env.NEXT_PUBLIC_APP_URL}/jobs/private/${(job as any).id}">View Job</a>`,
     })
   }
 }

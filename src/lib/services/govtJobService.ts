@@ -4,8 +4,9 @@ import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { jobMatchesQualification } from "@/lib/services/govtQualificationMatch"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
-import { getActiveGovtRows, getGovtJobRow } from "@/lib/services/govtStatsSource"
+import { getActiveGovtRows, getGovtJobRow, isServableGovtJob } from "@/lib/services/govtStatsSource"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
 /**
@@ -19,14 +20,36 @@ export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): P
 }
 
 // Single-row fetch (indexed slug/id lookup) instead of loading the full active
-// dataset and filtering in memory. Same visibility + local-seed fallback.
+// dataset and filtering in memory. The demo seed is consulted ONLY when
+// `isGovtSeedFallbackAllowed()` (dev / explicit opt-in) — never as a silent
+// production fallback, so a seed record can't be served as a current official job.
 export async function getGovtJobById(id: string): Promise<GovtJob | null> {
-  return (await getGovtJobRow(id)) ?? getGovtJobByIdLocal(id)
+  if (!isUsableGovtKey(id)) return null
+  return servableOrNull((await getGovtJobRow(id)) ?? seedFor(id))
 }
 
-/** Look up a single government job by SEO slug (falls back to id, then local). */
+/** Look up a single government job by SEO slug (falls back to id; dev seed only when policy allows). */
 export async function getGovtJobBySlug(slug: string): Promise<GovtJob | null> {
-  return (await getGovtJobRow(slug)) ?? getGovtJobByIdLocal(slug)
+  if (!isUsableGovtKey(slug)) return null
+  return servableOrNull((await getGovtJobRow(slug)) ?? seedFor(slug))
+}
+
+/** "undefined" / "null" / blank keys are not jobs (404), never a lookup. */
+function isUsableGovtKey(key: unknown): key is string {
+  return typeof key === "string" && key.trim().length > 0 && !/^(undefined|null)$/i.test(key.trim())
+}
+
+function seedFor(key: string): GovtJob | null {
+  return isGovtSeedFallbackAllowed() ? getGovtJobByIdLocal(key) : null
+}
+
+/**
+ * NO EMPTY JOBS: whatever the source (database row, last-known-good, dev seed), a
+ * detail lookup only ever returns a SERVABLE job — an incomplete row resolves to
+ * null (→ 404), never to an empty page.
+ */
+function servableOrNull(job: GovtJob | null): GovtJob | null {
+  return job && isServableGovtJob(job) ? job : null
 }
 
 export interface GovtJobFilters {

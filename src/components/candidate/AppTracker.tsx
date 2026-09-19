@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useApplications } from '@/hooks/useApplications'
 import { ApplicationStatusBadge } from './ApplicationStatusBadge'
-import { applicationJobTitle, applicationCompany } from '@/lib/utils/applicationDisplay'
+import { applicationJobTitle, applicationCompany, isDeliveredToEmployer, NOT_SENT_NOTE } from '@/lib/utils/applicationDisplay'
 import { formatDate } from '@/lib/utils/formatters'
 
 export function AppTracker() {
@@ -62,8 +62,13 @@ export function AppTracker() {
                 {applicationCompany(app) || app.board}
                 {app.applied_at ? ` · ${formatDate(app.applied_at)}` : ''}
               </div>
+              {!isDeliveredToEmployer(app) && (
+                <div style={{ fontSize: 12, color: '#b45309', marginTop: 4, lineHeight: 1.5, maxWidth: 420 }}>{NOT_SENT_NOTE}</div>
+              )}
             </div>
-            <ApplicationStatusBadge status={app.status} />
+            {isDeliveredToEmployer(app)
+              ? <ApplicationStatusBadge status={app.status} />
+              : <span style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#f1f5f9', color: '#64748b' }}>Not sent</span>}
           </div>
         ))}
       </div>

@@ -6,32 +6,40 @@
  * minimum real-job threshold is gated out rather than shipped as a thin
  * page — same principle as cityCategoryLanding.ts.
  */
-import { getJobs } from "@/lib/services/jobService"
+import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import { TAIL_CITY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { TAIL_CITIES, getTailCityBySlug, type TailCityDef } from "@/lib/data/cityTaxonomy"
 import { getQualifyingCategorySlugsForCity, categoryFromSlug } from "@/lib/seo/cityCategoryLanding"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal, displayValue } from "@/lib/jobs/renderable"
 import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import type { LandingJobBlocks } from "@/lib/seo/landing"
 import type { Job } from "@/types/job"
 
-/** A tail-city hub below this real job count is not generated — gate, not a thin page. */
-export const TAIL_CITY_MIN_JOBS = 5
+/**
+ * A tail-city hub below this GENUINE open-job count is not generated — gate, not
+ * a thin page. Synthetic / unclassified / archived rows do not count. Configurable:
+ * SEO_MIN_GENUINE_JOBS_TAIL_CITY (see indexThresholds.ts).
+ */
+export const TAIL_CITY_MIN_JOBS = TAIL_CITY_MIN_GENUINE_JOBS
 
 export { TAIL_CITIES, getTailCityBySlug }
 export type { TailCityDef }
 
-/** Fetch jobs for a whole city (all categories). Also used to decide the min-count gate. */
+/**
+ * GENUINE open jobs for a whole city (all categories). Also used to decide the
+ * min-count gate and the counts/lists rendered on the page, so all three agree.
+ */
 export async function getTailCityJobs(city: TailCityDef, limit = 30): Promise<Job[]> {
-  const r = await getJobs({ location: city.locationQuery, limit, sort: "latest" })
-  return r.jobs
+  return getGenuineOpenJobs({ location: city.locationQuery, limit, sort: "latest" })
 }
 
 const privateCard = (j: Job) => ({
   href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
-  meta: [j.location, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.location, j.salary),
+  badge: displayValue(j.badge),
 })
 
 export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCategorySlugs: string[] = []): LandingView {
@@ -56,7 +64,7 @@ export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCate
     },
     {
       q: `How do I apply for jobs in ${city.city} on Noble Job?`,
-      a: `Browse the listings for ${city.city} on this page, click "Apply Now" on a role that fits, and complete the application with an updated resume.`,
+      a: `Browse the listings for ${city.city} on this page, open a role that fits and use its apply option (employer-posted jobs are applied for through Noble Job; other listings link to the original application page), and complete the application with an updated resume.`,
     },
   ]
 
@@ -74,8 +82,8 @@ export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCate
       `Looking for jobs in ${city.city}? This page lists current openings in ${city.city}, ${city.state} on Noble Job` +
         (companies.length ? `, from employers including ${companies.slice(0, 3).join(", ")}.` : "."),
       categories.length
-        ? `Categories currently hiring in ${city.city} include ${categories.slice(0, 5).join(", ")}, among others — browse the full list below and apply directly.`
-        : `Browse the full list below and apply directly to roles that match your experience.`,
+        ? `Categories currently hiring in ${city.city} include ${categories.slice(0, 5).join(", ")}, among others — browse the full list below and open a listing to see how to apply.`
+        : `Browse the full list below and open the roles that match your experience to see how to apply.`,
     ],
     sections: [
       {

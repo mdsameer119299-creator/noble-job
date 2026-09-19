@@ -4,10 +4,12 @@ import { useState } from 'react'
 import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
-import { isActiveStatus, ARCHIVED_ALT_LABEL, syntheticOpenLabel } from '@/lib/config/jobStrategy'
-import { isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
+import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
+import { classifyProvenance, isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
+import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
 
@@ -15,11 +17,16 @@ export function JobCard({ job, onSave }: JobCardProps) {
   const initials = job.company?.slice(0, 2).toUpperCase() || 'NJ'
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
   const genuine = isGenuine(job)
-  // Any currently-open role may present a live "Apply Now" action — synthetic
-  // rows collect resumes into the same pipeline as genuine ones (by design;
-  // see src/lib/jobs/provenance.ts for what stays genuine-gated: indexing,
-  // schema, counting, and the "Verified" trust badge).
-  const canApply = isActiveStatus(job.jobStatus)
+  // A currently-open role may present "Apply Now" — EXCEPT generated demo
+  // (SYNTHETIC) rows: an application to one would go nowhere, yet the candidate
+  // would be told it was submitted. Those show a "Sample listing" state instead.
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // …and only when the record is ACTIONABLE (complete, genuine, open) AND its application is
+  // delivered to an employer through NobleJob (the "employer" apply state). An external-source
+  // job has no on-site apply: its card shows "View Details", where the honest link to the
+  // source's own application page lives; an info-only record has no apply action at all.
+  const apply = applyStateFor('private', job, job.company)
+  const canApply = isActiveStatus(job.jobStatus) && !isSample && apply.kind === 'employer' && isActionableJob(job, 'private')
   // Only genuine jobs get a crawlable internal link to their detail page; for
   // synthetic/demo rows this is null so no dofollow discovery link is emitted.
   const detailHref = jobDetailHref('private', job)
@@ -46,10 +53,10 @@ export function JobCard({ job, onSave }: JobCardProps) {
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {job.jobStatus && (
                 <JobStatusBadge
-                  status={job.jobStatus}
+                  status={!genuine && !isArchived ? 'ARCHIVED_JOB' : job.jobStatus}
                   label={
                     !genuine && !isArchived
-                      ? syntheticOpenLabel(job.id)
+                      ? nonGenuineListingLabel(job)
                       : isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
                         ? ARCHIVED_ALT_LABEL
                         : undefined
@@ -64,11 +71,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
-          { icon: '📍', label: job.location },
-          { icon: '💼', label: job.type || job.job_type || 'Full Time' },
-          { icon: '📊', label: job.exp || 'Any Experience' },
-          { icon: '💰', label: job.salary || formatSalary((job as any).salary_min, (job as any).salary_max) },
-        ].map((t, i) => (
+          { icon: '📍', label: displayValue(job.location) },
+          { icon: '💼', label: displayValue(job.type || job.job_type) },
+          { icon: '📊', label: displayValue(job.exp) },
+          { icon: '💰', label: displayValue(job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)) },
+        ].filter(t => t.label).map((t, i) => (
           <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f0f4ff', color: '#374151', padding: '5px 11px', borderRadius: 20, fontSize: 12.5, fontWeight: 600 }}>
             {t.icon} {t.label}
           </span>
@@ -86,8 +93,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
           {isArchived
             ? `🗄 Archived Vacancy · ${job.source || 'Reference'}`
             : !genuine
-              ? `🟢 ${syntheticOpenLabel(job.id)}`
-              : `${job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (job.source || 'Verified')} · ${formatDate((job as any).posted_at || job.posted || '')}`}
+              ? `📄 ${nonGenuineListingLabel(job)}`
+              : [
+                  job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (displayValue(job.source) || 'Verified'),
+                  formatDate((job as any).posted_at || job.posted || ''),
+                ].filter(Boolean).join(' · ')}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           {onSave && (
@@ -116,8 +126,6 @@ export function JobCard({ job, onSave }: JobCardProps) {
         company={job.company}
         location={job.location}
         salary={job.salary}
-        sourceUrl={job.applyUrl || job.apply_url}
-        source={job.source}
         onApplied={() => setApplied(true)}
       />
     </div>

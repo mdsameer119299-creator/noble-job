@@ -35,11 +35,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
   }
 
   if (route === "recommended") {
+    // A recommendation links to /jobs/private/<id>. Those pages resolve database rows only
+    // when the site serves the database (NEXT_PUBLIC_JOB_DATA_SOURCE=supabase); otherwise a
+    // database job would be a dead link, so nothing is recommended.
+    const { useLocalInventoryOnly } = await import("@/lib/supabase/useLocalInventory")
+    if (useLocalInventoryOnly()) return NextResponse.json({ data: [] })
     const category = (candidate as any).category
     let q = sb.from("jobs").select("*").eq("status", "active")
     if (category) q = q.eq("category", category)
-    const { data } = await q.order("posted_at", { ascending: false }).limit(20)
-    return NextResponse.json({ data: data || [] })
+    const { data } = await q.order("posted_at", { ascending: false }).limit(50)
+    // NO EMPTY JOBS: a recommendation must be an ACTIONABLE job (complete, genuine,
+    // open, real application route) — never a raw row, an incomplete row or a sample.
+    const [{ mapPrivateJobRow }, { filterActionable }] = await Promise.all([
+      import("@/lib/services/jobMapper"),
+      import("@/lib/jobs/renderable"),
+    ])
+    const jobs = filterActionable((data || []).map(r => mapPrivateJobRow(r as Record<string, unknown>)), "private").slice(0, 20)
+    return NextResponse.json({ data: jobs })
   }
 
   if (route === "resume-url") {

@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
+import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
 import { AbroadJobCard } from './AbroadJobCard'
 import { AbroadDetailModal } from './AbroadDetailModal'
 import { AbroadSearchBar } from './AbroadSearchBar'
@@ -26,6 +27,7 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
   const params = useSearchParams()
   const [jobs, setJobs] = useState<AbroadJob[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
@@ -54,12 +56,19 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
     fetch(`/api/abroad-jobs?${sp}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        setJobs(d?.data || d?.jobs || [])
-        setTotal(d?.total || 0)
-        setTotalPages(d?.totalPages || 1)
-        if (d?.counts) setCounts(d.counts)
+        // A failed request is an ERROR state — never an empty list that reads as "no jobs".
+        if (!d) { setFailed(true); setJobs([]); setTotal(0); setTotalPages(1); return }
+        setFailed(false)
+        // Re-check every record on the client; count === displayed jobs.
+        const raw: unknown[] = Array.isArray(d.data) ? d.data : Array.isArray(d.jobs) ? d.jobs : []
+        const ok = toRenderableAbroadJobs(raw)
+        const dropped = raw.length - ok.length
+        setJobs(ok)
+        setTotal(Math.max(0, (Number(d.total) || ok.length) - dropped))
+        setTotalPages(Number(d.totalPages) || 1)
+        if (d.counts) setCounts({ ...d.counts, all: Math.max(0, (d.counts.all ?? 0) - dropped) })
       })
-      .catch(() => setJobs([]))
+      .catch(() => { setFailed(true); setJobs([]); setTotal(0) })
       .finally(() => setLoading(false))
   }, [q, country, category, status, page])
 
@@ -95,11 +104,15 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
       <div className="jobs-layout-3col" id="abroad-jobs">
         <AbroadFilterSidebar country={country} onCountry={c => setParam('country', c)} />
         <div>
-          <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
-            Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs
-          </p>
+          {!failed && (
+            <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
+              Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs
+            </p>
+          )}
           {loading ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading abroad jobs…</div>
+          ) : failed ? (
+            <div role="alert" style={{ padding: 40, textAlign: 'center', color: '#b45309' }}>We couldn&apos;t load jobs right now. Please refresh and try again.</div>
           ) : jobs.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>No abroad jobs match your filters.</div>
           ) : (

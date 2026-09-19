@@ -1,13 +1,20 @@
 /**
- * Live hero statistics — sourced from seeded inventory (and govt dataset when Supabase is off).
+ * Live hero statistics.
+ *
+ * COUNT INTEGRITY: every number is computed by the same pipeline as the list it heads
+ * (visibleCounts.ts — renderable records only, synthetic switch honoured, filter → count),
+ * and any "Live" figure is the GENUINE count (genuineCounts.ts: genuine + open +
+ * renderable). A sample listing is a "role to explore", never a "live opening", so a
+ * live counter with nothing genuine behind it is omitted rather than shown as 0 or padded.
  */
+import { ABROAD_COUNTRY_COUNT } from "@/lib/data/jobInventory"
 import {
-  getPrivateInventoryCounts,
-  getWfhInventoryCounts,
-  getAbroadInventoryCounts,
-  getAbroadCountryCounts,
-  ABROAD_COUNTRY_COUNT,
-} from "@/lib/data/jobInventory"
+  getPrivateVisibleCounts,
+  getWfhVisibleCounts,
+  getAbroadVisibleCounts,
+  getVisibleAbroadCountryCounts,
+} from "@/lib/services/visibleCounts"
+import { getGenuineJobCounts } from "@/lib/services/genuineCounts"
 import { getGovtHubStats } from "@/lib/services/govtHubStats"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 
@@ -42,6 +49,15 @@ export interface HeroStatsPayload {
   counters: HeroCounter[]
   floatingCards: HeroFloatingCard[]
   countryCards?: { flag: string; name: string; jobs: number }[]
+}
+
+/** The genuine live-opening count of one board (0 when nothing genuine is servable). */
+async function genuineLive(board: "private" | "wfh" | "abroad"): Promise<number> {
+  try {
+    return (await getGenuineJobCounts({ govt: false }))[board]
+  } catch {
+    return 0
+  }
 }
 
 async function govtStatsForSlug(slug?: string): Promise<HeroStatsPayload> {
@@ -125,14 +141,11 @@ async function govtStatsForSlug(slug?: string): Promise<HeroStatsPayload> {
 export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: string }): Promise<HeroStatsPayload> {
   switch (variant) {
     case "private": {
-      const c = getPrivateInventoryCounts()
-      // These counts are the browsable demo catalog, not genuine openings, so
-      // the labels deliberately avoid any "live"/"verified" trust claim.
+      const [c, live] = await Promise.all([getPrivateVisibleCounts(), genuineLive("private")])
       return {
         counters: [
           { key: "all", label: "Roles to Explore", value: c.all },
-          { key: "live", label: "Live Openings", value: c.live },
-          { key: "verified", label: "Featured Openings", value: c.verified },
+          ...(live > 0 ? [{ key: "live", label: "Live Openings", value: live }] : []),
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         // `accent` here is a short icon rendered as visible text next to the
@@ -149,13 +162,11 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       }
     }
     case "wfh": {
-      const c = getWfhInventoryCounts()
-      // Demo catalog counts — labels avoid any "live"/"verified" trust claim.
+      const [c, live] = await Promise.all([getWfhVisibleCounts(), genuineLive("wfh")])
       return {
         counters: [
           { key: "all", label: "Remote Roles to Explore", value: c.all },
-          { key: "live", label: "Live Openings", value: c.live },
-          { key: "verified", label: "Featured Openings", value: c.verified },
+          ...(live > 0 ? [{ key: "live", label: "Live Openings", value: live }] : []),
           { key: "archived", label: "Archived Records", value: c.archived },
         ],
         floatingCards: [
@@ -167,20 +178,23 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
       }
     }
     case "abroad": {
-      const c = getAbroadInventoryCounts()
-      const allCountries = getAbroadCountryCounts()
-      const topByJobs = [...allCountries].sort((a, b) => b.jobs - a.jobs)
-      // Demo catalog counts — labels avoid any "live"/"verified" trust claim.
+      const [c, live, allCountries] = await Promise.all([
+        getAbroadVisibleCounts(),
+        genuineLive("abroad"),
+        getVisibleAbroadCountryCounts(),
+      ])
+      // Only countries that actually list something are surfaced as cards / highlights.
+      const withJobs = allCountries.filter(co => co.jobs > 0)
+      const topByJobs = [...withJobs].sort((a, b) => b.jobs - a.jobs)
       return {
         counters: [
           { key: "all", label: "Roles to Explore", value: c.all },
-          { key: "live", label: "Live Openings", value: c.live },
-          { key: "verified", label: "Featured Openings", value: c.verified },
+          ...(live > 0 ? [{ key: "live", label: "Live Openings", value: live }] : []),
           { key: "countries", label: "Countries", value: ABROAD_COUNTRY_COUNT },
         ],
         floatingCards: topByJobs.slice(0, 8).map(co => ({
           label: co.name,
-          sub: `${co.jobs.toLocaleString("en-IN")}+ jobs`,
+          sub: `${co.jobs.toLocaleString("en-IN")} jobs`,
           accent: co.flag,
         })),
         countryCards: allCountries.map(co => ({

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { getMarketplaceTotals } from "@/lib/data/jobInventory"
+import { getVisibleBoardCounts } from "@/lib/services/visibleCounts"
 
 /**
  * Public stats. TWO HONEST BUCKETS (see src/lib/jobs/provenance.ts):
@@ -11,8 +11,8 @@ import { getMarketplaceTotals } from "@/lib/data/jobInventory"
  *    It is explicitly a "roles to explore" figure — NOT a genuine-openings claim.
  */
 export async function GET() {
-  const marketplace = getMarketplaceTotals()
-  const catalogJobs = marketplace.opportunities
+  // Counted by the list pipeline (renderable only, synthetic switch honoured).
+  const catalogJobs = (await getVisibleBoardCounts()).total.all
 
   const empty = {
     totalJobs: 0,
@@ -30,18 +30,16 @@ export async function GET() {
   try {
     const sb = await createClient()
     if (!sb) throw new Error("skip")
-    const [jobs, employers, applications, wfh, govt, abroad] = await Promise.all([
-      sb.from("jobs").select("id", { count: "exact", head: true }).eq("status", "active"),
+    const { getGenuineJobCounts } = await import("@/lib/services/genuineCounts")
+    const [genuine, employers, applications] = await Promise.all([
+      // Same predicate as the sitemap (genuine + open + renderable) — NOT a raw
+      // `status = active` row count, which includes samples and incomplete rows.
+      getGenuineJobCounts(),
       sb.from("employers").select("id", { count: "exact", head: true }).eq("verified", true),
       sb.from("applications").select("id", { count: "exact", head: true }).eq("status", "hired"),
-      sb.from("wfh_jobs").select("id", { count: "exact", head: true }).eq("status", "active"),
-      sb.from("govt_jobs").select("id", { count: "exact", head: true }).eq("status", "active"),
-      sb.from("abroad_jobs").select("id", { count: "exact", head: true }).eq("status", "active"),
     ])
-    const genuineTotal =
-      (jobs.count || 0) + (wfh.count || 0) + (govt.count || 0) + (abroad.count || 0)
     return NextResponse.json({
-      totalJobs: genuineTotal,
+      totalJobs: genuine.total,
       catalogJobs,
       totalCompanies: employers.count || 0,
       totalPlaced: applications.count || 0,

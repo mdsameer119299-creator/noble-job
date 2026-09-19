@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { buildPageMetadata } from "@/lib/seo/metadata"
+import { buildPageMetadata, listingMeta } from "@/lib/seo/metadata"
 import { INDIAN_STATES, getStateBySlug } from "@/lib/config/govtTaxonomy"
 import { getGovtJobsFiltered } from "@/lib/services/govtJobService"
+import { GOVT_STATE_MIN_JOBS } from "@/lib/seo/indexThresholds"
 import { GovtListingView } from "@/components/govt/GovtListingView"
 import { GovtStateContent } from "@/components/govt/GovtStateContent"
 import { getStateIntro } from "@/lib/data/govtStateContent"
@@ -19,17 +20,28 @@ export function generateStaticParams() {
   return INDIAN_STATES.map(s => ({ slug: s.slug }))
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params
   const state = getStateBySlug(slug)
   if (!state) return { title: "State Government Jobs — Noble Job" }
   const desc = `Latest ${state.label} government jobs 2026. State govt recruitment, vacancies, eligibility, last date and apply online links for ${state.label}.`
-  return buildPageMetadata({
-    title: `${state.label} Govt Jobs 2026 — Latest Vacancies`,
-    description: desc,
-    path: `/jobs/govt/state/${slug}`,
-    keywords: [state.label, "state government jobs", "sarkari naukri", "Jobs in India"],
-  })
+  // A state with NO state-specific recruitments renders the national pool (see
+  // the page body) — a near-duplicate of the national listing. It stays
+  // browsable for users, but is noindex,follow and not in the sitemap. The
+  // threshold is configurable (GOVT_STATE_MIN_JOBS) — see seo/indexThresholds.
+  const own = await getGovtJobsFiltered({ state: slug, page: 1, limit: 1 })
+  const weak = own.total < GOVT_STATE_MIN_JOBS
+  return {
+    ...buildPageMetadata({
+      title: `${state.label} Govt Jobs 2026 — Latest Vacancies`,
+      description: desc,
+      path: `/jobs/govt/state/${slug}`,
+      keywords: [state.label, "state government jobs", "sarkari naukri", "Jobs in India"],
+      noIndex: false,
+    }),
+    ...(weak ? { robots: { index: false, follow: true, googleBot: { index: false, follow: true } } } : {}),
+    ...listingMeta(`/jobs/govt/state/${slug}`, await searchParams),
+  }
 }
 
 export default async function GovtStatePage({ params, searchParams }: Props) {

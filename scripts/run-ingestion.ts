@@ -93,21 +93,19 @@ async function main() {
   const { runGovtAutoUpdate } = await import("@/lib/services/govtAutoUpdate")
   console.log("Running full ingestion pass (writes to Supabase)…\n")
 
-  const before = await rowCount()
   const r = await runGovtAutoUpdate()
-  const after = await rowCount()
 
-  // Row count only grows on insert (upsert of an existing id is in-place;
-  // expiry flips status, never deletes). So new rows = inserted; the remainder
-  // of totalPublished were content refreshes (updates).
-  const inserted = before != null && after != null ? Math.max(0, after - before) : null
-  const updated = inserted != null ? Math.max(0, r.totalPublished - inserted) : null
+  // The ingestion now compares `content_hash` before writing, so it reports exact
+  // counts itself: unchanged rows are NOT written (and do not bump content_changed_at).
+  const inserted = r.totalInserted
+  const updated = r.totalUpdated
+  const unchanged = r.totalUnchanged ?? 0
   const totalFetched = r.sources.reduce((s, x) => s + x.fetched, 0)
 
   const head =
     `ranAt=${r.ranAt}\n` +
-    `sourcesChecked=${r.sourcesChecked}  fetched=${totalFetched}  published=${r.totalPublished}` +
-    (inserted != null ? `  inserted=${inserted}  updated=${updated}` : "") +
+    `sourcesChecked=${r.sourcesChecked}  fetched=${totalFetched}  written=${r.totalPublished}` +
+    `  inserted=${inserted}  updated=${updated}  unchanged=${unchanged}` +
     `  expired=${r.totalExpired}\n` +
     `failedSources=[${r.failedSources.join(", ") || "none"}]`
   console.log(head + "\n")
@@ -129,7 +127,7 @@ async function main() {
   summary(`## 🛰️ Govt Jobs Ingestion — ${new Date().toISOString()}`)
   summary("")
   summary(`- **Fetched:** ${totalFetched}`)
-  summary(`- **Published (upserted):** ${r.totalPublished}` + (inserted != null ? ` — 🆕 ${inserted} inserted, ♻️ ${updated} updated` : ""))
+  summary(`- **Written (inserted+updated):** ${r.totalPublished}` + ` — 🆕 ${inserted} inserted, ♻️ ${updated} updated, ⏭️ ${unchanged} unchanged (not rewritten)`)
   summary(`- **Expired:** ${r.totalExpired}`)
   summary(`- **Failed adapters:** ${r.failedSources.length ? "⚠️ " + r.failedSources.join(", ") : "✅ none"}`)
   summary("")
@@ -140,8 +138,10 @@ async function main() {
   }
 
   // Systemic-failure detection → non-zero exit triggers GitHub failure alerts.
-  if (r.totalPublished === 0 && r.sources.length > 0) {
-    console.error("\nSYSTEMIC FAILURE: 0 jobs published across all adapters.")
+  // "Unchanged" rows are healthy (compare-before-write skipped them), so a steady-state
+  // run where nothing changed is NOT a failure — only "nothing written AND nothing seen".
+  if (r.totalPublished + (r.totalUnchanged ?? 0) === 0 && r.sources.length > 0) {
+    console.error("\nSYSTEMIC FAILURE: 0 jobs written or confirmed unchanged across all adapters.")
     process.exit(1)
   }
 }

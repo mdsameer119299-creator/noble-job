@@ -4,17 +4,19 @@
  * landingCategories.ts (1500+ words of editorial content per page), these are
  * generated — so uniqueness comes from the REAL underlying data (actual job
  * count, actual companies, actual roles) rather than templated prose. A combo
- * with too few real+synthetic matches is gated out entirely (see
+ * with too few GENUINE matches (demo rows never count) is gated out entirely (see
  * CITY_CATEGORY_MIN_JOBS) rather than shipped as a thin page — same principle
  * already used for empty govt category/qualification URLs in sitemap.ts.
  */
-import { getJobs } from "@/lib/services/jobService"
+import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import { CITY_CATEGORY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
 import { PRIVATE_CATEGORIES, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import type { CityLanding } from "@/lib/seo/landingTypes"
 import type { LandingJobBlocks } from "@/lib/seo/landing"
 import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal, displayValue } from "@/lib/jobs/renderable"
 import type { Job } from "@/types/job"
 
 /**
@@ -38,8 +40,12 @@ export interface MinimalCity {
   hrefBase?: string
 }
 
-/** A page below this real job count is not generated — gate, not a thin page. */
-export const CITY_CATEGORY_MIN_JOBS = 3
+/**
+ * A page below this GENUINE open-job count is not generated — gate, not a thin
+ * page. Synthetic / unclassified / archived rows do not count. Configurable:
+ * SEO_MIN_GENUINE_JOBS_CITY_CATEGORY (see indexThresholds.ts).
+ */
+export const CITY_CATEGORY_MIN_JOBS = CITY_CATEGORY_MIN_GENUINE_JOBS
 
 /** Real category labels that exist on generated job rows (see jobInventory.ts). */
 export const CITY_CATEGORY_LIST: readonly string[] = [...PRIVATE_CATEGORIES, ...BLUE_COLLAR_CATEGORIES]
@@ -62,14 +68,13 @@ const privateCard = (j: Job) => ({
   href: jobDetailHref("private", j),
   title: j.title,
   company: j.company,
-  meta: [j.location, j.salary].filter(Boolean).join(" · "),
-  badge: j.badge,
+  meta: joinReal(j.location, j.salary),
+  badge: displayValue(j.badge),
 })
 
-/** Fetch jobs for a city+category combo. Also used to decide the min-count gate. */
+/** GENUINE open jobs for a city+category combo. Also used to decide the min-count gate. */
 export async function getCityCategoryJobs(city: MinimalCity, categoryLabel: string, limit = 24): Promise<Job[]> {
-  const r = await getJobs({ location: city.locationQuery, category: categoryLabel, limit, sort: "latest" })
-  return r.jobs
+  return getGenuineOpenJobs({ location: city.locationQuery, category: categoryLabel, limit, sort: "latest" })
 }
 
 /**
@@ -107,7 +112,7 @@ export function buildCityCategoryView(
     },
     {
       q: `How do I apply for ${categoryLabel} jobs in ${city.city} on Noble Job?`,
-      a: `Browse the ${categoryLabel} listings for ${city.city} on this page, click "Apply Now" on a role that fits, and complete the application with an updated resume.`,
+      a: `Browse the ${categoryLabel} listings for ${city.city} on this page, open a role that fits and use its apply option (employer-posted jobs are applied for through Noble Job; other listings link to the original application page), and complete the application with an updated resume.`,
     },
   ]
 
@@ -126,8 +131,8 @@ export function buildCityCategoryView(
       `Looking for ${categoryLabel} jobs in ${city.city}? This page lists current ${categoryLabel} openings in ${city.city} on Noble Job` +
         (companies.length ? `, from employers including ${companies.slice(0, 3).join(", ")}.` : "."),
       titles.length
-        ? `Roles currently listed include ${titles.slice(0, 4).join(", ")}, among others — browse the full list below and apply directly.`
-        : `Browse the full list below and apply directly to roles that match your experience.`,
+        ? `Roles currently listed include ${titles.slice(0, 4).join(", ")}, among others — browse the full list below and open a listing to see how to apply.`
+        : `Browse the full list below and open the roles that match your experience to see how to apply.`,
     ],
     sections: [
       {

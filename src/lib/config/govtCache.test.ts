@@ -77,13 +77,18 @@ test("detail projection = light + heavy body columns; neither uses select(*)", (
 
 test("pool read uses the light projection, not select(*)", () => {
   const src = read("src/lib/services/govtStatsSource.ts")
-  assert.match(src, /\.select\(GOVT_LIST_COLUMNS\)/)
+  // Phase 1: the light projection is requested WITH the optional record-integrity
+  // columns first, then retried with the plain light projection on an unmigrated DB.
+  assert.match(src, /withGovtIntegrityColumns\(GOVT_LIST_COLUMNS\)/)
+  assert.match(src, /runList\(GOVT_LIST_COLUMNS\)/)
+  assert.match(src, /\.select\(cols\)/)
   assert.doesNotMatch(src, /\.select\("\*"\)/)
 })
 
 test("detail pages fetch a SINGLE row — not the full pool", () => {
   const src = read("src/lib/services/govtStatsSource.ts")
-  assert.match(src, /\.select\(GOVT_DETAIL_COLUMNS\)/)
+  assert.match(src, /withGovtIntegrityColumns\(GOVT_DETAIL_COLUMNS\)/)
+  assert.match(src, /runOne\(GOVT_DETAIL_COLUMNS\)/)
   assert.match(src, /export const getGovtJobRow = cache\(/)
   const svc = read("src/lib/services/govtJobService.ts")
   // getGovtJobBySlug/ById must use the single-row fetch, not getActiveGovtRows.

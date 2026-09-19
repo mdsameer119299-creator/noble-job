@@ -23,5 +23,6 @@ export function siteUrl(): string {
 }
 
 export const ORG_LOGO = "/opengraph-image"
+
 export const SUPPORT_EMAIL = "support@noblejob.in"
 export const SUPPORT_PHONE = "+91-9971177468"

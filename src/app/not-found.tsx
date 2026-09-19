@@ -5,8 +5,10 @@ import { buildPageMetadata } from '@/lib/seo/metadata'
 export const metadata: Metadata = buildPageMetadata({
   title: 'Page Not Found',
   description: 'The page you requested does not exist on Noble Job. Browse Government Jobs, Private Jobs, WFH, and Abroad openings.',
-  path: '/404',
+  // A 404 has no canonical URL of its own: no `path` (it must NOT canonicalise to
+  // /404 or fall back to the homepage) and no canonical/og:url at all.
   noIndex: true,
+  noCanonical: true,
 })
 
 export default function NotFound() {

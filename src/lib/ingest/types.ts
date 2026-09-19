@@ -16,6 +16,12 @@ export interface RawNotification {
   qualification?: string
   lastDate?: string
   startDate?: string
+  /**
+   * When the SOURCE published this notification (ISO or "30 Jun 2026"). Supply it
+   * ONLY when the source states it — it becomes JobPosting `datePosted`. Never
+   * pass the fetch time; leave undefined when unknown.
+   */
+  publishedAt?: string
   fee?: string
   salary?: string
   location?: string

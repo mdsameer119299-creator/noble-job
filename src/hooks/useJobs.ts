@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react"
 import type { Job, JobFilter } from "@/types/job"
 import { useDebounce } from "./useDebounce"
+import { toListingJobs } from "@/lib/jobs/clientRecords"
 
 export function useJobs(initialFilter?: JobFilter) {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -20,7 +21,9 @@ export function useJobs(initialFilter?: JobFilter) {
       if (f.page) params.set("page", String(f.page))
       const res = await fetch(`/api/jobs?${params}`)
       const data = await res.json()
-      setJobs(data.data || []); setTotal(data.total || 0)
+      // NO EMPTY JOBS: the client re-applies the gate; the server already counted only renderable jobs.
+      const list = toListingJobs(data.data)
+      setJobs(list); setTotal(list.length ? Math.max(Number(data.total) || 0, list.length) : 0)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }, [])

@@ -27,9 +27,40 @@ const CURRENCY_PATTERNS: { test: RegExp; code: string }[] = [
   { test: /(\$|\busd\b)/i, code: "USD" },
 ]
 
+/**
+ * Word-bounded currency markers — used only in EXPLICIT mode, where a substring hit
+ * ("sar" inside another word) must not count as a stated currency.
+ */
+const EXPLICIT_CURRENCY_PATTERNS: { test: RegExp; code: string }[] = [
+  { test: /(₹|\brs\.?(?=\s|\d|$)|\binr\b|\blpa\b|\blakhs?\b)/i, code: "INR" },
+  { test: /(\baed\b|\bdirhams?\b)/i, code: "AED" },
+  { test: /(\bsar\b|\briyals?\b)/i, code: "SAR" },
+  { test: /\bqar\b/i, code: "QAR" },
+  { test: /(£|\bgbp\b)/i, code: "GBP" },
+  { test: /(€|\beur\b)/i, code: "EUR" },
+  { test: /(\$|\busd\b)/i, code: "USD" },
+]
+
 function detectCurrency(s: string): string {
   for (const c of CURRENCY_PATTERNS) if (c.test.test(s)) return c.code
   return "INR"
+}
+
+/** The currency the text STATES, or null when it states none. */
+function statedCurrency(s: string): string | null {
+  for (const c of EXPLICIT_CURRENCY_PATTERNS) if (c.test.test(s)) return c.code
+  return null
+}
+
+/** The pay period the text STATES, or null when it states none. */
+function statedUnit(s: string): SalaryUnit | null {
+  const l = s.toLowerCase()
+  if (/(\/\s*hr\b|\/\s*hour|per hour|hourly)/.test(l)) return "HOUR"
+  if (/(\/\s*day|per day|daily)/.test(l)) return "DAY"
+  if (/(\/\s*week|per week|weekly)/.test(l)) return "WEEK"
+  if (/(\/\s*mo\b|\/\s*month|per month|monthly|\bp\.?m\.?(?=\s|$))/.test(l)) return "MONTH"
+  if (/(\blpa\b|\blakhs?\b|per annum|\bp\.?a\.?(?=\s|$)|\/\s*yr|\/\s*year|per year|annual|yearly|\/\s*annum)/.test(l)) return "YEAR"
+  return null
 }
 
 function detectUnit(s: string): SalaryUnit {
@@ -38,7 +69,8 @@ function detectUnit(s: string): SalaryUnit {
   if (/(\/\s*day|per day|daily)/.test(l)) return "DAY"
   if (/(\/\s*week|per week|weekly)/.test(l)) return "WEEK"
   if (/(\/\s*mo|\/\s*month|per month|monthly|p\.?m\.?)/.test(l)) return "MONTH"
-  // LPA, "per annum", "/yr" all map to a yearly figure.
+  // Historical (display) default: LPA, "per annum", "/yr" — and an unstated period —
+  // read as a yearly figure. Structured data does NOT use this guess (see requireExplicit).
   return "YEAR"
 }
 
@@ -47,14 +79,30 @@ function detectUnit(s: string): SalaryUnit {
  * caller can omit `baseSalary` entirely (an invalid baseSalary is worse than
  * none for Google Rich Results).
  */
-export function parseSalary(raw?: string | null): ParsedSalary | null {
+export function parseSalary(raw?: string | null, opts?: { requireExplicit?: boolean }): ParsedSalary | null {
   if (!raw) return null
   const s = String(raw).trim()
   if (!s || /^(-|n\/?a|tba|nil|competitive|as per|negotiable|best in)/i.test(s)) return null
 
+  // EXPLICIT mode (structured data): the currency AND the pay period must both be
+  // STATED in the text. "15,000" states neither a currency nor a period, and "₹15,000"
+  // states no period; guessing "per year in INR" would put a wrong baseSalary in front
+  // of Google, so no baseSalary is emitted instead. Only an explicit lakh marker scales.
+  if (opts?.requireExplicit) {
+    const currency = statedCurrency(s)
+    const unitText = statedUnit(s)
+    if (!currency || !unitText) return null
+    const nums = (s.match(/\d[\d,]*\.?\d*/g) ?? [])
+      .map(t => parseFloat(t.replace(/,/g, "")))
+      .filter(n => Number.isFinite(n) && n > 0)
+      .map(n => (/\b(lpa|lakhs?)\b/i.test(s) ? Math.round(n * 100000) : n))
+    if (nums.length === 0) return null
+    return { currency, minValue: Math.min(...nums), maxValue: Math.max(...nums), unitText }
+  }
+
   const isLpa = /lpa|lakh|per annum|p\.?a\.?/i.test(s)
   const currency = detectCurrency(s)
-  const unitText = isLpa ? "YEAR" : detectUnit(s)
+  const unitText: SalaryUnit = isLpa ? "YEAR" : detectUnit(s)
 
   // Pull the numeric tokens (keep decimals; commas are thousands separators).
   const tokens = s.match(/\d[\d,]*\.?\d*/g)

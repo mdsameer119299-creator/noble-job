@@ -4,34 +4,10 @@ import { JobCard } from './JobCard'
 import { JobsLoadingSkeleton } from './JobsLoadingSkeleton'
 import { SourceDisclaimer } from './SourceDisclaimer'
 import { useJobFilters } from '@/hooks/useJobFilters'
-import type { Job, JobStatus } from '@/types/job'
+import { toListingJobs, toLiveExternalJobs } from '@/lib/jobs/clientRecords'
+import type { Job } from '@/types/job'
 
 type Counts = { all: number; live: number; verified: number; archived: number }
-
-function mapLiveJob(raw: Record<string, unknown>, fallbackStatus: JobStatus = 'LIVE_JOB'): Job {
-  return {
-    id: String(raw.id),
-    title: String(raw.title),
-    company: String(raw.company || ''),
-    logo: String(raw.logo || (raw.company as string)?.slice(0, 2) || 'NJ'),
-    logoUrl: (raw.logoUrl as string) ?? null,
-    color: String(raw.color || '#1847d4'),
-    location: String(raw.location || 'Remote'),
-    type: String(raw.type || raw.job_type || 'Full Time'),
-    exp: String(raw.exp || raw.experience_required || 'Any Experience'),
-    salary: String(raw.salary || 'Competitive'),
-    cat: String(raw.cat || raw.category || ''),
-    skills: (raw.skills as string[]) || [],
-    badge: raw.badge as string | undefined,
-    jobStatus: (raw.jobStatus as JobStatus) || fallbackStatus,
-    applyUrl: String(raw.applyUrl || raw.apply_url || '#'),
-    desc: String(raw.desc || raw.description || ''),
-    posted: String(raw.posted || raw.posted_at || 'Recent'),
-    verified: Boolean(raw.verified ?? raw.is_verified ?? true),
-    source: String(raw.source || 'Noble Job'),
-    board: 'private',
-  }
-}
 
 const STATUS_TABS: { id: string; label: string }[] = [
   { id: 'all', label: 'All Jobs' },
@@ -44,6 +20,7 @@ export function LiveJobsList() {
   const { q, category, type, location, exp, status, page, setFilter, setPage } = useJobFilters()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
@@ -68,20 +45,42 @@ export function LiveJobsList() {
         ? fetch(`/api/jobs/live`).then(r => (r.ok ? r.json() : { data: [] })).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
     ]).then(([dbData, liveData]) => {
-      const dbJobs = (dbData?.jobs || []).map((j: Record<string, unknown>) => mapLiveJob(j, 'VERIFIED_JOB'))
-      const liveJobs = (liveData?.data || []).map((j: Record<string, unknown>) => mapLiveJob(j, 'LIVE_JOB'))
+      // The list API failing is an ERROR state, not "no jobs match" — and never a job.
+      if (!dbData) {
+        setFailed(true)
+        setJobs([])
+        setTotal(0)
+        setTotalPages(1)
+        setCounts({ all: 0, live: 0, verified: 0, archived: 0 })
+        return
+      }
+      setFailed(false)
+      // Every record is re-checked here: anything incomplete (no title / company /
+      // description / location, unknown provenance) is dropped, nothing is defaulted.
+      const rawDb: unknown[] = Array.isArray(dbData.jobs) ? dbData.jobs : []
+      const dbJobs = toListingJobs(rawDb, 'VERIFIED_JOB')
+      const liveJobs = toLiveExternalJobs(liveData?.data, 'LIVE_JOB')
       const seen = new Set<string>()
       const combined = [...liveJobs, ...dbJobs].filter(j => {
         if (seen.has(j.id)) return false
         seen.add(j.id)
         return true
       })
-      const c: Counts = dbData?.counts || { all: 0, live: 0, verified: 0, archived: 0 }
-      const liveExtra = liveJobs.length
+      const liveIds = new Set(liveJobs.map(j => j.id))
+      const liveShown = combined.filter(j => liveIds.has(j.id)).length
+      // The server's totals already describe renderable rows only; subtract anything
+      // this check dropped so the count still equals what can be displayed.
+      const dropped = rawDb.length - dbJobs.length
+      const c: Counts = dbData.counts || { all: 0, live: 0, verified: 0, archived: 0 }
       setJobs(combined)
-      setTotal((dbData?.total || dbJobs.length) + liveExtra)
-      setTotalPages(dbData?.totalPages || 1)
-      setCounts({ all: c.all + liveExtra, live: c.live + liveExtra, verified: c.verified, archived: c.archived })
+      setTotal(Math.max(0, (Number(dbData.total) || dbJobs.length) - dropped) + liveShown)
+      setTotalPages(Number(dbData.totalPages) || 1)
+      setCounts({
+        all: Math.max(0, c.all - dropped) + liveShown,
+        live: c.live + liveShown,
+        verified: c.verified,
+        archived: c.archived,
+      })
     }).finally(() => setLoading(false))
   }, [q, category, type, location, exp, status, page])
 
@@ -112,12 +111,18 @@ export function LiveJobsList() {
         })}
       </div>
 
-      <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
-        Showing <strong style={{ color: '#0d1f4e' }}>{total}</strong> jobs
-      </p>
+      {!failed && (
+        <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
+          Showing <strong style={{ color: '#0d1f4e' }}>{total}</strong> jobs
+        </p>
+      )}
 
       {loading ? (
         <JobsLoadingSkeleton />
+      ) : failed ? (
+        <div role="alert" style={{ padding: 40, textAlign: 'center', color: '#b45309' }}>
+          We couldn&apos;t load jobs right now. Please refresh and try again.
+        </div>
       ) : jobs.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>No jobs match your filters.</div>
       ) : (

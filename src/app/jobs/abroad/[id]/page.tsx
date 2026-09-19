@@ -6,9 +6,13 @@ import { getJobs } from '@/lib/services/jobService'
 import { AbroadJobJsonLd } from '@/components/seo/AbroadJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { originalPostingDate } from '@/lib/seo/postingDate'
 import { buildJobContent } from '@/lib/seo/jobContent'
-import { isIndexable } from '@/lib/jobs/provenance'
+import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
+import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
+import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
 import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
 import { JobActionBar } from '@/components/jobs/JobActionBar'
 
@@ -25,11 +29,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       noIndex: true,
     })
   }
+  const metaSalary = displayValue(job.salary)
   return buildPageMetadata({
     title: `${job.title} in ${job.country} at ${job.company} — Abroad Jobs`,
-    description: `Apply for ${job.title} at ${job.company} in ${job.location || job.country}. Salary ${job.salary}. Eligibility, skills, salary, benefits, visa guidance, how to apply & FAQs on Noble Job.`,
+    description: `Apply for ${job.title} at ${job.company} in ${displayValue(job.location) || job.country}.${metaSalary ? ` Salary ${metaSalary}.` : ''} Eligibility, skills, salary, benefits, visa guidance, how to apply & FAQs on Noble Job.`,
     path: `/jobs/abroad/${id}`,
-    keywords: ['Abroad Jobs', 'overseas jobs India', `jobs in ${job.country}`, job.company, job.category, job.title],
+    keywords: ['Abroad Jobs', 'overseas jobs India', `jobs in ${job.country}`, job.company, job.category, job.title].filter(isRealDisplayValue),
     ogType: 'article',
     // Synthetic/demo or filled roles are browsable but must not be indexed.
     noIndex: !isIndexable(job),
@@ -41,19 +46,28 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   const job = await getAbroadJobById(id)
   if (!job) notFound()
   void incrementJobViews('abroad', id)
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // Where Apply really goes (employer-delivered / external source / sample / info only).
+  const apply = applyStateFor('abroad', job, job.company)
+  const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
     board: 'abroad',
+    jobId: job.id,
     title: job.title,
     company: job.company,
     category: job.category,
-    location: `${job.location || job.country}${job.country && !job.location?.includes(job.country) ? `, ${job.country}` : ''}`,
-    salary: job.salary,
-    experience: job.experience,
-    employmentType: job.type || 'Full Time',
+    location: `${displayValue(job.location) || job.country}${job.country && !displayValue(job.location)?.includes(job.country) && displayValue(job.location) ? `, ${job.country}` : ''}`,
+    salary: displayValue(job.salary) ?? '',
+    experience: displayValue(job.experience) ?? '',
+    employmentType: displayValue(job.type) ?? '',
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    sourcePostedAt: originalPostingDate(job, 'abroad'),
+    applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
+    sample: isSample,
+    applyKind: apply.kind,
   })
 
   const [allAbroad, govt, priv] = await Promise.all([
@@ -63,22 +77,34 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   ])
 
   const pool = allAbroad.filter(j => j.id !== job.id)
-  const related: JobLink[] = [
-    ...pool.filter(j => j.country === job.country || j.category === job.category),
-    ...pool.filter(j => j.country !== job.country && j.category !== job.category),
-  ].slice(0, 6).map(j => ({ href: `/jobs/abroad/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` }))
+  const related: JobLink[] = toRelatedLinks(
+    'abroad',
+    [
+      ...pool.filter(j => j.country === job.country || j.category === job.category),
+      ...pool.filter(j => j.country !== job.country && j.category !== job.category),
+    ],
+    { fromIndexablePage, limit: 6 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: joinReal(j.country, j.salary) }),
+  )
 
-  const countryJobs = pool.filter(j => j.country === job.country).slice(0, 5)
+  const countryJobs = pool.filter(j => j.country === job.country)
+  const countryLinks: JobLink[] = toRelatedLinks(
+    'abroad',
+    countryJobs,
+    { fromIndexablePage, limit: 5 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: joinReal(j.country, j.salary) }),
+  )
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
-    meta: `${g.org} · ${g.vacancies} posts`,
+    meta: isRealDisplayValue(g.vacancies) ? `${g.org} · ${g.vacancies} posts` : g.org,
   }))
-  const privateSuggestions: JobLink[] = priv.jobs.slice(0, 5).map(p => ({
-    href: `/jobs/private/${p.id}`,
-    title: `${p.title} — ${p.company}`,
-    meta: `${p.location} · ${p.salary}`,
-  }))
+  const privateSuggestions: JobLink[] = toRelatedLinks(
+    'private',
+    priv.jobs,
+    { fromIndexablePage, limit: 5 },
+    (p, href) => ({ href, title: `${p.title} — ${p.company}`, meta: joinReal(p.location, p.salary) }),
+  )
 
   return (
     <JobDetailTemplate
@@ -89,8 +115,14 @@ export default async function AbroadJobDetailPage({ params }: Props) {
         { label: job.title },
       ]}
       title={job.title}
-      subtitle={`${job.company} · ${job.location || job.country} · ${job.type || 'Full Time'}`}
-      badges={[`🌍 ${job.country}`, `🏢 ${job.company}`, `💰 ${job.salary}`, `💼 ${job.type || 'Full Time'}`, `🧑‍💼 ${job.experience || 'Any'}`]}
+      subtitle={joinReal(job.company, job.location || job.country, job.type)}
+      badges={[
+        `🌍 ${job.country}`,
+        `🏢 ${job.company}`,
+        displayValue(job.salary) ? `💰 ${displayValue(job.salary)}` : '',
+        displayValue(job.type) ? `💼 ${displayValue(job.type)}` : '',
+        displayValue(job.experience) ? `🧑‍💼 ${displayValue(job.experience)}` : '',
+      ].filter(Boolean)}
       content={content}
       jsonLdSlot={<AbroadJobJsonLd job={job} content={content} />}
       applySlot={<AbroadApplySlot job={job} />}
@@ -107,9 +139,9 @@ export default async function AbroadJobDetailPage({ params }: Props) {
       relatedJobs={related}
       govtSuggestions={govtSuggestions}
       privateSuggestions={privateSuggestions}
-      citySuggestions={countryJobs.length ? {
+      citySuggestions={countryLinks.length ? {
         title: `More Jobs in ${job.country}`,
-        links: countryJobs.map(j => ({ href: `/jobs/abroad/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` })),
+        links: countryLinks,
       } : undefined}
     />
   )

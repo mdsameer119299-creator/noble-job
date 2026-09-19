@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { getJobs } from "@/lib/services/jobService"
-import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
+import { renderableWfhInventory, renderableAbroadInventory } from "@/lib/data/jobInventory"
 import { jobDetailHref } from "@/lib/jobs/provenance"
+import { joinReal } from "@/lib/jobs/renderable"
 
 /**
  * Server-rendered, crawlable job directory with URL-based pagination.
@@ -20,6 +21,8 @@ import { jobDetailHref } from "@/lib/jobs/provenance"
 
 type Board = "private" | "wfh" | "abroad"
 const PER_PAGE = 24
+/** Upper bound of the private pool read for the directory (matches the list service cap). */
+const PRIVATE_POOL = 1000
 
 interface Row {
   href: string
@@ -30,29 +33,33 @@ interface Row {
 
 async function loadPage(board: Board, page: number): Promise<{ rows: Row[]; totalPages: number }> {
   if (board === "private") {
-    const r = await getJobs({ limit: PER_PAGE, page, sort: "latest" })
-    const rows = r.jobs
+    // Filter to the linkable (genuine) jobs FIRST, then count and paginate — otherwise
+    // "Page 1 of N" is computed from every listed row (samples included) while each page
+    // only shows the genuine few. The pool is the list's own (renderable, capped read).
+    const r = await getJobs({ limit: PRIVATE_POOL, page: 1, sort: "latest" })
+    const all = r.jobs
       .map(j => ({
         href: jobDetailHref("private", j),
         title: j.title,
         company: j.company,
-        meta: [j.location, j.salary].filter(Boolean).join(" · "),
+        meta: joinReal(j.location, j.salary),
       }))
       .filter((row): row is Row => row.href !== null)
-    return { rows, totalPages: Math.max(1, Math.ceil((r.total || rows.length) / PER_PAGE)) }
+    const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
+    return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }
   }
   if (board === "wfh") {
     // Only genuine WFH jobs get a crawlable directory link; synthetic inventory
     // (noindex detail pages) is excluded, so this is empty until real WFH
     // inventory exists.
-    const all = WFH_INVENTORY
-      .map(j => ({ href: jobDetailHref("wfh", j), title: j.title, company: j.company, meta: [j.cat, j.salary].filter(Boolean).join(" · ") }))
+    const all = renderableWfhInventory()
+      .map(j => ({ href: jobDetailHref("wfh", j), title: j.title, company: j.company, meta: joinReal(j.cat, j.salary) }))
       .filter((row): row is Row => row.href !== null)
     const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
     return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }
   }
-  const all = ABROAD_INVENTORY
-    .map(j => ({ href: jobDetailHref("abroad", j), title: j.title, company: j.company, meta: [j.country, j.salary].filter(Boolean).join(" · ") }))
+  const all = renderableAbroadInventory()
+    .map(j => ({ href: jobDetailHref("abroad", j), title: j.title, company: j.company, meta: joinReal(j.country, j.salary) }))
     .filter((row): row is Row => row.href !== null)
   const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
   return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }

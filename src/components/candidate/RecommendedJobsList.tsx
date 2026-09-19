@@ -1,6 +1,8 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { toListingJobs } from '@/lib/jobs/clientRecords'
+import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 
 type JobRow = { id: string; title: string; company?: string; location?: string }
 
@@ -11,7 +13,8 @@ export function RecommendedJobsList() {
   useEffect(() => {
     fetch('/api/candidate/recommended')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => setJobs((d?.data || []).slice(0, 5)))
+      // Re-checked on the client: only complete, actionable jobs are recommended.
+      .then(d => setJobs(toListingJobs(d?.data).filter(j => isActionableJob(j, 'private')).slice(0, 5)))
       .finally(() => setLoading(false))
   }, [])
 
@@ -40,7 +43,7 @@ export function RecommendedJobsList() {
           >
             <div style={{ fontWeight: 800, color: '#0d1f4e', fontSize: 14 }}>{j.title}</div>
             <div style={{ fontSize: 12, color: '#6b7280' }}>
-              {j.company} {j.location ? `· ${j.location}` : ''}
+              {[j.company, displayValue(j.location)].filter(Boolean).join(' · ')}
             </div>
           </Link>
         ))

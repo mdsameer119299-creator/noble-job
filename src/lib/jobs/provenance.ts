@@ -27,6 +27,8 @@
  * predicates below.
  */
 
+import { isPast, parseRealDate } from "../seo/jobPostingRules"
+
 export type Provenance =
   | "EMPLOYER"
   | "AGGREGATED"
@@ -69,6 +71,19 @@ export interface Classifiable {
   jobStatus?: string | null
   /** snake_case alias from raw Supabase rows. */
   job_status?: string | null
+  /**
+   * Lifecycle status from the row (`active`, `pending`, `paused`, `closed`,
+   * `rejected`, `archived`, `expired`, …). Anything other than `active` is not an
+   * open opportunity. Absent on generated/local rows, which carry no lifecycle.
+   */
+  status?: string | null
+  /**
+   * The EMPLOYER's real application deadline (ISO or display date), when the
+   * record has one. A deadline in the past means the job is closed. This is never
+   * NobleJob's internal review date.
+   */
+  application_deadline?: string | null
+  applicationDeadline?: string | null
   applyUrl?: string | null
   apply_url?: string | null
   employer_id?: string | null
@@ -95,20 +110,6 @@ function applyUrlOf(j: Classifiable): string {
   return (j.applyUrl ?? j.apply_url ?? "").toString().trim()
 }
 
-function officialUrlOf(j: Classifiable): string {
-  return (
-    j.officialUrl ??
-    j.official_url ??
-    j.notificationUrl ??
-    j.notification_url ??
-    j.notificationPdf ??
-    j.notification_pdf ??
-    ""
-  )
-    .toString()
-    .trim()
-}
-
 function sourceOf(j: Classifiable): string {
   return (j.source ?? "").toString().trim().toLowerCase()
 }
@@ -124,9 +125,26 @@ export function hasRealApplyUrl(url?: string | null): boolean {
   return /^https?:\/\//i.test(u)
 }
 
-/** Real official/notification URL evidence (government). */
+/**
+ * The catch-all portal `resolveGovtJobLinks` falls back to when it cannot match a
+ * row to a recruiting body (or matches only a generic municipal / PSC bucket). It
+ * is a directory homepage, NOT the recruiting body's own site or notification, so
+ * it is never evidence that a government row is a real, sourced opportunity.
+ */
+export function isGenericGovPortalUrl(url?: string | null): boolean {
+  const u = (url ?? "").trim()
+  if (!u) return false
+  return /^https?:\/\/(www\.)?india\.gov\.in\/?(\?.*)?(#.*)?$/i.test(u)
+}
+
+/** Real official/notification URL evidence (government). A generic catch-all portal is not evidence. */
 function hasRealOfficialUrl(j: Classifiable): boolean {
-  return hasRealApplyUrl(officialUrlOf(j))
+  return [
+    j.officialUrl, j.official_url, j.notificationUrl, j.notification_url, j.notificationPdf, j.notification_pdf,
+  ].some(v => {
+    const u = (v ?? "").toString().trim()
+    return hasRealApplyUrl(u) && !isGenericGovPortalUrl(u)
+  })
 }
 
 /** Trusted employer ownership + verification evidence. */
@@ -203,9 +221,19 @@ export function isGenuine(j: Classifiable): boolean {
   }
 }
 
-/** Openness axis: an ARCHIVED role is not an open position. */
-export function isOpen(j: Classifiable): boolean {
-  return (j.jobStatus ?? j.job_status) !== "ARCHIVED_JOB"
+/**
+ * Openness axis. NOT open when: archived; lifecycle status is anything other
+ * than `active` (closed, paused, pending, rejected, expired…); or the employer's
+ * real application deadline has passed. Rows that carry no lifecycle information
+ * (generated / local inventory) fall back to the archived check only.
+ */
+export function isOpen(j: Classifiable, now: Date = new Date()): boolean {
+  if ((j.jobStatus ?? j.job_status) === "ARCHIVED_JOB") return false
+  const status = (j.status ?? "").toString().trim().toLowerCase()
+  if (status && status !== "active") return false
+  const deadline = parseRealDate(j.application_deadline ?? j.applicationDeadline)
+  if (deadline && isPast(deadline, now)) return false
+  return true
 }
 
 /**
@@ -226,6 +254,18 @@ export const isDistributable = isPublishableAsOpen
 /** Countable as a genuine opportunity (open or filled, but real — never demo). */
 export function isCountableAsGenuine(j: Classifiable): boolean {
   return isGenuine(j)
+}
+
+/**
+ * Is an application submitted through NobleJob actually DELIVERED to the
+ * employer? Only for an employer-owned posting (EMPLOYER provenance with an
+ * `employer_id`): the application is routed to that employer's dashboard/email.
+ * Aggregated, curated and government postings send candidates to a third-party
+ * site (or are stored ownerless), so they are NOT direct-apply. Used for
+ * JobPosting `directApply` — it may never default to true.
+ */
+export function isDeliveredToEmployerViaPlatform(j: Classifiable): boolean {
+  return classifyProvenance(j) === "EMPLOYER" && isGenuine(j)
 }
 
 /**

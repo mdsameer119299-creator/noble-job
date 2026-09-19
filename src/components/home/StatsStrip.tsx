@@ -5,7 +5,7 @@ import { Fragment } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 import { formatCounter } from '@/lib/config/jobStrategy'
-import { getMarketplaceTotals } from '@/lib/data/jobInventory'
+import { getVisibleBoardCounts } from '@/lib/services/visibleCounts'
 
 const STAT_ICONS = {
   jobs: (
@@ -31,28 +31,29 @@ export async function StatsStrip() {
   //    inventory). It is a browse figure, NOT a claim of genuine live openings.
   //  • "Live Jobs" / "Verified Employers" = GENUINE only, counted from the DB
   //    (real employer + govt rows). Never padded with synthetic targets.
-  const marketplace = getMarketplaceTotals()
-  const catalogRoles = marketplace.opportunities
+  // Counted by the same pipeline as the lists it summarises (renderable only, synthetic
+  // switch honoured) — never more roles than a candidate can open.
+  const catalogRoles = (await getVisibleBoardCounts()).total.all
   let liveJobs = 0
   let employers = 0
   if (isSupabaseConfigured()) {
     try {
       const sb = await createClient()
       if (!sb) throw new Error('skip')
-      const [active, govt, wfh, abroad, verified] = await Promise.all([
-        sb.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('govt_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('wfh_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('abroad_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      const { getGenuineJobCounts } = await import('@/lib/services/genuineCounts')
+      const [genuine, verified] = await Promise.all([
+        // Genuine + open + renderable — the same predicate the sitemap uses, never a
+        // raw `status = active` row count (which includes samples / incomplete rows).
+        getGenuineJobCounts(),
         sb.from('employers').select('id', { count: 'exact', head: true }).eq('verified', true),
       ])
-      liveJobs = (active.count || 0) + (govt.count || 0) + (wfh.count || 0) + (abroad.count || 0)
+      liveJobs = genuine.total
       employers = verified.count || 0
     } catch {}
   }
 
   const items = [
-    { key: 'catalog',   num: formatCounter(catalogRoles),                        label: 'Roles to Explore',   icon: STAT_ICONS.jobs       },
+    ...(catalogRoles > 0 ? [{ key: 'catalog', num: formatCounter(catalogRoles), label: 'Roles to Explore', icon: STAT_ICONS.jobs }] : []),
     { key: 'live',      num: liveJobs > 0 ? formatCounter(liveJobs) : 'Daily',   label: 'Live Jobs',          icon: STAT_ICONS.companies  },
     { key: 'govt',      num: 'Daily',                                            label: 'Govt Updates',       icon: STAT_ICONS.govt       },
     { key: 'employers', num: employers > 0 ? formatCounter(employers) : 'Growing', label: 'Verified Employers', icon: STAT_ICONS.candidates },

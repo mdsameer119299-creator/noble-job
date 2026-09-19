@@ -1,6 +1,9 @@
-import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { isGenuine } from "@/lib/jobs/provenance"
+// Detail pages resolve database rows only when the site serves the database — a card that
+// links to a page that would 404 is an empty job, so the same switch gates every list here.
+import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
+import { filterActionable, displayValue } from "@/lib/jobs/renderable"
 import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
+import { mapPrivateJobRow } from "@/lib/services/jobMapper"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
@@ -18,14 +21,22 @@ export interface FeaturedJobCard {
 }
 
 /**
+ * NO EMPTY JOBS: a featured card must be an ACTIONABLE job — renderable (real
+ * title/company/description/location, known provenance), genuine and currently
+ * open. Raw rows are passed through the same gate as every other surface.
+ */
+const privateActionable = (rows: unknown[]): Job[] =>
+  filterActionable(rows.map(r => mapPrivateJobRow(r as Record<string, unknown>)), "private")
+
+/**
  * "Featured" is a stronger trust claim than a plain listing badge, so it is
  * genuine-only regardless of the synthetic-visibility admin toggle — unlike
  * every other public surface, this one never shows demo content, full stop.
  */
 export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
-  const localGenuineFeatured = () => getPrivateJobsFeaturedLocal(200, true).filter(isGenuine).slice(0, limit)
+  const localGenuineFeatured = () => filterActionable(getPrivateJobsFeaturedLocal(200, true), "private").slice(0, limit)
 
-  if (!isSupabaseConfigured()) return localGenuineFeatured()
+  if (useLocalInventoryOnly()) return localGenuineFeatured()
 
   try {
     const { createClient } = await import("@/lib/supabase/server")
@@ -39,7 +50,7 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
       .eq("is_featured", true)
       .order("posted_at", { ascending: false })
       .limit(20)
-    const featured = ((featuredRows || []) as unknown as Job[]).filter(isGenuine).slice(0, limit)
+    const featured = privateActionable(featuredRows || []).slice(0, limit)
     if (featured.length) return featured
 
     // No rows explicitly marked featured yet — fall back to the latest
@@ -50,7 +61,7 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
       .eq("status", "active")
       .order("posted_at", { ascending: false })
       .limit(20)
-    const latestGenuine = ((latestRows || []) as unknown as Job[]).filter(isGenuine).slice(0, limit)
+    const latestGenuine = privateActionable(latestRows || []).slice(0, limit)
     return latestGenuine.length ? latestGenuine : localGenuineFeatured()
   } catch {
     return localGenuineFeatured()
@@ -58,7 +69,7 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
 }
 
 async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
-  if (!isSupabaseConfigured()) return []
+  if (useLocalInventoryOnly()) return []
   try {
     const { createClient } = await import("@/lib/supabase/server")
     const sb = await createClient()
@@ -70,7 +81,7 @@ async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
       .eq("is_featured", true)
       .order("posted_at", { ascending: false })
       .limit(20)
-    const featured = ((featuredRows || []) as unknown as WfhJob[]).filter(isGenuine).slice(0, limit)
+    const featured = filterActionable((featuredRows || []) as unknown as WfhJob[], "wfh").slice(0, limit)
     if (featured.length) return featured
 
     const { data: latestRows } = await sb
@@ -79,14 +90,14 @@ async function getFeaturedWfhJobs(limit = 4): Promise<WfhJob[]> {
       .eq("status", "active")
       .order("posted_at", { ascending: false })
       .limit(20)
-    return ((latestRows || []) as unknown as WfhJob[]).filter(isGenuine).slice(0, limit)
+    return filterActionable((latestRows || []) as unknown as WfhJob[], "wfh").slice(0, limit)
   } catch {
     return []
   }
 }
 
 async function getFeaturedAbroadJobs(limit = 4): Promise<AbroadJob[]> {
-  if (!isSupabaseConfigured()) return []
+  if (useLocalInventoryOnly()) return []
   try {
     const { createClient } = await import("@/lib/supabase/server")
     const sb = await createClient()
@@ -98,7 +109,7 @@ async function getFeaturedAbroadJobs(limit = 4): Promise<AbroadJob[]> {
       .eq("is_featured", true)
       .order("posted_at", { ascending: false })
       .limit(20)
-    const featured = ((featuredRows || []) as unknown as AbroadJob[]).filter(isGenuine).slice(0, limit)
+    const featured = filterActionable((featuredRows || []) as unknown as AbroadJob[], "abroad").slice(0, limit)
     if (featured.length) return featured
 
     const { data: latestRows } = await sb
@@ -107,7 +118,7 @@ async function getFeaturedAbroadJobs(limit = 4): Promise<AbroadJob[]> {
       .eq("status", "active")
       .order("posted_at", { ascending: false })
       .limit(20)
-    return ((latestRows || []) as unknown as AbroadJob[]).filter(isGenuine).slice(0, limit)
+    return filterActionable((latestRows || []) as unknown as AbroadJob[], "abroad").slice(0, limit)
   } catch {
     return []
   }
@@ -128,13 +139,13 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
   ])
 
   const privateCards: FeaturedJobCard[] = privateJobs.map(j => ({
-    board: "private", id: j.id, title: j.title, company: j.company, location: j.location, salary: j.salary, color: j.color,
+    board: "private", id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
   }))
   const wfhCards: FeaturedJobCard[] = wfhJobs.map(j => ({
-    board: "wfh", id: j.id, title: j.title, company: j.company, location: "Remote", salary: j.salary, color: j.color,
+    board: "wfh", id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
   }))
   const abroadCards: FeaturedJobCard[] = abroadJobs.map(j => ({
-    board: "abroad", id: j.id, title: j.title, company: j.company, location: j.location || j.country, salary: j.salary,
+    board: "abroad", id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary),
   }))
 
   // Round-robin interleave across boards so a short board doesn't get buried.
@@ -147,4 +158,42 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
     }
   }
   return mixed
+}
+
+/**
+ * Newest ACTIONABLE jobs of one board as display cards — for the homepage "Latest
+ * Job Openings" grid. Same gate as every other surface (complete, genuine, open,
+ * real application route); no hand-written placeholder rows, and an empty result is
+ * an honest empty state rather than made-up openings.
+ */
+export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promise<FeaturedJobCard[]> {
+  if (useLocalInventoryOnly()) return []
+  const table = board === "private" ? "jobs" : board === "wfh" ? "wfh_jobs" : "abroad_jobs"
+  try {
+    const { createClient } = await import("@/lib/supabase/server")
+    const sb = await createClient()
+    if (!sb) return []
+    const { data } = await sb
+      .from(table)
+      .select("*")
+      .eq("status", "active")
+      .order("posted_at", { ascending: false })
+      .limit(40)
+    const rows = (data || []) as unknown[]
+    if (board === "private") {
+      return privateActionable(rows).slice(0, limit).map(j => ({
+        board, id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
+      }))
+    }
+    if (board === "wfh") {
+      return filterActionable(rows as unknown as WfhJob[], "wfh").slice(0, limit).map(j => ({
+        board, id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
+      }))
+    }
+    return filterActionable(rows as unknown as AbroadJob[], "abroad").slice(0, limit).map(j => ({
+      board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary),
+    }))
+  } catch {
+    return []
+  }
 }

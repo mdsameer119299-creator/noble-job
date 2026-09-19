@@ -16,9 +16,6 @@ interface ApplicationModalProps {
   company?: string
   location?: string
   salary?: string
-  /** Original employer/source URL — sent as metadata only, never shown to the candidate. */
-  sourceUrl?: string
-  source?: string
   onApplied?: () => void
 }
 
@@ -53,7 +50,7 @@ function resumeFileName(path?: string | null): string | null {
   return ext ? `resume.${ext}` : 'resume'
 }
 
-export function ApplicationModal({ open, onClose, jobId, board = 'private', title, company, location, salary, sourceUrl, source, onApplied }: ApplicationModalProps) {
+export function ApplicationModal({ open, onClose, jobId, board = 'private', title, company, location, salary, onApplied }: ApplicationModalProps) {
   const [auth, setAuth] = useState<Auth>('unknown')
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<Profile>({})
@@ -150,7 +147,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
       const res = await fetch('/api/applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, board, jobTitle: title, company, sourceUrl, source, coverNote }),
+        body: JSON.stringify({ jobId, board, jobTitle: title, company, coverNote }),
       })
       if (res.status === 401) {
         setAuth('guest')
@@ -190,7 +187,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
       {/* Header */}
       <div style={{ padding: '22px 26px 18px', borderBottom: '1px solid #eef2fb', background: 'linear-gradient(180deg,#f8faff,#fff)' }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#1847d4', marginBottom: 6 }}>
-          Apply on Noble Job
+          Apply through Noble Job
         </div>
         <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 22, lineHeight: 1.25, margin: 0 }}>
           {title || 'this job'}
@@ -211,7 +208,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, margin: '0 auto 14px' }}>✅</div>
             <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 19, marginBottom: 8 }}>Application submitted</h3>
             <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.6, maxWidth: 380, margin: '0 auto' }}>
-              Your application for <strong style={{ color: '#0d1f4e' }}>{title || 'this job'}</strong> is saved on Noble Job. Track its status from your dashboard — no need to go anywhere else.
+              Your application for <strong style={{ color: '#0d1f4e' }}>{title || 'this job'}</strong> {company ? <>was sent to <strong style={{ color: '#0d1f4e' }}>{company}</strong> through Noble Job.</> : 'was sent to the employer through Noble Job.'} Track its status from your dashboard.
             </p>
           </div>
         ) : auth === 'guest' ? (
@@ -219,13 +216,13 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
             <div style={{ fontSize: 34, marginBottom: 10 }}>🔐</div>
             <h3 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#0d1f4e', fontSize: 18, marginBottom: 6 }}>Sign in to apply</h3>
             <p style={{ color: '#64748b', fontSize: 13.5, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 18px' }}>
-              Apply with your Noble Job job-seeker account. You&apos;ll come right back to this job after signing in — and you stay on Noble Job the whole time.
+              Apply with your Noble Job job-seeker account. You&apos;ll come right back to this job after signing in.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button type="button" onClick={() => goAuth('login')} style={btnPrimary}>Log in</button>
               <button type="button" onClick={() => goAuth('register')} style={btnOutline}>Create account</button>
             </div>
-            <p style={{ ...trustMsg, marginTop: 18 }}>🔒 Noble Job never charges candidates. Your application stays on Noble Job.</p>
+            <p style={{ ...trustMsg, marginTop: 18 }}>🔒 Noble Job never charges candidates.{company ? ` Your application is sent to ${company} through Noble Job.` : ''}</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -294,7 +291,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
               />
             </section>
 
-            <p style={trustMsg}>🔒 Your application stays on Noble Job. We never charge candidates or share your details without consent.</p>
+            <p style={trustMsg}>🔒 {company ? `Your application is sent to ${company} through Noble Job.` : 'Your application is sent to the employer through Noble Job.'} We never charge candidates.</p>
           </div>
         )}
       </div>

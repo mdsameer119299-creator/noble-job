@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
 import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { isValidJobId } from "@/lib/jobs/renderable"
 import {
   getPrivateJobsLocal,
   getPrivateJobByIdLocal,
   getPrivateJobsFeaturedLocal,
-  getPrivateJobsCountLocal,
 } from "@/lib/services/jobLocal"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
@@ -15,6 +15,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
 
   try {
     if (p?.length === 1 && p[0] !== "live" && p[0] !== "featured" && p[0] !== "count") {
+      // "undefined" / "null" / whitespace / path-like ids are not jobs → 404.
+      if (!isValidJobId(p[0])) return NextResponse.json({ error: "Not found" }, { status: 404 })
       if (useLocalInventoryOnly()) {
         const job = getPrivateJobByIdLocal(p[0], syntheticVisible)
         if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 })
@@ -45,14 +47,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (p?.[0] === "count") {
-      if (useLocalInventoryOnly()) {
-        return NextResponse.json({ count: getPrivateJobsCountLocal(syntheticVisible) })
-      }
-      const { createClient } = await import("@/lib/supabase/server")
-      const sb = await createClient()
-      if (!sb) return NextResponse.json({ count: getPrivateJobsCountLocal(syntheticVisible) })
-      const { count } = await sb.from("jobs").select("id", { count: "exact" }).eq("status", "active")
-      return NextResponse.json({ count: count || getPrivateJobsCountLocal(syntheticVisible) })
+      // NO EMPTY JOBS / count integrity: the number of OPEN jobs in the SAME renderable,
+      // switch-honouring set the list serves (its Live + Verified tabs) — in local and
+      // database mode alike. Never a raw row count.
+      const { getJobs } = await import("@/lib/services/jobService")
+      const { counts } = await getJobs({ page: 1, limit: 1 })
+      return NextResponse.json({ count: Math.max(0, (counts?.all ?? 0) - (counts?.archived ?? 0)) })
     }
 
     const filter = {

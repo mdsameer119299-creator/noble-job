@@ -11,4 +11,13 @@ export interface WfhJob {
   /** Owning employer id — evidence for EMPLOYER provenance genuineness checks. */
   employer_id?: string | null
   is_featured?: boolean
+  /**
+   * The country a fully-remote role is open to (ISO alpha-2 or name), when the
+   * record states one. There is no database column yet, so today it is only ever
+   * set by a source that carries it; it is NEVER defaulted. Without it (or an
+   * explicit statement in the record's own text) a remote WFH row emits no JobPosting.
+   */
+  applicant_country?: string | null
+  /** ORIGINAL employer/source publication date — the only source of JobPosting `datePosted`. */
+  source_posted_at?: string | null
 }

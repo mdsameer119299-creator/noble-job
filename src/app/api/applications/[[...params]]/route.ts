@@ -3,6 +3,8 @@ import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { getApplicationsByCandidate, updateApplicationStatus } from "@/lib/services/applicationService"
 import { applyJobSchema, updateApplicationStatusSchema } from "@/lib/validations/applicationSchema"
 import { createNotification } from "@/lib/services/notificationService"
+import { classifyProvenance } from "@/lib/jobs/provenance"
+import { applicationTargetVerdict, type ApplicationTargetRow } from "@/lib/jobs/applicationTarget"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -53,6 +55,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "Invalid data" }, { status: 400 })
   }
 
+  // Generated demo (SYNTHETIC) listings cannot take applications. Classified from
+  // id + source ONLY (never the client-supplied URL, which is "#" for many real
+  // jobs) so a genuine application can't be rejected by this guard. Mirrors the
+  // disabled "Sample listing" state in the UI, so a direct API call can't create
+  // an application against a vacancy that does not exist.
+  if (classifyProvenance({ id: parsed.data.jobId, source: parsed.data.source }) === "SYNTHETIC") {
+    return NextResponse.json({ error: "This is a sample listing and is not accepting applications." }, { status: 422 })
+  }
+
+  const d = parsed.data
+
+  // WHO receives this application? An application is accepted ONLY for a job in
+  // NobleJob's own tables that an employer owns and that is still active — the exact
+  // condition under which the UI offers the on-site "Apply Now" (see
+  // src/lib/jobs/applyRoute.ts). Anything else is refused: NobleJob never stores an
+  // "ownerless" application for a vacancy whose employer will never see it. General
+  // talent / resume registration is a separate feature and never uses this route.
+  const isUuid = UUID_RE.test(d.jobId)
+  let row: ApplicationTargetRow | null = null
+  let jobExists = false
+  let jobCategory: string | null = null
+  if (d.board !== "govt" && isUuid) {
+    if (d.board === "wfh") {
+      const { data: job } = await sb.from("wfh_jobs").select("employer_id, status").eq("id", d.jobId).single()
+      row = (job as ApplicationTargetRow | null) ?? null
+    } else if (d.board === "abroad") {
+      const { data: job } = await sb.from("abroad_jobs").select("employer_id, status").eq("id", d.jobId).single()
+      row = (job as ApplicationTargetRow | null) ?? null
+    } else {
+      // Only set applications.job_id when the job exists in `jobs` — the job_id -> jobs(id)
+      // foreign key can't reference wfh_jobs / abroad_jobs (their applications keep
+      // job_id NULL and are identified by externalJobId in the metadata).
+      const { data: job } = await sb.from("jobs").select("employer_id, status, category").eq("id", d.jobId).single()
+      if (job) {
+        jobExists = true
+        row = job as ApplicationTargetRow
+        jobCategory = (job as { category?: string | null }).category ?? null
+      }
+    }
+  }
+  const verdict = applicationTargetVerdict({ board: d.board, sample: false, row })
+  if (!verdict.ok) {
+    return NextResponse.json({ error: verdict.error, reason: verdict.reason }, { status: verdict.status })
+  }
+  const employerId = verdict.employerId
+
   const { data: candidate } = await sb
     .from("candidates")
     .select("id, resume_url, category, first_name, last_name")
@@ -60,60 +108,24 @@ export async function POST(req: NextRequest) {
     .single()
   if (!candidate) return NextResponse.json({ error: "Candidate profile not found" }, { status: 404 })
 
-  const d = parsed.data
-
   // Resume is mandatory for the internal application flow — enforced server-side
-  // so the rule can't be bypassed by calling the API directly. "abroad" is
-  // included here too: AGGREGATED abroad jobs never reach this route at all
-  // (they redirect externally — see AbroadApplySlot), so any abroad application
-  // that does arrive here is, by construction, going through the same internal
-  // resume-collection UI as private/wfh.
-  const INTERNAL_FLOW_BOARDS = new Set(["private", "wfh", "abroad"])
-  if (INTERNAL_FLOW_BOARDS.has(d.board) && !(candidate as { resume_url?: string | null }).resume_url) {
+  // so the rule can't be bypassed by calling the API directly.
+  if (!(candidate as { resume_url?: string | null }).resume_url) {
     return NextResponse.json({ error: "Please upload your resume before applying" }, { status: 400 })
   }
-
-  const isUuid = UUID_RE.test(d.jobId)
   const candidateId = (candidate as { id: string }).id
-  let employerId: string | null = null
-  // Only set applications.job_id when the job actually exists in the `jobs` table —
-  // the job_id -> jobs(id) foreign key can't reference wfh_jobs/abroad_jobs. Live/
-  // imported jobs (e.g. Himalayas) can have UUID-shaped ids that are NOT in `jobs`
-  // either. Such applications are stored as ownerless imported records (job_id =
-  // NULL + metadata) UNLESS the job is a real employer-owned WFH/Abroad posting,
-  // in which case job_id stays NULL (FK constraint) but employer_id is still
-  // resolved so the application correctly reaches that employer.
-  let jobExists = false
-  let jobCategory: string | null = null
 
-  if (isUuid) {
-    if (d.board === "wfh") {
-      const { data: job } = await sb.from("wfh_jobs").select("employer_id").eq("id", d.jobId).single()
-      employerId = (job as { employer_id?: string | null } | null)?.employer_id ?? null
-    } else if (d.board === "abroad") {
-      const { data: job } = await sb.from("abroad_jobs").select("employer_id").eq("id", d.jobId).single()
-      employerId = (job as { employer_id?: string | null } | null)?.employer_id ?? null
-    } else {
-      const { data: job } = await sb.from("jobs").select("employer_id, title, category").eq("id", d.jobId).single()
-      if (job) {
-        jobExists = true
-        employerId = (job as { employer_id?: string })?.employer_id ?? null
-        jobCategory = (job as { category?: string | null })?.category ?? null
-      }
-    }
-  }
-
-  // Imported jobs insert job_id = NULL, so the UNIQUE(job_id, candidate_id)
-  // constraint can't catch duplicates — dedupe by externalJobId in metadata.
+  // wfh / abroad applications insert job_id = NULL, so the UNIQUE(job_id, candidate_id)
+  // constraint can't catch duplicates — dedupe by externalJobId in the metadata.
   if (!jobExists) {
     const { data: existing } = await sb
       .from("applications")
       .select("id, notes")
       .eq("candidate_id", candidateId)
       .is("job_id", null)
-    const dup = (existing || []).some((row) => {
+    const dup = (existing || []).some((r) => {
       try {
-        return (JSON.parse((row as { notes?: string }).notes || "{}") as { externalJobId?: string }).externalJobId === d.jobId
+        return (JSON.parse((r as { notes?: string }).notes || "{}") as { externalJobId?: string }).externalJobId === d.jobId
       } catch {
         return false
       }
@@ -123,18 +135,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Ownerless (imported) applications belong to the Admin Recruitment Queue:
-  // they are retained, visible to admins, and flagged as awaiting employer outreach.
+  // Every stored application has an owning employer. (Historical ownerless rows are
+  // left untouched; new ones can no longer be created.)
   const meta = {
     externalJobId: d.jobId,
     title: d.jobTitle,
     company: d.company,
     board: d.board,
-    source: d.source || null,
-    sourceUrl: d.sourceUrl || null, // metadata only — never exposed to candidates
     coverNote: d.coverNote || null,
-    managedBy: employerId ? "employer" : "noblejob",
-    outreach: employerId ? null : "pending",
+    managedBy: "employer",
   }
 
   const { error } = await sb.from("applications").insert({
@@ -168,11 +177,9 @@ export async function POST(req: NextRequest) {
     if (catErr) console.warn("[apply] category derivation skipped:", catErr.message)
   }
 
-  // A real employer's resume/application must actually reach them — not just an
-  // in-app notification. Gated on the identical `employerId` condition used for
-  // the notification above: this is only ever non-null for a genuine EMPLOYER-
-  // owned job (jobs/wfh_jobs/abroad_jobs with employer_id set), so a synthetic or
-  // curated listing's "Apply Now" can never trigger this — no employer_id, no email.
+  // The application reaches the owning employer: an in-app notification always, and
+  // (below) an email with the resume link for an admin-verified employer. `employerId`
+  // is always set here — applicationTargetVerdict refuses any job without an owner.
   if (employerId) {
     const { data: owner } = await sb.from("employers").select("user_id, verified, users(email)").eq("id", employerId).single()
     const ownerRow = owner as { user_id?: string; verified?: boolean; users?: { email?: string } | null } | null

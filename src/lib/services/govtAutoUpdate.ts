@@ -15,20 +15,29 @@ import { isSupabaseAdminConfigured } from "@/lib/supabase/config"
 import { enrichGovtJob } from "@/lib/data/govtData"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { slugify, deriveStateSlugFromText } from "@/lib/config/govtTaxonomy"
+import { deriveRecordType } from "@/lib/govt/recordType"
+import { isMissingColumnError } from "@/lib/supabase/columnErrors"
+import { planIngestWrites, type ExistingGovtRow } from "@/lib/services/govtIngestPlan"
+import { parseRealDate } from "@/lib/seo/jobPostingRules"
 import { ADAPTERS, enabledAdapters } from "@/lib/ingest/registry"
 import type { SourceAdapter, RawNotification } from "@/lib/ingest/types"
 import type { GovtJob } from "@/types/govtJob"
 
 type GovtJobRow = GovtJob & { last_date: string; age_range: string }
-interface PersistEntry { job: GovtJob; sourceId: string; hash: string }
+interface PersistEntry { job: GovtJob; sourceId: string; hash: string; recordType: string; sourcePublishedAt?: string }
 
 export interface AutoUpdateResult {
   ranAt: string
   autoPublish: boolean
   sourcesChecked: number
   failedSources: string[]
-  sources: { id: string; label: string; fetched: number; published: number; skipped: number; error?: string }[]
+  sources: { id: string; label: string; fetched: number; published: number; unchanged?: number; skipped: number; error?: string }[]
+  /** Rows actually written this run (new + changed). Unchanged rows are not rewritten. */
   totalPublished: number
+  totalInserted?: number
+  totalUpdated?: number
+  /** Rows whose content_hash matched the stored one — skipped, content_changed_at untouched. */
+  totalUnchanged?: number
   /** Number of jobs flipped to status=expired by this run. */
   totalExpired: number
 }
@@ -81,23 +90,69 @@ function normalise(raw: RawNotification, adapter: SourceAdapter): PersistEntry {
     badge: "New",
     status: "active",
     jobStatus: "LIVE_JOB",
-    postedAt: new Date().toISOString(),
+    // NOTE: no `postedAt`. It used to be stamped with the fetch time, which then
+    // leaked into JobPosting `datePosted`. The real source date (if the adapter
+    // supplies one) is carried separately as sourcePublishedAt.
     notificationPdf: raw.notificationPdf,
     officialUrl: raw.officialUrl,
   }
   // synthesizeVacancies:false — real ingested jobs must never carry a fabricated
   // vacancy count; unknown counts surface as "Not Specified".
-  return { job: enrichGovtJob(base, { synthesizeVacancies: false }), sourceId: adapter.id, hash: contentHash(raw) }
+  return {
+    job: enrichGovtJob(base, { synthesizeVacancies: false }),
+    sourceId: adapter.id,
+    hash: contentHash(raw),
+    recordType: deriveRecordType({ tab: base.tab, title: base.title }),
+    sourcePublishedAt: parseRealDate(raw.publishedAt),
+  }
 }
 
-interface PersistResult { published: number; error?: string }
+interface PersistResult { published: number; inserted: number; updated: number; unchanged: number; error?: string }
 
-/** Idempotent upsert (onConflict:"id") with provenance + content hash. */
+/** Rows of `govt_jobs` we need to compare against, fetched in id chunks. */
+async function loadExistingRows(ids: string[]): Promise<ExistingGovtRow[]> {
+  const { supabaseAdmin } = await import("@/lib/supabase/admin")
+  const out: ExistingGovtRow[] = []
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200)
+    // Non-literal projections: the generated DB types predate migration 20260727000001.
+    const withType: string = "id, content_hash, record_type"
+    const baseCols: string = "id, content_hash"
+    let res = await supabaseAdmin.from("govt_jobs").select(withType).in("id", chunk)
+    if (res.error && isMissingColumnError(res.error)) {
+      res = await supabaseAdmin.from("govt_jobs").select(baseCols).in("id", chunk)
+    }
+    if (res.error) throw new Error(res.error.message)
+    out.push(...((res.data ?? []) as unknown as ExistingGovtRow[]))
+  }
+  return out
+}
+
+/**
+ * Compare-then-write. Existing rows whose stored `content_hash` matches the
+ * incoming one are NOT rewritten (so `content_changed_at` — the sitemap
+ * `lastmod` source — only moves when public content really changed, and admin
+ * edits / status are not clobbered). New and changed rows are upserted
+ * (onConflict:"id") with provenance + hash + `content_changed_at`.
+ *
+ * `source_published_at` is only ever set from a REAL adapter-supplied date, and
+ * only where it is still NULL — it is never overwritten and never stamped "now".
+ * If the record-integrity columns do not exist yet (migration not applied) the
+ * write is retried without them, so ingestion keeps working either side of it.
+ */
 async function persist(entries: PersistEntry[]): Promise<PersistResult> {
-  if (!isSupabaseAdminConfigured() || entries.length === 0) return { published: 0 }
+  const none: PersistResult = { published: 0, inserted: 0, updated: 0, unchanged: 0 }
+  if (!isSupabaseAdminConfigured() || entries.length === 0) return none
   try {
     const { supabaseAdmin } = await import("@/lib/supabase/admin")
-    const rows = entries.map(({ job: j, sourceId, hash }) => ({
+    const existing = await loadExistingRows(entries.map(e => e.job.id))
+    const plan = planIngestWrites(
+      entries.map(e => ({ ...e, id: e.job.id })),
+      existing,
+    )
+    if (!plan.writes.length) return { ...none, unchanged: plan.unchanged.length }
+
+    const rows = plan.writes.map(({ entry: { job: j, sourceId, hash }, contentChangedAt, recordType }) => ({
       id: j.id, slug: j.slug, title: j.title, org: j.org, short: j.short, post: j.post,
       vacancies: j.vacancies, qualification: j.qualification, age_range: j.ageRange, fee: j.fee,
       last_date: j.lastDate, start_date: j.startDate, salary: j.salary, location: j.location,
@@ -109,14 +164,37 @@ async function persist(entries: PersistEntry[]): Promise<PersistResult> {
       fee_details: j.feeDetails, exam_pattern: j.examPattern, syllabus_content: j.syllabusContent,
       important_dates: j.importantDates, faqs: j.faqs, article: j.article,
       source_id: sourceId, content_hash: hash, published: SCHEDULER_CONFIG.autoPublish,
+      // record-integrity columns (migration 20260727000001)
+      record_type: recordType, content_changed_at: contentChangedAt,
     }))
-    const { error } = await supabaseAdmin.from("govt_jobs").upsert(rows as never, { onConflict: "id" })
-    if (error) console.error(`[govtAutoUpdate] persist upsert failed: ${error.message}`)
-    return error ? { published: 0, error: error.message } : { published: entries.length }
+
+    let { error } = await supabaseAdmin.from("govt_jobs").upsert(rows as never, { onConflict: "id" })
+    if (error && isMissingColumnError(error)) {
+      const legacy = rows.map(({ record_type: _r, content_changed_at: _c, ...rest }) => rest)
+      ;({ error } = await supabaseAdmin.from("govt_jobs").upsert(legacy as never, { onConflict: "id" }))
+    }
+    if (error) {
+      console.error(`[govtAutoUpdate] persist upsert failed: ${error.message}`)
+      return { ...none, unchanged: plan.unchanged.length, error: error.message }
+    }
+
+    // Real source publication dates — set only where still NULL, never overwritten.
+    for (const { entry } of plan.writes) {
+      if (!entry.sourcePublishedAt) continue
+      const { error: dateErr } = await supabaseAdmin
+        .from("govt_jobs")
+        .update({ source_published_at: entry.sourcePublishedAt } as never)
+        .eq("id", entry.job.id)
+        .is("source_published_at", null)
+      if (dateErr && !isMissingColumnError(dateErr)) console.warn(`[govtAutoUpdate] source_published_at skipped for ${entry.job.id}: ${dateErr.message}`)
+    }
+
+    const inserted = plan.writes.filter(w => w.isNew).length
+    return { published: plan.writes.length, inserted, updated: plan.writes.length - inserted, unchanged: plan.unchanged.length }
   } catch (e) {
     const msg = (e as Error).message
     console.error(`[govtAutoUpdate] persist threw: ${msg}`)
-    return { published: 0, error: msg }
+    return { ...none, error: msg }
   }
 }
 
@@ -167,14 +245,17 @@ export interface IngestRunStatus { status: "success" | "partial" | "error"; erro
  * (pure function, no I/O).
  */
 export function computeIngestRunStatus(
-  result: Pick<AutoUpdateResult, "failedSources" | "sources" | "totalPublished">,
+  result: Pick<AutoUpdateResult, "failedSources" | "sources" | "totalPublished"> & { totalUnchanged?: number },
 ): IngestRunStatus {
   const writeFailedIds = result.sources
     .filter(s => s.error && !result.failedSources.includes(s.id))
     .map(s => s.id)
   const allFailedIds = [...result.failedSources, ...writeFailedIds]
   if (!allFailedIds.length) return { status: "success", error: null }
-  return { status: result.totalPublished ? "partial" : "error", error: `failed: ${allFailedIds.join(", ")}` }
+  // Rows whose content_hash was unchanged are skipped (not written) — they are
+  // still successfully processed, so they count as progress, not as "nothing".
+  const progressed = result.totalPublished + (result.totalUnchanged ?? 0)
+  return { status: progressed ? "partial" : "error", error: `failed: ${allFailedIds.join(", ")}` }
 }
 
 /**
@@ -195,8 +276,8 @@ async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, du
       finished_at: new Date().toISOString(),
       duration_ms: durationMs,
       fetched: result.sources.reduce((s, r) => s + r.fetched, 0),
-      inserted: result.totalPublished,
-      updated: 0,
+      inserted: result.totalInserted ?? result.totalPublished,
+      updated: result.totalUpdated ?? 0,
       skipped: result.sources.reduce((s, r) => s + r.skipped, 0),
       expired: result.totalExpired,
       error: statusError,
@@ -214,7 +295,7 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
   const seen = new Set<string>()
   const report: AutoUpdateResult["sources"] = []
   const failedSources: string[] = []
-  let totalPublished = 0
+  let totalPublished = 0, totalInserted = 0, totalUpdated = 0, totalUnchanged = 0
 
   for (const adapter of enabledAdapters()) {
     let fetched = 0, skipped = 0
@@ -228,9 +309,14 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
         seen.add(entry.job.id)
         toPublish.push(entry)
       }
-      const result = SCHEDULER_CONFIG.autoPublish ? await persist(toPublish) : { published: 0 }
+      const result: PersistResult = SCHEDULER_CONFIG.autoPublish
+        ? await persist(toPublish)
+        : { published: 0, inserted: 0, updated: 0, unchanged: 0 }
       totalPublished += result.published
-      report.push({ id: adapter.id, label: adapter.label, fetched, published: result.published, skipped, error: result.error })
+      totalInserted += result.inserted
+      totalUpdated += result.updated
+      totalUnchanged += result.unchanged
+      report.push({ id: adapter.id, label: adapter.label, fetched, published: result.published, unchanged: result.unchanged, skipped, error: result.error })
     } catch (e) {
       failedSources.push(adapter.id)
       report.push({ id: adapter.id, label: adapter.label, fetched, published: 0, skipped, error: (e as Error).message })
@@ -245,6 +331,9 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
     failedSources,
     sources: report,
     totalPublished,
+    totalInserted,
+    totalUpdated,
+    totalUnchanged,
     totalExpired,
   }
   await recordIngestRun(result, startedAt, Date.now() - startedAt)

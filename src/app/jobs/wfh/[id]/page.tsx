@@ -8,10 +8,15 @@ import { JobActionBar } from '@/components/jobs/JobActionBar'
 import { WfhJobJsonLd } from '@/components/seo/WfhJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
+import { originalPostingDate } from '@/lib/seo/postingDate'
+import { countryDisplayName, resolveApplicantCountry } from '@/lib/seo/jobPostingRules'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
-import { isIndexable } from '@/lib/jobs/provenance'
+import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
+import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
+import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -26,11 +31,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       noIndex: true,
     })
   }
+  const metaSalary = displayValue(job.salary)
+  const metaCat = displayValue(job.cat)
   return buildPageMetadata({
     title: `${job.title} at ${job.company} — Work From Home Jobs India`,
-    description: `Apply for ${job.title} (${job.cat}) — a remote work-from-home role at ${job.company}. Salary ${job.salary}. Eligibility, skills, salary, benefits, how to apply & FAQs on Noble Job.`,
+    description: `Apply for ${job.title}${metaCat ? ` (${metaCat})` : ''} — a remote work-from-home role at ${job.company}.${metaSalary ? ` Salary ${metaSalary}.` : ''} Eligibility, skills, salary, benefits, how to apply & FAQs on Noble Job.`,
     path: `/jobs/wfh/${id}`,
-    keywords: ['Work From Home Jobs', 'WFH Jobs', 'remote jobs India', job.company, job.cat, job.title],
+    keywords: ['Work From Home Jobs', 'WFH Jobs', 'remote jobs India', job.company, job.cat, job.title].filter(isRealDisplayValue),
     ogType: 'article',
     // Synthetic/demo or filled roles are browsable but must not be indexed.
     noIndex: !isIndexable(job),
@@ -42,20 +49,29 @@ export default async function WfhJobDetailPage({ params }: Props) {
   const job = await getWfhJobById(id)
   if (!job) notFound()
   void incrementJobViews('wfh', id)
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // Where Apply really goes (employer-delivered / external source / sample / info only).
+  const apply = applyStateFor('wfh', job, job.company)
+  const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
     board: 'wfh',
+    jobId: job.id,
     title: job.title,
     company: job.company,
     category: job.cat,
     location: 'Remote',
-    salary: job.salary,
-    experience: job.experience,
-    qualification: job.qualification,
-    employmentType: job.type || 'Full Time Remote',
+    salary: displayValue(job.salary) ?? '',
+    experience: displayValue(job.experience) ?? '',
+    qualification: displayValue(job.qualification) ?? '',
+    employmentType: displayValue(job.type) || 'Full Time Remote',
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    sourcePostedAt: originalPostingDate(job, 'wfh'),
+    applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
+    sample: isSample,
+    applyKind: apply.kind,
     remote: true,
   })
 
@@ -66,23 +82,32 @@ export default async function WfhJobDetailPage({ params }: Props) {
   ])
 
   const pool = allWfh.filter(j => j.id !== job.id)
-  const related: JobLink[] = [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)]
-    .slice(0, 6)
-    .map(j => ({ href: `/jobs/wfh/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.cat} · ${j.salary}` }))
+  const related: JobLink[] = toRelatedLinks(
+    'wfh',
+    [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)],
+    { fromIndexablePage, limit: 6 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: joinReal(j.cat, j.salary) }),
+  )
 
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
-    meta: `${g.org} · ${g.vacancies} posts`,
+    meta: isRealDisplayValue(g.vacancies) ? `${g.org} · ${g.vacancies} posts` : g.org,
   }))
 
-  const privateSuggestions: JobLink[] = priv.jobs.slice(0, 5).map(p => ({
-    href: `/jobs/private/${p.id}`,
-    title: `${p.title} — ${p.company}`,
-    meta: `${p.location} · ${p.salary}`,
-  }))
+  const privateSuggestions: JobLink[] = toRelatedLinks(
+    'private',
+    priv.jobs,
+    { fromIndexablePage, limit: 5 },
+    (p, href) => ({ href, title: `${p.title} — ${p.company}`, meta: joinReal(p.location, p.salary) }),
+  )
 
-  const salaryBadge = content.parsedSalary ? describeSalary(content.parsedSalary) : job.salary
+  const salaryBadge = content.parsedSalary ? describeSalary(content.parsedSalary) : displayValue(job.salary)
+  // The permitted country JobPosting.applicantLocationRequirements is built from must be
+  // visible: shown whenever the record STATES it (stored field or its own text), never assumed.
+  const applicantCountry = countryDisplayName(
+    resolveApplicantCountry((job as { applicant_country?: string | null }).applicant_country, job.type, job.title, job.description),
+  )
 
   return (
     <JobDetailTemplate
@@ -93,11 +118,18 @@ export default async function WfhJobDetailPage({ params }: Props) {
         { label: job.title },
       ]}
       title={job.title}
-      subtitle={`${job.company} · ${job.cat} · Remote (Work From Home)`}
-      badges={['🏠 Work From Home', `💼 ${job.type || 'Full Time'}`, `💰 ${salaryBadge}`, `🎓 ${job.qualification || 'Any Graduate'}`, `📅 ${job.experience || 'Freshers'}`]}
+      subtitle={joinReal(job.company, job.cat, 'Remote (Work From Home)')}
+      badges={[
+        '🏠 Work From Home',
+        applicantCountry ? `🌏 Open to candidates in ${applicantCountry}` : '',
+        displayValue(job.type) ? `💼 ${displayValue(job.type)}` : '',
+        salaryBadge ? `💰 ${salaryBadge}` : '',
+        displayValue(job.qualification) ? `🎓 ${displayValue(job.qualification)}` : '',
+        displayValue(job.experience) ? `📅 ${displayValue(job.experience)}` : '',
+      ].filter(Boolean)}
       content={content}
       jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />}
+      applySlot={<ApplyButton jobId={job.id} board="wfh" state={apply} title={job.title} company={job.company} salary={job.salary} />}
       actionsSlot={<JobActionBar board="wfh" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },

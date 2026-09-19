@@ -3,8 +3,9 @@
 import type { WfhJob } from '@/types/wfhJob'
 import { WfhSkillTags } from './WfhSkillTags'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
-import { ARCHIVED_ALT_LABEL, syntheticOpenLabel } from '@/lib/config/jobStrategy'
-import { isGenuine } from '@/lib/jobs/provenance'
+import { ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
+import { hasVerifiedTrust, isGenuine } from '@/lib/jobs/provenance'
+import { displayValue } from '@/lib/jobs/renderable'
 
 interface WfhJobCardProps {
   job: WfhJob
@@ -20,7 +21,7 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
       onKeyDown={e => { if (e.key === 'Enter') onClick(job) }}>
       <div className="wfh-job-card__head">
         <div className="wfh-job-card__logo" style={{ background: job.color || '#7c3aed' }}>
-          {job.logo || job.company.slice(0, 2).toUpperCase()}
+          {job.logo || String(job.company ?? '').slice(0, 2).toUpperCase()}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
@@ -28,10 +29,10 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
             <div className="wfh-job-card__badges">
               {job.jobStatus && (
                 <JobStatusBadge
-                  status={job.jobStatus}
+                  status={!genuine && !isArchived ? 'ARCHIVED_JOB' : job.jobStatus}
                   label={
                     !genuine && !isArchived
-                      ? syntheticOpenLabel(job.id)
+                      ? nonGenuineListingLabel(job)
                       : isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
                         ? ARCHIVED_ALT_LABEL
                         : undefined
@@ -60,12 +61,12 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
 
       <div className="wfh-job-card__meta">
         {[
-          { l: '🏠 ' + job.type },
-          { l: '📊 ' + job.experience },
-          { l: '💰 ' + job.salary },
-          { l: '📂 ' + job.cat },
-        ].map((t, i) => (
-          <span key={i} className="wfh-job-card__meta-tag">{t.l}</span>
+          { i: '🏠', v: displayValue(job.type) },
+          { i: '📊', v: displayValue(job.experience) },
+          { i: '💰', v: displayValue(job.salary) },
+          { i: '📂', v: displayValue(job.cat) },
+        ].filter(t => t.v).map((t, i) => (
+          <span key={i} className="wfh-job-card__meta-tag">{t.i} {t.v}</span>
         ))}
       </div>
 
@@ -78,8 +79,11 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
           {isArchived
             ? '🗄 Archived Vacancy'
             : !genuine
-              ? `📌 ${syntheticOpenLabel(job.id)}`
-              : `👤 ${job.applicants} applicants · Verified`}
+              ? `📄 ${nonGenuineListingLabel(job)}`
+              : [
+                  Number.isFinite(job.applicants) && job.applicants > 0 ? `👤 ${job.applicants} applicants` : '',
+                  hasVerifiedTrust(job) ? 'Verified' : '',
+                ].filter(Boolean).join(' · ')}
         </span>
         <button
           type="button"

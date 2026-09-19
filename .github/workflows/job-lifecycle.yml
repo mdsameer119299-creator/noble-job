@@ -1,0 +1,64 @@
+name: Job Lifecycle
+
+# Closes jobs whose EMPLOYER-supplied application deadline has passed, schedules
+# NobleJob's internal "still open?" review date, and reports reviews that are due.
+# Runs on GitHub Actions because the site is hosted on Hostinger (Node standalone),
+# where the vercel.json crons never fire.
+#
+# Never invents a deadline and never turns the internal review date into one
+# (see src/lib/services/jobExpiryPlan.ts). A no-op until migration
+# 20260727000002_job_lifecycle_foundation.sql has been applied.
+#
+# Required GitHub repo Secrets (same as govt-ingestion.yml):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+# Optional repo Variables:
+#   JOB_REVIEW_INTERVAL_DAYS (default 45), JOB_AUTO_CLOSE_GRACE_DAYS (default: off)
+
+on:
+  schedule:
+    - cron: "30 1 * * *" # daily, 01:30 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report only — write nothing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: job-lifecycle
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      JOB_REVIEW_INTERVAL_DAYS: ${{ vars.JOB_REVIEW_INTERVAL_DAYS }}
+      JOB_AUTO_CLOSE_GRACE_DAYS: ${{ vars.JOB_AUTO_CLOSE_GRACE_DAYS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Preflight — required secrets present
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY repo secrets."
+            exit 1
+          fi
+      - name: Run job lifecycle
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx tsx scripts/run-job-lifecycle.ts --dry-run
+          else
+            npx tsx scripts/run-job-lifecycle.ts
+          fi

@@ -16,6 +16,7 @@ export function govtClassifiable(job: GovtJob): Classifiable {
     // No stored provenance for govt rows — force evidence-based classification.
     provenance: undefined,
     jobStatus: job.jobStatus,
+    status: job.status,
     officialUrl: job.officialUrl,
     official_url: job.official_url,
     notificationUrl: job.notificationUrl,

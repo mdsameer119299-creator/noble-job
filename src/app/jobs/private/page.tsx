@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { buildPageMetadata, paginationMeta } from '@/lib/seo/metadata'
+import { buildPageMetadata, listingMeta, pageFromSearchParams } from '@/lib/seo/metadata'
 import { Suspense } from 'react'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
 import { JobSearchBar } from '@/components/jobs/JobSearchBar'
@@ -12,10 +12,10 @@ import { ScrollToTop } from '@/components/shared/ScrollToTop'
 
 export const revalidate = 3600
 
-type SP = { searchParams: Promise<{ page?: string }> }
+type SP = { searchParams: Promise<Record<string, string | string[] | undefined>> }
 
 export async function generateMetadata({ searchParams }: SP): Promise<Metadata> {
-  const page = Math.max(1, Number((await searchParams).page) || 1)
+  const sp = await searchParams
   return {
     ...buildPageMetadata({
       title: 'Private Jobs in India — IT, Banking, Fresher & More | Noble Job',
@@ -24,12 +24,13 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
       path: '/jobs/private',
       keywords: ['Private Jobs', 'Jobs in India', 'fresher jobs', 'IT jobs India'],
     }),
-    ...paginationMeta('/jobs/private', page),
+    // page>=2 and any filter/keyword param → noindex,follow (see listingMeta).
+    ...listingMeta('/jobs/private', sp),
   }
 }
 
 export default async function PrivateJobsPage({ searchParams }: SP) {
-  const page = Math.max(1, Number((await searchParams).page) || 1)
+  const page = pageFromSearchParams(await searchParams)
   return (
     <div style={{ background: '#f8faff', minHeight: '100vh' }}>
       <CategoryHero variant="private" />

@@ -1,12 +1,13 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
+import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import {
   getAbroadJobsPaginatedLocal,
   getAbroadJobByIdLocal,
   type AbroadJobFilters,
 } from "@/lib/services/abroadJobLocal"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { isSyntheticJobsVisible, applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { AbroadJob } from "@/types/abroadJob"
 
 export type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -21,7 +22,8 @@ export async function getAbroadJobsPaginated(filters: AbroadJobFilters = {}) {
 }
 
 export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<AbroadJob[]> {
-  const local = getAbroadJobsPaginatedLocal(filters, await isSyntheticJobsVisible()).items
+  const syntheticVisible = await isSyntheticJobsVisible()
+  const local = getAbroadJobsPaginatedLocal(filters, syntheticVisible).items
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
 
   try {
@@ -34,20 +36,25 @@ export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<Abr
     q = q.order("posted_at", { ascending: false })
     const { data, error } = await q
     if (error || !data?.length) return local
-    return sortByStatus(data as unknown as AbroadJob[])
+    // Incomplete rows stay in the database but are never exposed.
+    const remote = sortByStatus(applySyntheticVisibility(filterRenderable(data as unknown as AbroadJob[], "abroad"), syntheticVisible))
+    return remote.length ? remote : local
   } catch {
     return local
   }
 }
 
 export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
-  const local = getAbroadJobByIdLocal(id, await isSyntheticJobsVisible())
+  if (!isValidJobId(id)) return null
+  const local = renderableOrNull(getAbroadJobByIdLocal(id, await isSyntheticJobsVisible()), "abroad")
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()
     if (!sb) return local
     const { data } = await sb.from("abroad_jobs").select("*").eq("id", id).maybeSingle()
-    return (data as unknown as AbroadJob) ?? local
+    // Exists but incomplete → not found (never an empty job page, never a local swap).
+    if (data) return renderableOrNull(applySyntheticVisibility([data as unknown as AbroadJob], await isSyntheticJobsVisible())[0] ?? null, "abroad")
+    return local
   } catch {
     return local
   }

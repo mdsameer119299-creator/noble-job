@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { buildPageMetadata } from "@/lib/seo/metadata"
+import { buildPageMetadata, listingMeta } from "@/lib/seo/metadata"
 import { GOVT_QUALIFICATIONS, getQualificationBySlug } from "@/lib/config/govtTaxonomy"
 import { getGovtJobsFiltered } from "@/lib/services/govtJobService"
 import { GovtListingView } from "@/components/govt/GovtListingView"
@@ -16,17 +16,21 @@ export function generateStaticParams() {
   return GOVT_QUALIFICATIONS.map(q => ({ slug: q.slug }))
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params
   const qual = getQualificationBySlug(slug)
   if (!qual) return { title: "Govt Jobs by Qualification — Noble Job" }
   const desc = `Government jobs for ${qual.label} candidates in 2026. Latest ${qual.label} sarkari naukri notifications with eligibility, vacancies and apply links.`
-  return buildPageMetadata({
-    title: `${qual.label} Govt Jobs 2026 — Sarkari Naukri`,
-    description: desc,
-    path: `/jobs/govt/qualification/${slug}`,
-    keywords: [qual.label, "government jobs by qualification", "sarkari naukri"],
-  })
+  return {
+    ...buildPageMetadata({
+      title: `${qual.label} Govt Jobs 2026 — Sarkari Naukri`,
+      description: desc,
+      path: `/jobs/govt/qualification/${slug}`,
+      keywords: [qual.label, "government jobs by qualification", "sarkari naukri"],
+    }),
+    // page>=2 and filter/keyword params → noindex,follow.
+    ...listingMeta(`/jobs/govt/qualification/${slug}`, await searchParams),
+  }
 }
 
 export default async function GovtQualificationPage({ params, searchParams }: Props) {

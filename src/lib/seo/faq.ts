@@ -18,7 +18,7 @@ export const SITE_FAQ = [
   {
     question: "Can I apply for Private Jobs without paying a fee?",
     answer:
-      "Noble Job never charges candidates to apply. Create a free account, upload your resume, and apply directly to private sector openings.",
+      "Noble Job never charges candidates to apply. Create a free account and upload your resume to apply to employer-posted openings through Noble Job; listings from other sources link to the original application page.",
   },
   {
     question: "Does Noble Job list Abroad Jobs?",

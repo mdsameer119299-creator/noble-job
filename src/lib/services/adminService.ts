@@ -3,6 +3,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { getInventoryCounts } from "@/lib/data/jobInventory"
 import { notifyUser } from "@/lib/services/adminNotifyService"
 import { JOB_BOARD_TABLE, type EmployerJobBoard } from "@/lib/services/jobLifecycle"
+import { isMissingColumnError } from "@/lib/supabase/columnErrors"
+import { employerPublicationStamp } from "@/lib/seo/postingDate"
 import type { AdminStats } from "@/types/admin"
 
 function fallbackStats(): AdminStats {
@@ -90,11 +92,45 @@ async function notifyJobDecision(board: EmployerJobBoard, jobId: string, approve
   }
 }
 
+/**
+ * Record the employer's ORIGINAL posting date at FIRST PUBLICATION.
+ *
+ * An employer-authored job (EMPLOYER provenance, owned by an employer) exists nowhere
+ * but NobleJob, and the moment an admin approves it is the first time it is publicly
+ * available — the legitimate "original posting" event for JobPosting `datePosted`. The
+ * row's `posted_at` is NOT that (it is the submission / draft-creation time). Written
+ * once into `source_posted_at`, never overwritten, never for curated / aggregated rows
+ * (those must carry the SOURCE's own date — see seo/postingDate.ts). Best-effort: an
+ * environment without migration 20260727000003 simply skips it, and it can never fail
+ * the approval that already succeeded.
+ */
+async function stampFirstPublication(table: (typeof JOB_BOARD_TABLE)[EmployerJobBoard], id: string): Promise<void> {
+  try {
+    const cols: string = "provenance, employer_id, source_posted_at"
+    const { data, error } = await supabaseAdmin.from(table).select(cols).eq("id", id).maybeSingle()
+    if (error) {
+      if (!isMissingColumnError(error)) console.warn("[approve-job] publication date read skipped:", error.message)
+      return
+    }
+    const stamp = employerPublicationStamp(data as unknown as Parameters<typeof employerPublicationStamp>[0])
+    if (!stamp) return
+    const res = await supabaseAdmin
+      .from(table)
+      .update({ source_posted_at: stamp } as never)
+      .eq("id", id)
+      .is("source_posted_at" as never, null)
+    if (res.error && !isMissingColumnError(res.error)) console.warn("[approve-job] publication date write skipped:", res.error.message)
+  } catch (e) {
+    console.warn("[approve-job] publication date skipped:", e instanceof Error ? e.message : e)
+  }
+}
+
 export async function approveJob(id: string, board: EmployerJobBoard = "private") {
   const table = JOB_BOARD_TABLE[board]
   const result = await supabaseAdmin.from(table).update({ status: "active" }).eq("id", id)
   // Never notify (in-app + email) after a failed DB mutation.
   if (result.error) return result
+  await stampFirstPublication(table, id)
   await notifyJobDecision(board, id, true)
   const { notifyAdmins } = await import("@/lib/services/adminNotifyService")
   await notifyAdmins("job_approved", "Job approved", "A job posting was approved and is now live.")
