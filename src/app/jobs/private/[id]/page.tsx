@@ -61,7 +61,8 @@ export default async function JobDetailPage({ params }: Props) {
     employmentType: row.job_type || job.type || 'Full Time',
     skills: job.skills,
     description: row.description || job.desc,
-    postedAt: row.posted_at || job.posted,
+    // Stored posting timestamp only — `job.posted` is a display string, not a date.
+    postedAt: row.posted_at,
     // The employer's real deadline only — never derived from the posting date.
     applicationDeadline: row.application_deadline ?? undefined,
     sample: isSample,

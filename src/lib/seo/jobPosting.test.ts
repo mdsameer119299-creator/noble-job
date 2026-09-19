@@ -24,10 +24,21 @@ import {
   endOfDayIst,
   normalizeEmploymentType,
   isExplicitlyFullyRemote,
+  isGenuinelyFullyRemote,
+  explicitApplicantCountry,
+  resolveApplicantCountry,
   resolveCountryIso,
   originOf,
   sameUrl,
 } from "./jobPostingRules"
+import {
+  buildStoredDescription,
+  buildGovtFactsDescription,
+  clampDescriptionHtml,
+  isSubstantiveDescription,
+  plainTextOf,
+  MAX_DESCRIPTION_HTML_CHARS,
+} from "./jobPostingDescription"
 import { ORG_LOGO } from "./constants"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
@@ -49,6 +60,19 @@ const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 
 const POSTED = "2026-08-01T05:30:00.000Z"
 
+/** Realistic STORED employer descriptions (each is > 150 chars / > 20 words). */
+const PRIVATE_DESC =
+  "We are looking for an Accounts Executive to maintain the company ledgers in Tally and reconcile vendor and bank statements every month.\n\n" +
+  "The role reports to the finance manager and handles GST filing support, invoice processing and monthly closing for our Delhi office."
+const WFH_DESC =
+  "Answer customer emails and chat requests for our subscription product. This is a fully remote position open to candidates based in India. " +
+  "You will work fixed shifts, use our ticketing tool and escalate billing issues to the finance team."
+const ABROAD_DESC =
+  "Install and maintain electrical wiring, panels and lighting for commercial building sites in Dubai. Candidates must hold a trade certificate and " +
+  "have prior site experience. Accommodation and transport details are shared at interview."
+/** Generated boilerplate that must never be presented to Google as employer facts. */
+const BOILERPLATE_RE = /recogni[sz]ed employer|onboarding|mentoring|growth path|career path|Key Responsibilities|Selection Process|Benefits:/i
+
 const employerJob = (over: Partial<Job> & Obj = {}): Job =>
   ({
     id: "3f2a9b6e-1111-4c2d-8a10-0a1b2c3d4e5f",
@@ -66,7 +90,7 @@ const employerJob = (over: Partial<Job> & Obj = {}): Job =>
     provenance: "EMPLOYER",
     employer_id: "emp-1",
     applyUrl: "",
-    desc: "d",
+    desc: PRIVATE_DESC,
     posted: "",
     verified: true,
     source: "employer",
@@ -102,6 +126,7 @@ const wfhJob = (over: Obj = {}): WfhJob =>
     qualification: "Graduate",
     posted_at: POSTED,
     apply_url: "https://careers.remoteco.example/apply/1",
+    description: WFH_DESC,
     provenance: "AGGREGATED",
     source: "himalayas",
     status: "active",
@@ -122,6 +147,7 @@ const abroadJob = (over: Obj = {}): AbroadJob =>
     category: "Construction",
     posted_at: POSTED,
     apply_url: "https://careers.gulfbuild.example/apply/1",
+    description: ABROAD_DESC,
     provenance: "AGGREGATED",
     source: "himalayas",
     status: "active",
@@ -136,6 +162,8 @@ const govtJob = (over: Obj = {}): GovtJob =>
     org: "IBPS",
     post: "Clerk",
     vacancies: "6000",
+    vacanciesStated: "6000",
+    ageRange: "20-28 years",
     tab: "banking",
     status: "active",
     lastDate: "30 Sep 2026",
@@ -146,7 +174,8 @@ const govtJob = (over: Obj = {}): GovtJob =>
     state: "",
     qualification: "Any Graduate",
     salary: "",
-    overview: "IBPS invites applications for Clerk posts.",
+    // Template-generated at enrichment — must never reach the JobPosting description.
+    overview: "GENERATED-OVERVIEW IBPS is a recognised employer offering structured onboarding and mentoring.",
     ...over,
   }) as unknown as GovtJob
 
@@ -195,6 +224,38 @@ test("relative/junk posted text ('2 days ago') is not a real date → NO JobPost
   const j = employerJob({ posted_at: undefined, posted: "2 days ago" })
   assert.equal(buildPrivateJobPosting(j, contentFor(j)), null)
 })
+test("private datePosted comes ONLY from the stored posted_at — never from the display string", () => {
+  // Display strings on the list path / synthetic inventory: never a schema date.
+  for (const posted of ["5 days ago", "Recent", "Just now", "2 weeks ago", "Job 1", "Yesterday"]) {
+    const j = employerJob({ posted_at: undefined, posted })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `posted=${JSON.stringify(posted)}`)
+  }
+  // Even a perfectly parseable display date is not the stored original date.
+  const j = employerJob({ posted_at: undefined, posted: "2026-08-01" })
+  assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, "job.posted is never a fallback")
+  // With a stored posted_at, a conflicting display string is ignored.
+  const k = employerJob({ posted: "5 days ago" })
+  const p = asObj(buildPrivateJobPosting(k, contentFor(k, { postedAt: POSTED })))
+  assert.equal(p.datePosted, POSTED)
+  assert.doesNotMatch(JSON.stringify(p), /days ago/i)
+})
+test("private: a junk or future stored posted_at → NO JobPosting", () => {
+  for (const posted_at of ["Job 1", "5 days ago", "not-a-date", "", "1999-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
+    const j = employerJob({ posted_at })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `posted_at=${JSON.stringify(posted_at)}`)
+  }
+})
+test("schema: future datePosted (beyond clock-skew tolerance) → null", () => {
+  const mk = (d: string) => jobPostingSchema({ title: "t", description: "A real description.", url: "/x", organizationName: "o", location: "l", datePosted: d, addressCountry: "IN" })
+  assert.equal(mk("2099-01-01T00:00:00Z"), null)
+  assert.notEqual(mk(POSTED), null)
+})
+test("neither the private builder nor its page reads job.posted as a date", () => {
+  const b = readFileSync(join(process.cwd(), "src/lib/seo/jobPostingBuilders.ts"), "utf8")
+  assert.doesNotMatch(b, /datePosted:\s*[^,\n]*\bjob\.posted\b/, "builder must not fall back to job.posted")
+  const pg = readFileSync(join(process.cwd(), "src/app/jobs/private/[id]/page.tsx"), "utf8")
+  assert.doesNotMatch(pg, /postedAt:[^\n]*job\.posted\b/, "page must not fall back to job.posted")
+})
 test("no employer deadline → validThrough OMITTED (never +30 days)", () => {
   const j = employerJob()
   const c = contentFor(j, { postedAt: POSTED })
@@ -235,6 +296,92 @@ test("parseRealDate: strict — junk / roll-over rejected, real formats accepted
 test("endOfDayIst: 'last date 30 Jun' stays open through the whole IST day", () => {
   assert.equal(endOfDayIst("2026-06-30T00:00:00.000Z"), "2026-06-30T18:29:59.000Z")
   assert.equal(endOfDayIst(undefined), undefined)
+})
+
+/* ------------------------------ description ------------------------------ */
+
+test("private description = the STORED employer description + stored facts", () => {
+  const j = employerJob()
+  const p = asObj(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED })))
+  const d = String(p.description)
+  assert.ok(d.includes("maintain the company ledgers in Tally"), "stored description text is present")
+  assert.ok(d.includes("GST filing support"), "second stored paragraph is present")
+  assert.ok(d.includes("<li>Employer: Acme Pvt Ltd</li>"))
+  assert.ok(d.includes("<li>Location: Delhi</li>"))
+  assert.ok(d.includes("<li>Experience: 2 years</li>"))
+  assert.ok(d.includes("<li>Skills: Tally</li>"))
+})
+test("description never carries generated employer claims, benefits, responsibilities or stages", () => {
+  const cases: Array<[string, unknown]> = [
+    ["private", buildPrivateJobPosting(employerJob(), contentFor(employerJob(), { postedAt: POSTED }))],
+    ["aggregated", buildPrivateJobPosting(aggregatedJob(), contentFor(aggregatedJob(), { postedAt: POSTED }))],
+    ["wfh", buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), contentFor(employerJob(), { postedAt: POSTED }))],
+    ["abroad", buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED }))],
+    ["govt", buildGovtJobPosting(govtJob(), govtHelpers)],
+  ]
+  for (const [name, p] of cases) {
+    assert.ok(p, `${name} should emit`)
+    assert.doesNotMatch(String(asObj(p).description), BOILERPLATE_RE, `${name} description contains generated copy`)
+  }
+})
+test("the generated page copy is not what reaches the schema description", () => {
+  const j = employerJob()
+  const c = contentFor(j, { postedAt: POSTED })
+  const d = String(asObj(buildPrivateJobPosting(j, c)).description)
+  assert.ok(c.overview[0].length > 40 && !d.includes(c.overview[0]), "generated overview must not be in the schema")
+  assert.ok(!d.includes(c.aboutOrg.slice(0, 60)), "generated 'about the employer' must not be in the schema")
+  for (const r of c.responsibilities) assert.ok(!d.includes(r), "generated responsibility leaked into the schema")
+  for (const b of c.benefits) assert.ok(!d.includes(b), "generated benefit leaked into the schema")
+  assert.ok(!("schemaDescriptionHtml" in (c as unknown as Obj)), "the template-built schema description no longer exists")
+})
+test("no substantive STORED description → NO JobPosting (private / WFH / abroad)", () => {
+  const c = contentFor(employerJob(), { postedAt: POSTED })
+  for (const desc of ["d", "", "Great opportunity, apply now!", undefined, null]) {
+    const j = employerJob({ desc: desc as never })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED })), null, `private desc=${JSON.stringify(desc)}`)
+    assert.equal(buildWfhJobPosting(wfhJob({ applicant_country: "IN", description: desc as never }), c), null, `wfh desc=${JSON.stringify(desc)}`)
+    assert.equal(buildAbroadJobPosting(abroadJob({ description: desc as never }), c), null, `abroad desc=${JSON.stringify(desc)}`)
+  }
+})
+test("stored facts alone never stand in for a description", () => {
+  const j = employerJob({ desc: "" })
+  assert.equal(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED })), null)
+  assert.equal(buildStoredDescription({ description: "", facts: [{ label: "Employer", value: "Acme" }] }), null)
+})
+test("stored HTML / hostile text is reduced to safe, escaped markup", () => {
+  const raw =
+    "<p>We need an <b>Accounts Executive</b> to keep ledgers &amp; reconcile bank statements each month for our Delhi office.</p>" +
+    "<script>alert(1)</script><ul><li>Tally &lt;ERP&gt; experience</li><li>GST filing support and invoice processing</li></ul>" +
+    "<p>Send questions to the hiring manager after applying through the portal; shortlisted candidates are called.</p>"
+  const html = buildStoredDescription({ description: raw })!
+  assert.ok(html, "substantive")
+  assert.doesNotMatch(html, /<script|alert\(1\)|<b>|onerror/i)
+  assert.match(html, /ledgers &amp; reconcile/)
+  assert.match(html, /<li>Tally &lt;ERP&gt; experience<\/li>/)
+  assert.ok(/^(<p>|<ul>)/.test(html) && !/<(?!\/?(p|ul|li|br)\b)[a-z]/i.test(html), "only p/ul/li/br produced")
+})
+test("facts skip placeholders (— / TBA / Competitive / Any / As per norms / Not specified)", () => {
+  const j = employerJob({ salary: "Competitive", exp: "Any", type: "-", location: "India", job_type: "" })
+  const d = String(asObj(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED }))).description)
+  for (const junk of ["Competitive", "Salary:", "Experience:", "Employment type:", "Location:"]) assert.ok(!d.includes(junk), junk)
+  assert.ok(d.includes("Employer: Acme Pvt Ltd"))
+})
+test("description is clamped on a block boundary (never mid-tag) and stays ≤ 5000 chars", () => {
+  const para = "Reconcile vendor statements and post journal entries in Tally every month. ".repeat(6).trim()
+  const long = Array.from({ length: 40 }, () => para).join("\n\n")
+  const html = buildStoredDescription({ description: long, facts: [{ label: "Employer", value: "Acme" }] })!
+  assert.ok(html.length <= MAX_DESCRIPTION_HTML_CHARS)
+  assert.match(html, /<\/ul>$/, "facts list still present and closed")
+  const one = clampDescriptionHtml("<p>" + "x".repeat(6000) + "</p>")
+  assert.equal(one, "", "a single block that cannot fit is dropped, never cut mid-tag")
+  const two = clampDescriptionHtml("<p>" + "a".repeat(3000) + "</p><p>" + "b".repeat(3000) + "</p>")
+  assert.ok(two.endsWith("</p>") && two.length <= 5000 && !two.includes("b"))
+})
+test("isSubstantiveDescription thresholds", () => {
+  assert.equal(isSubstantiveDescription("d"), false)
+  assert.equal(isSubstantiveDescription("word ".repeat(19)), false)
+  assert.equal(isSubstantiveDescription(PRIVATE_DESC), true)
+  assert.equal(plainTextOf("<p>Hello&nbsp;<b>world</b></p>"), "Hello world")
 })
 
 /* ------------------------------ directApply ------------------------------ */
@@ -299,23 +446,112 @@ test("employmentType: no hard-coded FULL_TIME when unknown", () => {
 
 /* ---------------------------------- WFH ---------------------------------- */
 
-test("WFH: explicit 'Full-Time Remote' → TELECOMMUTE with applicantLocationRequirements", () => {
+test("WFH: 100% remote + a stored applicant country → TELECOMMUTE with that country", () => {
+  const p = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.equal(p.jobLocationType, "TELECOMMUTE")
+  const req = asObj(p.applicantLocationRequirements)
+  assert.equal(req["@type"], "Country")
+  assert.equal(req.name, "IN")
+})
+test("WFH: the permitted country is the STORED one — not a hard-coded India", () => {
+  const p = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "AE" }), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.equal(asObj(p.applicantLocationRequirements).name, "AE")
+  const q = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "United Kingdom" }), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.equal(asObj(q.applicantLocationRequirements).name, "GB")
+})
+test("WFH: country stated explicitly in the record's own text is accepted", () => {
+  // WFH_DESC says: "fully remote position open to candidates based in India"
   const p = asObj(buildWfhJobPosting(wfhJob(), contentFor(employerJob(), { postedAt: POSTED })))
   assert.equal(p.jobLocationType, "TELECOMMUTE")
-  assert.ok("applicantLocationRequirements" in p)
+  assert.equal(asObj(p.applicantLocationRequirements).name, "IN")
 })
-test("WFH: not automatically TELECOMMUTE — a hybrid/non-remote row emits no remote claim (and no JobPosting)", () => {
-  const hybrid = wfhJob({ type: "Hybrid" })
-  assert.equal(buildWfhJobPosting(hybrid, contentFor(employerJob(), { postedAt: POSTED })), null)
-  const fullTime = wfhJob({ type: "Full Time" })
-  assert.equal(buildWfhJobPosting(fullTime, contentFor(employerJob(), { postedAt: POSTED })), null)
+test("WFH: remote but NO stored/explicit country → NO JobPosting (India is never assumed)", () => {
+  const noCountry = wfhJob({
+    description:
+      "Answer customer emails and chat requests for our subscription product. This is a fully remote position. " +
+      "You will work fixed shifts, use our ticketing tool and escalate billing issues to the finance team.",
+  })
+  assert.equal(buildWfhJobPosting(noCountry, contentFor(employerJob(), { postedAt: POSTED })), null)
+})
+test("WFH: ambiguous / multi-country / worldwide text → NO JobPosting", () => {
+  for (const where of [
+    "open to candidates based in India or the United Arab Emirates",
+    "Remote - India, UAE",
+    "Remote - anywhere in the world",
+    "Remote, US timezones only",
+  ]) {
+    const j = wfhJob({
+      description:
+        `Answer customer emails and chat requests for our subscription product. This is a fully remote position, ${where}. ` +
+        "You will work fixed shifts, use our ticketing tool and escalate billing issues to the finance team.",
+    })
+    assert.equal(buildWfhJobPosting(j, contentFor(employerJob(), { postedAt: POSTED })), null, where)
+  }
+})
+test("WFH: NEVER emits a physical jobLocation for a remote role (no fabricated 'India')", () => {
+  const p = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.ok(!("jobLocation" in p), "TELECOMMUTE roles must not carry a made-up address")
+  assert.ok(!JSON.stringify(p).includes("addressCountry"))
+  assert.ok(!JSON.stringify(p).includes('"India"'))
+})
+test("WFH: hybrid / on-site / office-day wording anywhere → not TELECOMMUTE → NO JobPosting", () => {
+  const c = contentFor(employerJob(), { postedAt: POSTED })
+  assert.equal(buildWfhJobPosting(wfhJob({ type: "Hybrid", applicant_country: "IN" }), c), null)
+  assert.equal(buildWfhJobPosting(wfhJob({ type: "Full-Time Remote", title: "Hybrid Support Associate", applicant_country: "IN" }), c), null)
+  for (const phrase of ["hybrid model", "3 days in office every week", "remote-first with occasional office visits", "on-site training in week one", "work from office on Fridays"]) {
+    const j = wfhJob({
+      applicant_country: "IN",
+      description: `Answer customer emails and chat requests for our subscription product; this is a remote role with ${phrase}. Use our ticketing tool and escalate billing issues to the finance team every day.`,
+    })
+    assert.equal(buildWfhJobPosting(j, c), null, phrase)
+  }
+})
+test("WFH: uncertain remote status (no positive evidence) → not TELECOMMUTE → NO JobPosting", () => {
+  const c = contentFor(employerJob(), { postedAt: POSTED })
+  const plain = wfhJob({
+    type: "Full Time",
+    applicant_country: "IN",
+    description:
+      "Answer customer emails and chat requests for our subscription product. Fixed shifts, our ticketing tool, and escalation of billing issues to the finance team are part of the role.",
+  })
+  assert.equal(buildWfhJobPosting(plain, c), null, "being on the WFH board is not evidence")
+  assert.notEqual(buildWfhJobPosting(wfhJob({ type: "", applicant_country: "IN" }), c), null, "type blank but the description says fully remote → evidence is in the description")
+})
+test("WFH: isGenuinelyFullyRemote / isExplicitlyFullyRemote rules", () => {
   assert.equal(isExplicitlyFullyRemote("Hybrid"), false)
   assert.equal(isExplicitlyFullyRemote("Remote-first with 3 office days"), false)
   assert.equal(isExplicitlyFullyRemote("Full-Time Remote"), true)
   assert.equal(isExplicitlyFullyRemote("Work From Home"), true)
+  assert.equal(isGenuinelyFullyRemote({ type: "Full-Time Remote" }), true)
+  assert.equal(isGenuinelyFullyRemote({ type: "Full-Time Remote", description: "Hybrid: 2 days in office" }), false)
+  assert.equal(isGenuinelyFullyRemote({ type: "Full Time", description: "This is a 100% remote role." }), true)
+  assert.equal(isGenuinelyFullyRemote({ type: "Full Time", description: "We build remote monitoring tools." }), false)
+  assert.equal(isGenuinelyFullyRemote({ type: "Part Time" }), false)
+  assert.equal(isGenuinelyFullyRemote({}), false)
+})
+test("WFH: explicitApplicantCountry — explicit single country only", () => {
+  assert.equal(explicitApplicantCountry("Remote - India"), "IN")
+  assert.equal(explicitApplicantCountry("Remote (UAE)"), "AE")
+  assert.equal(explicitApplicantCountry("Open to candidates based in Nepal"), "NP")
+  assert.equal(explicitApplicantCountry("Work from home - Canada"), "CA")
+  assert.equal(explicitApplicantCountry("Remote"), undefined)
+  assert.equal(explicitApplicantCountry("Remote - India, UAE"), undefined)
+  assert.equal(explicitApplicantCountry("Remote - worldwide"), undefined)
+  assert.equal(explicitApplicantCountry("We are an India based company. Remote role."), undefined)
+  assert.equal(explicitApplicantCountry("Remote, UK-based company"), undefined)
+  assert.equal(explicitApplicantCountry(""), undefined)
+  assert.equal(resolveApplicantCountry("in", "Remote - UAE"), "IN", "stored value wins")
+  assert.equal(resolveApplicantCountry(undefined, "Remote - UAE"), "AE")
+  assert.equal(resolveApplicantCountry("Atlantis", "Remote"), undefined)
 })
 test("WFH: missing posting date → NO JobPosting", () => {
-  assert.equal(buildWfhJobPosting(wfhJob({ posted_at: undefined }), contentFor(employerJob())), null)
+  assert.equal(buildWfhJobPosting(wfhJob({ posted_at: undefined, applicant_country: "IN" }), contentFor(employerJob())), null)
+})
+test("WFH: no hard-coded applicant-country constant remains", () => {
+  const consts = readFileSync(join(process.cwd(), "src/lib/seo/constants.ts"), "utf8")
+  assert.doesNotMatch(consts, /WFH_APPLICANT_COUNTRY_ISO/)
+  const b = readFileSync(join(process.cwd(), "src/lib/seo/jobPostingBuilders.ts"), "utf8")
+  assert.doesNotMatch(b, /location: "India"|applicantCountry: "IN"/, "builders must not hard-code India")
 })
 
 /* --------------------------------- abroad --------------------------------- */
@@ -350,6 +586,34 @@ test("govt recruitment notification with a valid date → JobPosting", () => {
   assert.equal(p["@type"], "JobPosting")
   assert.equal(p.datePosted, "2026-08-10T00:00:00.000Z")
   assert.equal(p.validThrough, "2026-09-30T18:29:59.000Z")
+})
+test("govt description is built from STORED fields only — never the generated overview", () => {
+  const p = asObj(buildGovtJobPosting(govtJob(), govtHelpers))
+  const d = String(p.description)
+  assert.doesNotMatch(d, /GENERATED-OVERVIEW|recogni[sz]ed employer|onboarding|mentoring/i)
+  assert.ok(d.includes("<li>Recruiting organisation: IBPS</li>"))
+  assert.ok(d.includes("<li>Post: Clerk</li>"))
+  assert.ok(d.includes("<li>Vacancies: 6000</li>"))
+  assert.ok(d.includes("<li>Qualification: Any Graduate</li>"))
+  assert.ok(d.includes("<li>Last date to apply: 30 Sep 2026</li>"))
+})
+test("govt: a synthesized display vacancy count is never cited (only vacanciesStated is)", () => {
+  const d = String(asObj(buildGovtJobPosting(govtJob({ vacancies: "12,345", vacanciesStated: undefined }), govtHelpers)).description)
+  assert.ok(!d.includes("Vacancies"), "no stored count → no vacancies line")
+  assert.ok(!d.includes("12,345"))
+  const src = readFileSync(join(process.cwd(), "src/lib/services/govtStatsSource.ts"), "utf8")
+  const stated = src.indexOf("vacanciesStated:")
+  const applied = src.indexOf("applyGovtVacancies({")
+  assert.ok(stated > applied && stated - applied < 400, "vacanciesStated is captured from the raw row inside the same mapRow call")
+  assert.match(src, /vacanciesStated:\s*parseVacancyCount\(r\.vacancies\)\s*!==\s*null/)
+})
+test("govt: too few stored facts for a complete description → NO JobPosting", () => {
+  const bare = { vacanciesStated: undefined, qualification: "", salary: "-", lastDate: "TBA", ageRange: "-", fee: "-", location: "All India", state: "" }
+  assert.equal(buildGovtJobPosting(govtJob(bare), govtHelpers), null)
+  assert.equal(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026" }), govtHelpers), null, "two facts are not enough")
+  assert.notEqual(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026", vacanciesStated: "6000" }), govtHelpers), null)
+  assert.equal(buildGovtFactsDescription({ org: "", post: "Clerk", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "organisation is required")
+  assert.equal(buildGovtFactsDescription({ org: "IBPS", post: "", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "post is required")
 })
 test("govt record with NO real source publication date → NO JobPosting", () => {
   assert.equal(buildGovtJobPosting(govtJob({ sourcePublishedAt: undefined }), govtHelpers), null)

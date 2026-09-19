@@ -1,3 +1,4 @@
+import { clampDescriptionHtml, plainTextOf } from "./jobPostingDescription"
 import { ORG_LOGO, SITE_NAME, SUPPORT_EMAIL, SUPPORT_PHONE, siteUrl } from "./constants"
 import {
   cleanHttpUrl,
@@ -180,6 +181,13 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
   // datePosted must be a real stored date. Never `new Date()`.
   const datePosted = parseRealDate(job.datePosted)
   if (!datePosted) return null
+  // A posting date in the future is bad data, not a date (small clock skew allowed).
+  if (new Date(datePosted).getTime() > Date.now() + 24 * 60 * 60 * 1000) return null
+
+  // The description must be real, stored job information (see jobPostingDescription).
+  // An empty one means the record cannot support a JobPosting.
+  const description = clampDescriptionHtml((job.description ?? "").trim())
+  if (!plainTextOf(description)) return null
 
   // validThrough only from a real employer deadline. Never derived (+30d etc.).
   const validThrough = parseRealDate(job.validThrough)
@@ -250,7 +258,7 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     "@context": "https://schema.org",
     "@type": "JobPosting",
     title: job.title,
-    description: job.description.slice(0, 5000),
+    description,
     datePosted,
     ...(validThrough ? { validThrough } : {}),
     ...(employmentType ? { employmentType } : {}),

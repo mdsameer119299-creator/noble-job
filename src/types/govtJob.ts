@@ -40,6 +40,12 @@ export interface GovtJob {
   short:           string
   post:            string
   vacancies:       string
+  /**
+   * The vacancy count exactly as STORED, set only when it is a real number. The
+   * display field `vacancies` can be a synthesized figure on the read path; this one
+   * never is, so structured data can cite it.
+   */
+  vacanciesStated?: string
   qualification:   string
   ageRange:        string
   fee:             string

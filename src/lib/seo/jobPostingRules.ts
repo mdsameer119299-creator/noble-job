@@ -110,6 +110,18 @@ export function normalizeEmploymentType(raw?: string | null): EmploymentType | u
 /* ------------------------------------------------------------------ */
 
 /**
+ * Text that says the role is NOT (only) remote: hybrid, on-site, office days,
+ * "remote-first", relocation, site visits… Any of these vetoes TELECOMMUTE.
+ */
+const NON_REMOTE_RE =
+  /\b(hybrid|on[\s-]?site|onsite|in[\s-]?office|in[\s-]?person|office[\s-]?based|work[\s-]?from[\s-]?office|wfo|partial(ly)? remote|semi[\s-]?remote|remote[\s-]?first|occasional(ly)? (in[\s-]?)?office|days? (a|per|each) week (in|at) (the )?office|days? in (the )?office|(must|required to|need to|will need to) (re)?locate|relocation (is )?required|field[\s-]?work|site visits?)\b/i
+
+/** True when any of the texts signals a hybrid / on-site / partly-remote arrangement. */
+export function hasNonRemoteSignal(...texts: Array<string | null | undefined>): boolean {
+  return NON_REMOTE_RE.test(texts.filter(Boolean).join(" "))
+}
+
+/**
  * True only when stored text explicitly describes a fully remote role
  * ("Full-Time Remote", "Fully Remote", "Work From Home"). Hybrid / on-site /
  * partial / "remote-first with office days" text is NOT fully remote. The board
@@ -118,10 +130,23 @@ export function normalizeEmploymentType(raw?: string | null): EmploymentType | u
 export function isExplicitlyFullyRemote(...texts: Array<string | null | undefined>): boolean {
   const t = texts.filter(Boolean).join(" ").toLowerCase()
   if (!t.trim()) return false
-  if (/\b(hybrid|on[\s-]?site|onsite|in[\s-]?office|office[\s-]?based|partial(ly)? remote|remote[\s-]?first|occasional(ly)? (in[\s-]?)?office|days? in (the )?office)\b/.test(t)) {
-    return false
-  }
+  if (NON_REMOTE_RE.test(t)) return false
   return /\b(fully[\s-]remote|100%\s*remote|remote|work[\s-]?from[\s-]?home|wfh)\b/.test(t)
+}
+
+/** Strong, unambiguous "the whole role is remote" phrasing (used on free-text descriptions). */
+const STRONG_REMOTE_RE = /\b(fully[\s-]remote|100%\s*remote|completely remote|entirely remote|remote[\s-]only|work[\s-]from[\s-]home)\b/i
+
+/**
+ * Is this WFH record GENUINELY 100% remote? Requires positive evidence in the
+ * stored record — the employment-type text ("Full-Time Remote") or an explicit
+ * "fully / 100% remote" statement in the description — AND no hybrid / on-site /
+ * office-day signal anywhere in the type, title or description. Board membership
+ * is never evidence; uncertain records are NOT remote.
+ */
+export function isGenuinelyFullyRemote(rec: { type?: string | null; title?: string | null; description?: string | null }): boolean {
+  if (hasNonRemoteSignal(rec.type, rec.title, rec.description)) return false
+  return isExplicitlyFullyRemote(rec.type) || STRONG_REMOTE_RE.test(rec.description ?? "")
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +200,78 @@ export function resolveCountryIso(country?: string | null): string | undefined {
     return ISO_ALPHA2.has(up) ? up : undefined
   }
   return undefined
+}
+
+/**
+ * Names that are unambiguous as a "permitted country" in free text. Deliberately
+ * excludes short/ambiguous forms ("us" is a pronoun; "america", "england",
+ * "holland", "korea" name only part of a country or a different one).
+ */
+const AMBIGUOUS_COUNTRY_WORDS = new Set(["us", "america", "england", "holland", "korea", "nz", "saudi", "britain"])
+const APPLICANT_COUNTRY_NAMES = Object.keys(COUNTRY_NAME_TO_ISO)
+  .filter(k => !AMBIGUOUS_COUNTRY_WORDS.has(k) && /^[a-zü .]{3,}$/.test(k))
+  .sort((a, b) => b.length - a.length)
+  .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+const COUNTRY_ALT = APPLICANT_COUNTRY_NAMES.join("|")
+// A country followed by "-based / headquartered / company / office" describes the
+// EMPLOYER ("UK-based company"), not who may apply, so it does not count.
+const COUNTRY_IN_TEXT = new RegExp(
+  `(?<![A-Za-z])(${COUNTRY_ALT})(?![A-Za-z])(?!\\s*[-–]?\\s*(?:based|headquartered|hq|company|companies|office|offices|startup|firm)\\b)`,
+  "gi",
+)
+
+/** Phrases that introduce the country candidates must be in to apply. */
+const APPLICANT_TRIGGERS: RegExp[] = [
+  /\b(?:candidates|applicants|employees|professionals|talent|hires?|residents|people)\s+(?:who\s+are\s+)?(?:currently\s+)?(?:based|located|residing|living|resident)\s+(?:in|within)\s+([^.;\n|]{0,60})/gi,
+  /\bmust\s+(?:currently\s+)?(?:be\s+)?(?:based|located|residing|resident|living)\s+(?:in|within)\s+([^.;\n|]{0,60})/gi,
+  /\bmust\s+reside\s+(?:in|within)\s+([^.;\n|]{0,60})/gi,
+  /\b(?:open|available|restricted|limited|eligible)\s+(?:only\s+)?(?:to|for)\s+(?:[a-z-]+\s+){0,3}?(?:in|from|within|residing in|based in)\s+([^.;\n|]{0,60})/gi,
+  /\bonly\s+(?:for\s+)?(?:candidates|applicants|residents)\s+(?:from|in|based in|located in)\s+([^.;\n|]{0,60})/gi,
+  /\bremote\s*(?:[-–—:(,]|\s(?:in|within|from|across))\s*([^.;\n|]{0,60})/gi,
+  /\b(?:work[\s-]?from[\s-]?home|wfh)\s*(?:[-–—:(,]|\s(?:in|within|from|across))\s*([^.;\n|]{0,60})/gi,
+]
+
+/**
+ * The single country a fully-remote role is EXPLICITLY open to, from stored text
+ * such as "Remote - India", "Remote (UAE)" or "Open to candidates based in India".
+ *
+ * Returns `undefined` — never a guess — when the text names no country, names
+ * several, or is ambiguous ("Anywhere", "Worldwide", "US timezones"). The caller
+ * then omits the JobPosting rather than asserting a permitted country the record
+ * does not state.
+ */
+export function explicitApplicantCountry(...texts: Array<string | null | undefined>): string | undefined {
+  const hay = texts.filter(Boolean).join(" \n ")
+  if (!hay.trim()) return undefined
+  const found = new Set<string>()
+  let sawWorldwide = false
+  for (const re of APPLICANT_TRIGGERS) {
+    re.lastIndex = 0
+    for (const m of hay.matchAll(re)) {
+      const clause = m[1] ?? ""
+      if (/\b(anywhere|worldwide|global(ly)?|any country|across the world)\b/i.test(clause)) sawWorldwide = true
+      COUNTRY_IN_TEXT.lastIndex = 0
+      for (const c of clause.matchAll(COUNTRY_IN_TEXT)) {
+        const iso = COUNTRY_NAME_TO_ISO[c[1].toLowerCase()]
+        if (iso) found.add(iso)
+      }
+    }
+  }
+  if (sawWorldwide || found.size !== 1) return undefined
+  return [...found][0]
+}
+
+/**
+ * Permitted country for a fully-remote WFH role: the STORED `applicant_country`
+ * field when present, else an explicit statement in the record's own text. There
+ * is deliberately no default (the WFH board is India-facing, but a record that does
+ * not say so is not asserted to be India-only).
+ */
+export function resolveApplicantCountry(
+  stored: string | null | undefined,
+  ...texts: Array<string | null | undefined>
+): string | undefined {
+  return resolveCountryIso(stored) ?? explicitApplicantCountry(...texts)
 }
 
 /* ------------------------------------------------------------------ */

@@ -57,8 +57,6 @@ export interface JobContent {
   faqs: { q: string; a: string }[]
   /** ISO — the employer's real deadline only; undefined when none is stored. */
   validThrough?: string
-  /** HTML description for the JobPosting schema `description` field. */
-  schemaDescriptionHtml: string
   wordCountHint: number
 }
 
@@ -339,14 +337,6 @@ export function buildJobContent(input: JobContentInput): JobContent {
 
   const faqs = buildFaqs(input, { parsedSalary, fresher, validLabel, cat, where, company })
 
-  // HTML description used for the JobPosting schema (Google prefers HTML).
-  const schemaDescriptionHtml =
-    `<p>${overview[0]}</p>` +
-    `<p><strong>Key Responsibilities:</strong></p><ul>${responsibilities.map(r => `<li>${r}</li>`).join("")}</ul>` +
-    `<p><strong>Required Skills:</strong> ${skills.join(", ")}.</p>` +
-    `<p><strong>Eligibility:</strong></p><ul>${eligibility.map(e => `<li>${e}</li>`).join("")}</ul>` +
-    `<p><strong>Benefits:</strong> ${benefits.join(", ")}.</p>`
-
   return {
     overview,
     aboutOrg,
@@ -361,7 +351,6 @@ export function buildJobContent(input: JobContentInput): JobContent {
     importantDates,
     faqs,
     validThrough,
-    schemaDescriptionHtml,
     wordCountHint: estimateWords(overview, aboutOrg, responsibilities, eligibility, benefits, faqs),
   }
 }

@@ -20,7 +20,7 @@ import { GOVT_LIST_COLUMNS, GOVT_DETAIL_COLUMNS, withGovtIntegrityColumns } from
 import { govtKeyLookups } from "@/lib/config/govtKey"
 import { govtLastKnownGoodMaxAgeMs, isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
 import { GOVT_JOBS, enrichGovtJob } from "@/lib/data/govtData"
-import { applyGovtVacancies } from "@/lib/data/govtVacancies"
+import { applyGovtVacancies, parseVacancyCount } from "@/lib/data/govtVacancies"
 import { isGovtRecordType } from "@/lib/govt/recordType"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import { resolveGovtPool, type GovtPoolSnapshot, type GovtPoolResult } from "@/lib/services/govtPoolResolver"
@@ -58,6 +58,8 @@ function mapRow(row: Record<string, unknown>): GovtJob {
   const r = row as unknown as GovtJob & { last_date?: string; age_range?: string }
   return applyGovtVacancies({
     ...r,
+    // Captured BEFORE applyGovtVacancies can synthesize a display count.
+    vacanciesStated: parseVacancyCount(r.vacancies) !== null ? String(r.vacancies).trim() : undefined,
     lastDate: r.lastDate ?? r.last_date,
     last_date: r.last_date ?? r.lastDate,
     ageRange: r.ageRange ?? r.age_range,

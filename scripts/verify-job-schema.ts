@@ -134,6 +134,14 @@ const addr = (extra: Record<string, unknown> = {}) =>
   ok(out({ directApply: false }).directApply === false, "explicit directApply=false emitted")
   const r = out({ remote: true, applicantCountry: "IN", addressCountry: undefined })
   ok(r.jobLocationType === "TELECOMMUTE" && "applicantLocationRequirements" in r, "fully remote + applicant country -> TELECOMMUTE with applicantLocationRequirements")
+  ok(!("jobLocation" in r), "remote role without a real address -> NO physical jobLocation (nothing fabricated)")
+  ok(jobPostingSchema({ ...base, addressCountry: undefined, remote: true } as never) === null, "remote but no applicant country -> NO JobPosting (no default country)")
+}
+// description / future date -----------------------------------------------------
+{
+  ok(jobPostingSchema({ ...base, description: "" } as never) === null, "empty description -> NO JobPosting")
+  ok(jobPostingSchema({ ...base, description: "<p> </p>" } as never) === null, "markup-only description -> NO JobPosting")
+  ok(jobPostingSchema({ ...base, datePosted: "2099-01-01T00:00:00Z" } as never) === null, "future datePosted -> NO JobPosting")
 }
 
 console.log(failed === 0 ? "\nALL SCHEMA ASSERTIONS PASSED" : `\n${failed} ASSERTION(S) FAILED`)

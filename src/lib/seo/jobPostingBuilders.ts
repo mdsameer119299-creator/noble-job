@@ -8,15 +8,17 @@
  * directApply, no NobleJob logo, sameAs never the apply URL, ISO countries).
  */
 import { jobPostingSchema } from "./schema"
-import { WFH_APPLICANT_COUNTRY_ISO, siteUrl } from "./constants"
+import { siteUrl } from "./constants"
 import {
   cleanHttpUrl,
   endOfDayIst,
-  isExplicitlyFullyRemote,
+  isGenuinelyFullyRemote,
   originOf,
   parseRealDate,
+  resolveApplicantCountry,
   resolveCountryIso,
 } from "./jobPostingRules"
+import { buildGovtFactsDescription, buildStoredDescription } from "./jobPostingDescription"
 import { isDeliveredToEmployerViaPlatform, isSchemaEligible } from "../jobs/provenance"
 import { govtClassifiable, isSchemaEligible as isGovtSchemaEligible } from "../jobs/govtProvenance"
 import { canEmitJobPosting, govtRecordTypeOf } from "../govt/recordType"
@@ -34,6 +36,12 @@ type SalaryFields = Partial<{
   salaryUnit: "HOUR" | "DAY" | "WEEK" | "MONTH" | "YEAR"
 }>
 
+/**
+ * The JobPosting `description` is the record's STORED description plus its stored
+ * facts (see jobPostingDescription.ts) — never the page's generated copy. A record
+ * without a substantive stored description yields no JobPosting.
+ */
+
 function salaryFields(s: JobContent["parsedSalary"]): SalaryFields {
   return s ? { salaryMin: s.minValue, salaryMax: s.maxValue, salaryCurrency: s.currency, salaryUnit: s.unitText } : {}
 }
@@ -47,15 +55,31 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
   if (!isSchemaEligible(job)) return null
   const row = job as Job & {
     posted_at?: string
+    description?: string
     job_type?: string
     experience_required?: string
     application_deadline?: string | null
   }
+  const description = buildStoredDescription({
+    description: row.description || job.desc,
+    facts: [
+      { label: "Employer", value: job.company },
+      { label: "Location", value: job.location },
+      { label: "Employment type", value: row.job_type || job.type },
+      { label: "Experience", value: row.experience_required || job.exp },
+      { label: "Skills", value: job.skills },
+      { label: "Salary", value: job.salary },
+    ],
+  })
+  if (!description) return null
   return jobPostingSchema({
     title: job.title,
-    description: content.schemaDescriptionHtml,
+    description,
     url: `${siteUrl()}/jobs/private/${job.id}`,
-    datePosted: row.posted_at || job.posted,
+    // ONLY the stored original posting timestamp. `job.posted` is a display string
+    // ("5 days ago", "Recent") on the list path and must never become a schema date;
+    // no stored `posted_at` → no JobPosting.
+    datePosted: row.posted_at,
     validThrough: content.validThrough, // employer's real deadline only
     employmentType: row.job_type || job.type,
     organizationName: job.company,
@@ -80,12 +104,33 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
 
 export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
   if (!isSchemaEligible(job)) return null
-  // TELECOMMUTE only when the STORED record says the role is fully remote. Being
-  // on the WFH board is not evidence (a listing can be hybrid).
-  const remote = isExplicitlyFullyRemote(job.type)
+  // TELECOMMUTE only when the STORED record establishes the role is fully (100%)
+  // remote: positive evidence in its type / description, and no hybrid, on-site or
+  // office-day wording anywhere. Being on the WFH board is not evidence; a hybrid or
+  // uncertain record is not TELECOMMUTE and therefore has no JobPosting.
+  if (!isGenuinelyFullyRemote({ type: job.type, title: job.title, description: job.description })) return null
+  // Google requires the country candidates may apply from. It must be STORED
+  // (`applicant_country`) or stated explicitly in the record's own text — never
+  // assumed. No country → no JobPosting. No physical jobLocation is emitted for a
+  // remote role (there is no `addressCountry`).
+  const applicantCountry = resolveApplicantCountry(job.applicant_country, job.type, job.title, job.description)
+  if (!applicantCountry) return null
+  const description = buildStoredDescription({
+    description: job.description,
+    facts: [
+      { label: "Employer", value: job.company },
+      { label: "Work arrangement", value: "Fully remote" },
+      { label: "Employment type", value: job.type },
+      { label: "Experience", value: job.experience },
+      { label: "Qualification", value: job.qualification },
+      { label: "Skills", value: job.skills },
+      { label: "Salary", value: job.salary },
+    ],
+  })
+  if (!description) return null
   return jobPostingSchema({
     title: job.title,
-    description: content.schemaDescriptionHtml,
+    description,
     url: `${siteUrl()}/jobs/wfh/${job.id}`,
     datePosted: job.posted_at,
     validThrough: content.validThrough,
@@ -93,9 +138,9 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
     organizationName: job.company,
     applyUrl: job.apply_url,
     organizationLogo: cleanHttpUrl(job.logo),
-    location: "India",
-    // No physical address: a non-remote WFH row has no country → no JobPosting.
-    ...(remote ? { remote: true, applicantCountry: WFH_APPLICANT_COUNTRY_ISO } : {}),
+    location: "Remote",
+    remote: true,
+    applicantCountry,
     ...salaryFields(content.parsedSalary),
     industry: job.cat || "Work From Home",
     qualifications: job.qualification || job.experience,
@@ -116,9 +161,22 @@ export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
   // The location is a city only when it is not just the country repeated.
   const loc = (job.location ?? "").trim()
   const locIsCountry = !loc || resolveCountryIso(loc) !== undefined || loc.toLowerCase() === (job.country ?? "").trim().toLowerCase()
+  const description = buildStoredDescription({
+    description: job.description,
+    facts: [
+      { label: "Employer", value: job.company },
+      { label: "Country", value: job.country },
+      { label: "Location", value: locIsCountry ? undefined : loc },
+      { label: "Employment type", value: job.type },
+      { label: "Experience", value: job.experience },
+      { label: "Skills", value: job.skills },
+      { label: "Salary", value: job.salary },
+    ],
+  })
+  if (!description) return null
   return jobPostingSchema({
     title: job.title,
-    description: content.schemaDescriptionHtml,
+    description,
     url: `${siteUrl()}/jobs/abroad/${job.id}`,
     datePosted: job.posted_at,
     validThrough: content.validThrough,
@@ -161,10 +219,30 @@ export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) 
   const datePosted = parseRealDate(job.sourcePublishedAt)
   if (!datePosted) return null
 
+  // Stored fields only. `job.overview` (and eligibility / selection / FAQ copy) is
+  // generated from templates at enrichment, and `job.vacancies` may be a synthesized
+  // display count — neither is presented to Google as source information.
+  const description = buildGovtFactsDescription({
+    title: job.title,
+    org: job.org,
+    post: job.post,
+    vacanciesStated: job.vacanciesStated,
+    qualification: job.qualification,
+    salary: job.salary,
+    lastDate: job.lastDate,
+    ageRange: job.ageRange,
+    fee: job.fee,
+    startDate: job.startDate,
+    examDate: job.examDate,
+    location: job.location,
+    state: job.state,
+  })
+  if (!description) return null
+
   const s = parseSalary(job.salary)
   return jobPostingSchema({
     title: job.title,
-    description: job.overview || `${job.org} recruitment for ${job.post}. ${job.vacancies} vacancies.`,
+    description,
     url: `${siteUrl()}/jobs/govt/${job.slug || job.id}`,
     datePosted,
     // Real closing date only (TBA / "-" → omitted). Open through the last day (IST).

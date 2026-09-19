@@ -23,6 +23,8 @@ import {
   thresholdFromEnv,
   TAIL_CITY_MIN_GENUINE_JOBS,
   CITY_CATEGORY_MIN_GENUINE_JOBS,
+  GOVT_STATE_MIN_JOBS,
+  GOVT_STATE_DEFAULT_MIN_JOBS,
 } from "./indexThresholds"
 import { buildPageMetadata, listingMeta, paginationMeta, pageFromSearchParams } from "./metadata"
 import { relatedJobHref, toRelatedLinks } from "./relatedLinks"
@@ -202,6 +204,28 @@ test("sitemap does not list auth (raw source check used by verify-seo too)", () 
 const synthetic = (i: number) => ({ id: `live-priv-${i}`, board: "private", jobStatus: "LIVE_JOB" })
 const real = (i: number) => ({ id: `real-${i}`, board: "private", provenance: "EMPLOYER", employer_id: "e", is_verified: true, status: "active" })
 
+test("govt state threshold: default is 3 (no Search Console evidence for a lower bar)", () => {
+  assert.equal(GOVT_STATE_DEFAULT_MIN_JOBS, 3)
+  assert.equal(thresholdFromEnv("SEO_MIN_JOBS_GOVT_STATE", GOVT_STATE_DEFAULT_MIN_JOBS, {}), 3)
+  if (process.env.SEO_MIN_JOBS_GOVT_STATE === undefined) assert.equal(GOVT_STATE_MIN_JOBS, 3)
+  // Still tunable per environment, but junk falls back to 3, never to 1 or 0.
+  assert.equal(thresholdFromEnv("SEO_MIN_JOBS_GOVT_STATE", GOVT_STATE_DEFAULT_MIN_JOBS, { SEO_MIN_JOBS_GOVT_STATE: "5" }), 5)
+  for (const bad of ["0", "-1", "abc", "", "2.5"]) {
+    assert.equal(thresholdFromEnv("SEO_MIN_JOBS_GOVT_STATE", GOVT_STATE_DEFAULT_MIN_JOBS, { SEO_MIN_JOBS_GOVT_STATE: bad }), 3, bad)
+  }
+})
+test("govt state threshold: 1–2 own openings are NOT enough; the page and the sitemap use the same rule", () => {
+  const passes = (own: number) => own >= GOVT_STATE_MIN_JOBS
+  if (process.env.SEO_MIN_JOBS_GOVT_STATE === undefined) {
+    assert.equal(passes(0), false)
+    assert.equal(passes(1), false)
+    assert.equal(passes(2), false)
+    assert.equal(passes(3), true)
+  }
+  assert.match(read("src/app/sitemap.ts"), /s\.total >= GOVT_STATE_MIN_JOBS/)
+  assert.match(read("src/app/jobs/govt/state/[slug]/page.tsx"), /own\.total < GOVT_STATE_MIN_JOBS/)
+  assert.doesNotMatch(read("src/lib/seo/indexThresholds.ts"), /SEO_MIN_JOBS_GOVT_STATE",\s*1\)/)
+})
 test("location gates ignore synthetic inventory: 500 demo rows do not clear any threshold", () => {
   const demo = Array.from({ length: 500 }, (_, i) => synthetic(i))
   assert.equal(countGenuineOpen(demo), 0)

@@ -36,8 +36,13 @@ export const CITY_CATEGORY_MIN_GENUINE_JOBS = thresholdFromEnv("SEO_MIN_GENUINE_
  * Govt state page — state-SPECIFIC active recruitments required for the state
  * page to be indexable / in the sitemap. Below it the page still renders (the
  * national pool, labelled as such) but is noindex,follow. Env: SEO_MIN_JOBS_GOVT_STATE.
+ *
+ * Default 3: a state page listing a single recruitment is thin. There is no Search
+ * Console evidence supporting a lower bar, so the conservative default applies; it
+ * can be retuned per environment without a code change.
  */
-export const GOVT_STATE_MIN_JOBS = thresholdFromEnv("SEO_MIN_JOBS_GOVT_STATE", 1)
+export const GOVT_STATE_DEFAULT_MIN_JOBS = 3
+export const GOVT_STATE_MIN_JOBS = thresholdFromEnv("SEO_MIN_JOBS_GOVT_STATE", GOVT_STATE_DEFAULT_MIN_JOBS)
 
 /** Number of genuine, currently-open jobs in a list. Synthetic/unclassified/closed do NOT count. */
 export function countGenuineOpen(jobs: readonly Classifiable[]): number {
