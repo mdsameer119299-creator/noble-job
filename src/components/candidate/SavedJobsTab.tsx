@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { isValidJobId } from '@/lib/jobs/renderable'
 
 type Saved = { id: string; job_id: string; board?: string }
 
@@ -11,7 +12,8 @@ export function SavedJobsTab() {
   useEffect(() => {
     fetch('/api/saved-jobs')
       .then(r => (r.ok ? r.json() : { data: [] }))
-      .then(d => setItems(d.data || []))
+      // A saved reference without a usable job id is not a job — never "View job undefined".
+      .then(d => setItems(((d.data || []) as Saved[]).filter(s => isValidJobId(s?.job_id))))
       .finally(() => setLoading(false))
   }, [])
 

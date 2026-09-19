@@ -1,12 +1,16 @@
 /**
  * Local-only private job helpers (no Supabase imports).
  */
-import { PRIVATE_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { renderablePrivateInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
 
 const BLUE_COLLAR_SET = new Set<string>(BLUE_COLLAR_CATEGORIES)
+
+// Every read below starts from the RENDERABLE inventory: an incomplete generated
+// row can never be listed, counted or opened (see jobs/renderable.ts).
 
 function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
   const { q, category, location, exp, type: jType } = filter
@@ -15,8 +19,8 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
     const term = q.toLowerCase()
     list = list.filter(
       j =>
-        j.title.toLowerCase().includes(term) ||
-        j.company.toLowerCase().includes(term) ||
+        (j.title || "").toLowerCase().includes(term) ||
+        (j.company || "").toLowerCase().includes(term) ||
         (j.desc || "").toLowerCase().includes(term),
     )
   }
@@ -26,7 +30,7 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
   if (category === "blue-collar") list = list.filter(j => BLUE_COLLAR_SET.has(j.cat))
   else if (category && category !== "all") list = list.filter(j => j.cat === category)
   if (location && location !== "All Locations") {
-    list = list.filter(j => j.location.toLowerCase().includes(location.toLowerCase()))
+    list = list.filter(j => (j.location || "").toLowerCase().includes(location.toLowerCase()))
   }
   if (exp) list = list.filter(j => (j.exp || "").toLowerCase().includes(exp.toLowerCase()))
   if (jType) list = list.filter(j => j.type === jType)
@@ -36,7 +40,7 @@ function filterPrivateJobs(jobs: Job[], filter: JobFilter): Job[] {
 export function getPrivateJobsLocal(filter: JobFilter = {}, syntheticVisible = true): JobSearchResult {
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
-  const preStatus = filterPrivateJobs(applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible), filter)
+  const preStatus = filterPrivateJobs(applySyntheticVisibility(renderablePrivateInventory(), syntheticVisible), filter)
   const counts = countByStatus(preStatus)
   const status = filter.status
   let list =
@@ -54,17 +58,18 @@ export function getPrivateJobsLocal(filter: JobFilter = {}, syntheticVisible = t
 }
 
 export function getPrivateJobByIdLocal(id: string, syntheticVisible = true): Job | null {
-  const job = PRIVATE_INVENTORY.find(j => j.id === id) ?? null
+  // Only renderable records can be opened: an incomplete id is "not found".
+  const job = renderablePrivateInventory().find(j => j.id === id) ?? null
   if (!job) return null
   return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }
 
 export function getPrivateJobsFeaturedLocal(limit = 4, syntheticVisible = true): Job[] {
-  return sortByStatus(applySyntheticVisibility([...PRIVATE_INVENTORY], syntheticVisible)).slice(0, limit)
+  return sortByStatus(applySyntheticVisibility([...renderablePrivateInventory()], syntheticVisible)).slice(0, limit)
 }
 
 export function getPrivateJobsCountLocal(syntheticVisible = true): number {
-  return applySyntheticVisibility(PRIVATE_INVENTORY, syntheticVisible).filter(
+  return applySyntheticVisibility(renderablePrivateInventory(), syntheticVisible).filter(
     j => (j.jobStatus ?? "VERIFIED_JOB") !== "ARCHIVED_JOB",
   ).length
 }

@@ -18,4 +18,6 @@ export interface WfhJob {
    * explicit statement in the record's own text) a remote WFH row emits no JobPosting.
    */
   applicant_country?: string | null
+  /** ORIGINAL employer/source publication date — the only source of JobPosting `datePosted`. */
+  source_posted_at?: string | null
 }

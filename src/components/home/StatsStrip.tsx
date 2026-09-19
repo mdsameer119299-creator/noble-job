@@ -39,14 +39,14 @@ export async function StatsStrip() {
     try {
       const sb = await createClient()
       if (!sb) throw new Error('skip')
-      const [active, govt, wfh, abroad, verified] = await Promise.all([
-        sb.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('govt_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('wfh_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        sb.from('abroad_jobs').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      const { getGenuineJobCounts } = await import('@/lib/services/genuineCounts')
+      const [genuine, verified] = await Promise.all([
+        // Genuine + open + renderable — the same predicate the sitemap uses, never a
+        // raw `status = active` row count (which includes samples / incomplete rows).
+        getGenuineJobCounts(),
         sb.from('employers').select('id', { count: 'exact', head: true }).eq('verified', true),
       ])
-      liveJobs = (active.count || 0) + (govt.count || 0) + (wfh.count || 0) + (abroad.count || 0)
+      liveJobs = genuine.total
       employers = verified.count || 0
     } catch {}
   }

@@ -2,8 +2,9 @@
 // 4-column grid: Private Jobs, Govt Jobs, WFH Jobs, Abroad Jobs
 // Each col has: icon header, 4 job items, "View More" link
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { getLatestJobCards, type FeaturedJobCard } from '@/lib/services/featuredJobs'
+import { getGovtJobs } from '@/lib/services/govtJobService'
+import { filterActionable, isRealDisplayValue } from '@/lib/jobs/renderable'
 
 const CheckIcon = () => (
   <svg fill="currentColor" viewBox="0 0 24 24" width={16} height={16} style={{ color: '#15803d' }}>
@@ -26,7 +27,7 @@ function LjCol({ icon, iconBg, iconColor, title, count, viewHref, items }: {
   iconBg: string
   iconColor: string
   title: string
-  count: string
+  count?: string
   viewHref: string
   items: LjItem[]
 }) {
@@ -50,14 +51,19 @@ function LjCol({ icon, iconBg, iconColor, title, count, viewHref, items }: {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h3 style={{ fontFamily: '"Playfair Display", serif', fontSize: 15.5, fontWeight: 800, color: '#0d1f4e', letterSpacing: '-.01em', marginBottom: 2 }}>{title}</h3>
-          <span style={{ fontSize: 12.5, color: '#6b7280', fontWeight: 500 }}>{count}</span>
+          {count && <span style={{ fontSize: 12.5, color: '#6b7280', fontWeight: 500 }}>{count}</span>}
         </div>
         <Link href={viewHref} style={{ fontSize: 12.5, fontWeight: 700, color: '#1847d4', whiteSpace: 'nowrap', textDecoration: 'none' }}>
           View All →
         </Link>
       </div>
 
-      {/* Job items */}
+      {/* Job items — an empty column is an intentional empty state, never made-up jobs. */}
+      {items.length === 0 && (
+        <p style={{ fontSize: 13.5, color: '#6b7280', margin: 0, padding: '10px 6px', lineHeight: 1.6 }}>
+          New openings are being added. Browse the full listing to see everything currently available.
+        </p>
+      )}
       <div>
         {items.map((item, i) => (
           <Link key={i} href={viewHref}
@@ -102,71 +108,46 @@ function LjCol({ icon, iconBg, iconColor, title, count, viewHref, items }: {
   )
 }
 
+const initials = (v: string, n: number) => v.replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, n).toUpperCase()
+
+/** A real, actionable job → a grid item. Only real values are rendered (no "Competitive"/"India" filler). */
+function toItem(j: FeaturedJobCard, badge?: string): LjItem {
+  return {
+    logo: initials(j.company, 3),
+    logoColor: j.color || '#1847d4',
+    title: j.title,
+    company: [j.company, j.location].filter(isRealDisplayValue).join(' · '),
+    meta: (j.salary || badge) ? (
+      <div style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>
+        {j.salary}
+        {badge ? <span style={{ background: '#15803d', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, marginLeft: j.salary ? 4 : 0 }}>{badge}</span> : null}
+      </div>
+    ) : null,
+  }
+}
+
 export async function LatestJobsGrid() {
-  // Try to pull real data from DB for fresh jobs
-  let privateJobs: LjItem[] = []
-  let govtJobs: LjItem[] = []
-  if (isSupabaseConfigured()) {
-  try {
-    const sb = await createClient()
-    if (!sb) throw new Error('skip')
-    const [pj, gj] = await Promise.all([
-      sb.from('jobs').select('id,title,company,location,salary_min,salary_max,color,badge').eq('status','active').order('posted_at',{ascending:false}).limit(4),
-      sb.from('govt_jobs').select('id,title,org,short,vacancies,last_date,color').eq('status','active').eq('tab','latest').order('sort_order').limit(4),
-    ])
-    if ((pj.data || []).length >= 4) {
-      privateJobs = (pj.data || []).map((j: any) => ({
-        logo: (j.company || '').slice(0,3).toUpperCase(),
-        logoColor: j.color || '#1847d4',
-        title: j.title,
-        company: `${j.company || ''} · ${j.location || 'India'}`,
-        meta: <div style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ {j.salary_min ? `${(j.salary_min/100000).toFixed(0)} – ${(j.salary_max/100000).toFixed(0)} LPA` : 'Competitive'} {j.badge === 'Hot' ? <span style={{ background: '#ef4444', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, marginLeft: 4 }}>Hot</span> : null}</div>,
-      }))
-    }
-    if ((gj.data || []).length >= 4) {
-      govtJobs = (gj.data || []).map((j: any) => ({
-        logo: (j.short || '').slice(0,4),
-        logoColor: j.color || '#1e3a8a',
-        title: j.title,
-        company: j.org,
-        meta: <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>{j.last_date}</strong></div>,
-        isGovt: true,
-      }))
-    }
-  } catch {}
-  }
-
-  // Fallback to hardcoded original HTML data if DB empty
-  if (privateJobs.length < 4) {
-    privateJobs = [
-      { logo: 'TCS', logoColor: '#1847d4', title: 'Software Engineer', company: 'TCS · Bangalore', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 6 – 12 LPA</span> },
-      { logo: 'INF', logoColor: '#f59e0b', title: 'Data Analyst', company: 'Infosys · Pune', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 4 – 8 LPA </span><span style={{ background: '#ef4444', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>Hot</span></> },
-      { logo: 'ZHO', logoColor: '#ef4444', title: 'Product Manager', company: 'Zoho · Chennai', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 10 – 16 LPA </span><span style={{ background: '#ef4444', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>Hot</span></> },
-      { logo: 'WIP', logoColor: '#8b5cf6', title: 'HR Executive', company: 'Wipro · Hyderabad', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 3 – 6 LPA</span> },
-    ]
-  }
-  if (govtJobs.length < 4) {
-    govtJobs = [
-      { logo: 'SSC', logoColor: '#1a56db', title: 'SSC CGL 2024', company: 'Staff Selection Commission', meta: <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>24 Jun 2024</strong></div>, isGovt: true },
-      { logo: 'IAS', logoColor: '#7c2d12', title: 'UPSC Civil Services', company: 'Union Public Service Commission', meta: <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>17 Jun 2024</strong></div>, isGovt: true },
-      { logo: 'RRB', logoColor: '#b91c1c', title: 'RRB Technician 2024', company: 'Railway Recruitment Board', meta: <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>30 Jun 2024</strong></div>, isGovt: true },
-      { logo: 'SBI', logoColor: '#1e3a8a', title: 'SBI Apprentice 2026', company: 'State Bank of India · 7150 Posts', meta: <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>08 Jun 2026</strong></div>, isGovt: true },
-    ]
-  }
-
-  const wfhJobs: LjItem[] = [
-    { logo: 'NK', logoColor: '#f07020', title: 'Content Writer (SEO)', company: 'Naukri · Remote', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 2.5 – 4 LPA </span><span style={{ background: '#15803d', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>WFH</span></> },
-    { logo: 'TM', logoColor: '#1847d4', title: 'Customer Support', company: 'Tech Mahindra · Remote', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 2 – 4 LPA </span><span style={{ background: '#15803d', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>WFH</span></> },
-    { logo: 'WFX', logoColor: '#f59e0b', title: 'Digital Marketing', company: 'WebFX · Remote', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 4 – 7 LPA </span><span style={{ background: '#15803d', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>WFH</span></> },
-    { logo: 'BLV', logoColor: '#0e7490', title: 'Virtual Assistant', company: 'Believ · Remote', meta: <><span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 2 – 4 LPA </span><span style={{ background: '#15803d', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>WFH</span></> },
-  ]
-
-  const abroadJobs: LjItem[] = [
-    { logo: '', logoColor: '', flag: '🇦🇪', title: 'Nurse', company: 'NMC Healthcare · UAE', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 25 – 35 LPA</span> },
-    { logo: '', logoColor: '', flag: '🇦🇪', title: 'Civil Engineer', company: 'Al Naboodah · Dubai', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 30 – 45 LPA</span> },
-    { logo: '', logoColor: '', flag: '🇨🇦', title: 'Hotel Manager', company: 'Marriott International · Canada', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 20 – 30 LPA</span> },
-    { logo: '', logoColor: '', flag: '🇨🇦', title: 'Accountant', company: 'Canada Offices · Canada', meta: <span style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>₹ 28 – 40 LPA</span> },
-  ]
+  // NO EMPTY / FAKE JOBS: every item is a real, actionable record from the gated
+  // services. Nothing is hand-written, and no headline counters are invented.
+  const [privateCards, wfhCards, abroadCards, govtPool] = await Promise.all([
+    getLatestJobCards('private', 4),
+    getLatestJobCards('wfh', 4),
+    getLatestJobCards('abroad', 4),
+    getGovtJobs('latest').catch(() => []),
+  ])
+  const privateJobs: LjItem[] = privateCards.map(j => toItem(j))
+  const wfhJobs: LjItem[] = wfhCards.map(j => toItem(j, 'WFH'))
+  const abroadJobs: LjItem[] = abroadCards.map(j => toItem(j))
+  const govtJobs: LjItem[] = filterActionable(govtPool, 'govt').slice(0, 4).map(j => ({
+    logo: initials(String(j.short || j.org || ''), 4),
+    logoColor: j.color || '#1e3a8a',
+    title: j.title,
+    company: j.org,
+    meta: isRealDisplayValue(j.lastDate)
+      ? <div style={{ fontSize: 12, color: '#6b7280' }}>Apply by <strong style={{ color: '#0d1f4e' }}>{j.lastDate}</strong></div>
+      : null,
+    isGovt: true,
+  }))
 
   return (
     <section style={{
@@ -196,25 +177,25 @@ export async function LatestJobsGrid() {
           <LjCol
             icon={<svg viewBox="0 0 24 24" fill="#1847d4" width={20} height={20}><path d="M20 6h-3V4c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zM9 4h6v2H9V4z"/></svg>}
             iconBg="#eff6ff" iconColor="#1847d4"
-            title="Latest Private Jobs" count="4,800+ openings"
+            title="Latest Private Jobs"
             viewHref="/jobs/private" items={privateJobs}
           />
           <LjCol
             icon={<svg viewBox="0 0 24 24" fill="#f07020" width={20} height={20}><path d="M12 2L2 7v2h20V7L12 2zM4 11v6H2v2h20v-2h-2v-6h-2v6h-3v-6h-2v6h-2v-6H9v6H6v-6H4z"/></svg>}
             iconBg="#fff7ed" iconColor="#f07020"
-            title="Latest Government Jobs" count="1,245+ notifications"
+            title="Latest Government Jobs"
             viewHref="/jobs/govt" items={govtJobs}
           />
           <LjCol
             icon={<svg viewBox="0 0 24 24" fill="#15803d" width={20} height={20}><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>}
             iconBg="#f0fdf4" iconColor="#15803d"
-            title="Work From Home Jobs" count="8,500+ remote roles"
+            title="Work From Home Jobs"
             viewHref="/jobs/wfh" items={wfhJobs}
           />
           <LjCol
             icon={<svg viewBox="0 0 24 24" fill="#7c3aed" width={20} height={20}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>}
             iconBg="#faf5ff" iconColor="#7c3aed"
-            title="Latest Abroad Jobs" count="2,300+ international"
+            title="Latest Abroad Jobs"
             viewHref="/jobs/abroad" items={abroadJobs}
           />
         </div>

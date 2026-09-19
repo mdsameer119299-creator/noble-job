@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useRef } from "react"
 import type { GovtJob, GovtJobTab } from "@/types/govtJob"
+import { toRenderableGovtJobs } from "@/lib/jobs/clientRecords"
 
 export function useGovtJobs(tab: GovtJobTab = "latest", initialJobs: GovtJob[] = []) {
-  const seedRef = useRef(initialJobs)
-  const [jobs, setJobs] = useState<GovtJob[]>(initialJobs)
-  const [loading, setLoading] = useState(initialJobs.length === 0)
+  // Every record — server-provided, API-fetched or seed — passes the same client gate.
+  const seedRef = useRef(toRenderableGovtJobs(initialJobs))
+  const [jobs, setJobs] = useState<GovtJob[]>(seedRef.current)
+  const [loading, setLoading] = useState(seedRef.current.length === 0)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export function useGovtJobs(tab: GovtJobTab = "latest", initialJobs: GovtJob[] =
       })
       .then(d => {
         if (cancelled) return
-        const list = Array.isArray(d?.data) ? d.data : []
+        const list = toRenderableGovtJobs(d?.data)
         if (list.length > 0) {
           setJobs(list)
         } else if (tab === "latest" && seedRef.current.length > 0) {
@@ -32,9 +34,13 @@ export function useGovtJobs(tab: GovtJobTab = "latest", initialJobs: GovtJob[] =
       })
       .catch(() => {
         if (cancelled) return
-        setError("Could not refresh jobs. Showing last loaded listings.")
+        // Never leave another tab's jobs on screen under this tab's heading.
         if (tab === "latest" && seedRef.current.length > 0) {
+          setError("Could not refresh jobs. Showing last loaded listings.")
           setJobs(seedRef.current)
+        } else {
+          setError("Could not load jobs right now.")
+          setJobs([])
         }
       })
       .finally(() => {

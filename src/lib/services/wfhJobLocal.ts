@@ -1,7 +1,7 @@
 /**
  * Local-only WFH job helpers (no Supabase imports).
  */
-import { WFH_INVENTORY } from "@/lib/data/jobInventory"
+import { renderableWfhInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { JobStatus } from "@/types/job"
@@ -18,7 +18,7 @@ export interface WfhJobFilters {
 }
 
 function matchesWfhExperience(jobExp: string, filterExp: string): boolean {
-  const e = jobExp.toLowerCase()
+  const e = (jobExp || "").toLowerCase()
   switch (filterExp) {
     case "fresher":
       return e.includes("fresher")
@@ -40,9 +40,9 @@ function filterWfhWithCounts(jobs: WfhJob[], filters: WfhJobFilters) {
     const term = q.toLowerCase()
     pre = pre.filter(
       j =>
-        j.title.toLowerCase().includes(term) ||
-        j.company.toLowerCase().includes(term) ||
-        j.description.toLowerCase().includes(term),
+        (j.title || "").toLowerCase().includes(term) ||
+        (j.company || "").toLowerCase().includes(term) ||
+        (j.description || "").toLowerCase().includes(term),
     )
   }
   if (cat && cat !== "all") pre = pre.filter(j => j.cat === cat)
@@ -59,12 +59,14 @@ function filterWfhWithCounts(jobs: WfhJob[], filters: WfhJobFilters) {
 export function getWfhJobsPaginatedLocal(filters: WfhJobFilters = {}, syntheticVisible = true): PaginatedResult<WfhJob> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  const { list, counts } = filterWfhWithCounts(applySyntheticVisibility(WFH_INVENTORY, syntheticVisible), filters)
+  // Renderable inventory only, filtered BEFORE counting/paginating: `total`,
+  // `totalPages` and `counts` describe exactly the rows that can be displayed.
+  const { list, counts } = filterWfhWithCounts(applySyntheticVisibility(renderableWfhInventory(), syntheticVisible), filters)
   return paginate(list, page, limit, counts)
 }
 
 export function getWfhJobByIdLocal(id: string, syntheticVisible = true): WfhJob | null {
-  const job = WFH_INVENTORY.find(j => j.id === id) ?? null
+  const job = renderableWfhInventory().find(j => j.id === id) ?? null
   if (!job) return null
   return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }

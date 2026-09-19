@@ -19,6 +19,10 @@ import { GovtApplyLinkButton } from "@/components/govt/GovtApplyLinkButton"
 import { JobActionBar } from "@/components/jobs/JobActionBar"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isRealDisplayValue } from "@/lib/jobs/renderable"
+
+/** Non-empty, non-placeholder ("undefined", "N/A", "TBA", …) text worth showing. */
+const has = (v: unknown): boolean => isRealDisplayValue(v)
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -41,12 +45,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       noIndex: true,
     })
   }
-  const desc = `${job.org} ${job.title}: ${job.vacancies} vacancies for ${job.post}. Qualification: ${job.qualification}. Last date: ${job.lastDate}. Check eligibility, salary, age limit, fee & apply online.`
+  // Only real values are interpolated — never "undefined" / "TBA" placeholders.
+  const descParts = [
+    `${job.org} ${job.title}:`,
+    has(job.vacancies) ? `${job.vacancies} vacancies${has(job.post) ? ` for ${job.post}` : ""}.` : has(job.post) ? `Post: ${job.post}.` : "",
+    has(job.qualification) ? `Qualification: ${job.qualification}.` : "",
+    has(job.lastDate) ? `Last date: ${job.lastDate}.` : "",
+    "Check eligibility, salary, age limit, fee & apply online.",
+  ].filter(Boolean)
+  const desc = descParts.join(" ")
   return buildPageMetadata({
-    title: `${job.title} — ${job.vacancies} Posts`,
+    title: has(job.vacancies) ? `${job.title} — ${job.vacancies} Posts` : job.title,
     description: desc.slice(0, 300),
     path: `/jobs/govt/${job.slug || job.id}`,
-    keywords: [job.org, job.post, job.title, "government jobs", "sarkari naukri", job.qualification, ...(job.categoryTags || [])],
+    keywords: [job.org, job.post, job.title, "government jobs", "sarkari naukri", job.qualification, ...(job.categoryTags || [])].filter(has) as string[],
     ogType: "article",
     // Fail closed: a govt row without a real official/notification URL is not a
     // verified OFFICIAL opportunity, so it must not be indexed.
@@ -90,7 +102,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
     { l: "Salary", v: job.salary },
     { l: "Job Location", v: job.location },
     { l: "Last Date", v: job.lastDate },
-  ].filter(f => f.v)
+  ].filter(f => has(f.v))
 
   return (
     <div style={{ background: "#f8faff", minHeight: "100vh" }}>
@@ -110,7 +122,12 @@ export default async function GovtJobDetailPage({ params }: Props) {
           <div style={{ display: "inline-block", background: "rgba(255,255,255,.15)", padding: "4px 12px", borderRadius: 18, fontSize: 12, color: "#e0e8ff", fontWeight: 700, marginBottom: 10 }}>{job.org}</div>
           <h1 style={{ fontFamily: "Playfair Display,serif", fontSize: "clamp(24px,3vw,34px)", fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.2 }}>{job.title}</h1>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {[`👤 ${job.vacancies} Vacancies`, `📅 Last Date: ${job.lastDate}`, `🎓 ${job.qualification}`, `📍 ${job.location}`].map((t, i) => (
+            {[
+              has(job.vacancies) ? `👤 ${job.vacancies} Vacancies` : "",
+              has(job.lastDate) ? `📅 Last Date: ${job.lastDate}` : "",
+              has(job.qualification) ? `🎓 ${job.qualification}` : "",
+              has(job.location) ? `📍 ${job.location}` : "",
+            ].filter(Boolean).map((t, i) => (
               <span key={i} style={{ background: "rgba(255,255,255,.15)", padding: "5px 13px", borderRadius: 16, fontSize: 12.5, color: "#fff", fontWeight: 600 }}>{t}</span>
             ))}
           </div>
@@ -133,7 +150,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
               </div>
             )}
             <Section id="overview" title="Overview" icon="📋">
-              <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.overview}</p>
+              {has(job.overview) && <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.overview}</p>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginTop: 16 }}>
                 {quickFacts.map((f, i) => (
                   <div key={i} style={{ background: "#f8faff", borderRadius: 10, padding: "10px 14px" }}>
@@ -144,6 +161,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
               </div>
             </Section>
 
+            {(job.vacancyBreakup?.length || (has(job.vacancies) && has(job.post))) && (
             <Section id="vacancy-details" title="Vacancy Details" icon="👥">
               {job.vacancyBreakup?.length ? (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
@@ -171,21 +189,25 @@ export default async function GovtJobDetailPage({ params }: Props) {
                 </p>
               )}
             </Section>
+            )}
 
-            <Section id="eligibility" title="Eligibility" icon="🎓"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.eligibility}</p></Section>
-            <Section id="age-limit" title="Age Limit" icon="🎂"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.ageLimit}</p></Section>
-            <Section id="salary" title="Salary" icon="💰"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.salaryDetails}</p></Section>
+            {has(job.eligibility) && <Section id="eligibility" title="Eligibility" icon="🎓"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.eligibility}</p></Section>}
+            {has(job.ageLimit) && <Section id="age-limit" title="Age Limit" icon="🎂"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.ageLimit}</p></Section>}
+            {has(job.salaryDetails) && <Section id="salary" title="Salary" icon="💰"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.salaryDetails}</p></Section>}
 
+            {job.selectionProcess?.some(has) && (
             <Section id="selection-process" title="Selection Process" icon="✅">
               <ol style={{ margin: 0, paddingLeft: 20, color: "#374151", fontSize: 14.5, lineHeight: 1.9 }}>
-                {job.selectionProcess?.map((s, i) => <li key={i}>{s}</li>)}
+                {job.selectionProcess?.filter(has).map((s, i) => <li key={i}>{s}</li>)}
               </ol>
             </Section>
+            )}
 
+            {job.feeDetails?.some(f => has(f?.category) && has(f?.amount)) && (
             <Section id="application-fee" title="Application Fee" icon="💳">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                 <tbody>
-                  {job.feeDetails?.map((f, i) => (
+                  {job.feeDetails?.filter(f => has(f?.category) && has(f?.amount)).map((f, i) => (
                     <tr key={i} style={{ borderTop: i ? "1px solid #f1f5f9" : "none" }}>
                       <td style={{ padding: "9px 12px", color: "#374151" }}>{f.category}</td>
                       <td style={{ padding: "9px 12px", fontWeight: 700, color: "#0d1f4e" }}>{f.amount}</td>
@@ -194,18 +216,20 @@ export default async function GovtJobDetailPage({ params }: Props) {
                 </tbody>
               </table>
             </Section>
+            )}
 
-            <Section id="exam-pattern" title="Exam Pattern" icon="🧪"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.examPattern}</p></Section>
+            {has(job.examPattern) && <Section id="exam-pattern" title="Exam Pattern" icon="🧪"><p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.examPattern}</p></Section>}
             <Section id="syllabus" title="Syllabus" icon="📚">
               <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>
                 {job.syllabusContent || `The detailed syllabus for ${job.title} covers General Awareness, Reasoning Ability, Quantitative Aptitude, English/General Knowledge and post-specific technical subjects. Download the full syllabus from the official notification PDF.`}
               </p>
             </Section>
 
+            {job.importantDates?.some(d => has(d?.label) && has(d?.date)) && (
             <Section id="important-dates" title="Important Dates" icon="📅">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
                 <tbody>
-                  {job.importantDates?.map((d, i) => (
+                  {job.importantDates?.filter(d => has(d?.label) && has(d?.date)).map((d, i) => (
                     <tr key={i} style={{ borderTop: i ? "1px solid #f1f5f9" : "none" }}>
                       <td style={{ padding: "9px 12px", color: "#374151" }}>{d.label}</td>
                       <td style={{ padding: "9px 12px", fontWeight: 700, color: "#0d1f4e" }}>{d.date}</td>
@@ -214,6 +238,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
                 </tbody>
               </table>
             </Section>
+            )}
 
             <GovtHowToApply job={job} />
 

@@ -1,6 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { fetchHimalayasJobs, type HimalayasJob } from "./himalayasService"
+import { isUsableLiveJob } from "@/lib/jobs/renderable"
+
+/** NO EMPTY JOBS: only cards with a real id/title/company/apply URL are ever returned. */
+const usable = (jobs: HimalayasJob[]): HimalayasJob[] =>
+  jobs.filter(j => isUsableLiveJob(j as unknown as Record<string, unknown>))
 
 /** Read non-expired rows from cache; returns [] if DB unavailable or empty. */
 export async function getCachedHimalayasJobs(limit = 80): Promise<HimalayasJob[]> {
@@ -15,7 +20,7 @@ export async function getCachedHimalayasJobs(limit = 80): Promise<HimalayasJob[]
 
   if (!data?.length) return []
 
-  return data.map(row => {
+  return usable(data.map(row => {
     const raw = row.source_data_json as HimalayasJob | null
     if (raw?.id) return raw
     return {
@@ -35,12 +40,12 @@ export async function getCachedHimalayasJobs(limit = 80): Promise<HimalayasJob[]
       posted: row.fetched_at,
       verified: true,
     }
-  })
+  }))
 }
 
 /** Cache first; live API fallback. */
 export async function getHimalayasJobsForDisplay(limit = 80): Promise<HimalayasJob[]> {
   const cached = await getCachedHimalayasJobs(limit)
   if (cached.length >= 10) return cached.slice(0, limit)
-  return fetchHimalayasJobs().then(j => j.slice(0, limit))
+  return fetchHimalayasJobs().then(j => usable(j).slice(0, limit))
 }

@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { getJobs } from "@/lib/services/jobService"
-import { WFH_INVENTORY, ABROAD_INVENTORY } from "@/lib/data/jobInventory"
+import { renderableWfhInventory, renderableAbroadInventory } from "@/lib/data/jobInventory"
 import { jobDetailHref } from "@/lib/jobs/provenance"
 
 /**
@@ -45,13 +45,13 @@ async function loadPage(board: Board, page: number): Promise<{ rows: Row[]; tota
     // Only genuine WFH jobs get a crawlable directory link; synthetic inventory
     // (noindex detail pages) is excluded, so this is empty until real WFH
     // inventory exists.
-    const all = WFH_INVENTORY
+    const all = renderableWfhInventory()
       .map(j => ({ href: jobDetailHref("wfh", j), title: j.title, company: j.company, meta: [j.cat, j.salary].filter(Boolean).join(" · ") }))
       .filter((row): row is Row => row.href !== null)
     const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))
     return { rows: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), totalPages }
   }
-  const all = ABROAD_INVENTORY
+  const all = renderableAbroadInventory()
     .map(j => ({ href: jobDetailHref("abroad", j), title: j.title, company: j.company, meta: [j.country, j.salary].filter(Boolean).join(" · ") }))
     .filter((row): row is Row => row.href !== null)
   const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE))

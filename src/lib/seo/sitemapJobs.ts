@@ -18,9 +18,11 @@ const TABLE: Record<SitemapJobBoard, "jobs" | "wfh_jobs" | "abroad_jobs"> = {
 }
 
 const BASE_COLUMNS: Record<SitemapJobBoard, string> = {
-  private: "id, posted_at, provenance, apply_url, employer_id, is_verified, job_status, status, source",
-  wfh: "id, posted_at, provenance, apply_url, employer_id, status",
-  abroad: "id, posted_at, provenance, apply_url, employer_id, status",
+  // title/company/description/location|country: the completeness columns the
+  // "no empty jobs" gate needs, so an incomplete row can never be listed.
+  private: "id, posted_at, provenance, apply_url, employer_id, is_verified, job_status, status, source, title, company, description, location",
+  wfh: "id, posted_at, provenance, apply_url, employer_id, status, title, company, description",
+  abroad: "id, posted_at, provenance, apply_url, employer_id, status, title, company, description, country",
 }
 
 export const SITEMAP_ROWS_PER_BOARD = 2000

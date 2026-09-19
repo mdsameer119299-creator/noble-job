@@ -1,7 +1,8 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
-import { WFH_INVENTORY } from "@/lib/data/jobInventory"
+import { renderableWfhInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
+import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import {
   getWfhJobsPaginatedLocal,
   getWfhJobByIdLocal,
@@ -13,7 +14,7 @@ import type { WfhJob } from "@/types/wfhJob"
 export type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 
 function matchesWfhExperience(jobExp: string, filterExp: string): boolean {
-  const e = jobExp.toLowerCase()
+  const e = (jobExp || "").toLowerCase()
   switch (filterExp) {
     case "fresher":
       return e.includes("fresher")
@@ -53,24 +54,30 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
     else if (filters.sort === "applicants") q = q.order("applicants", { ascending: false })
     const { data, error } = await q
     if (error || !data?.length) return local
-    let remote = sortByStatus(data as unknown as WfhJob[])
+    // Incomplete / placeholder / unknown-provenance rows are not exposed (they stay
+    // in the database); everything downstream — lists, related, counts — sees only
+    // renderable rows.
+    let remote = sortByStatus(filterRenderable(data as unknown as WfhJob[], "wfh"))
     if (filters.exp && filters.exp !== "all") {
       remote = remote.filter(j => matchesWfhExperience(j.experience, filters.exp!))
     }
-    return shouldFallbackToLocal(remote.length, WFH_INVENTORY.length) ? local : remote
+    return shouldFallbackToLocal(remote.length, renderableWfhInventory().length) ? local : remote
   } catch {
     return local
   }
 }
 
 export async function getWfhJobById(id: string): Promise<WfhJob | null> {
-  const local = getWfhJobByIdLocal(id, await isSyntheticJobsVisible())
+  if (!isValidJobId(id)) return null
+  const local = renderableOrNull(getWfhJobByIdLocal(id, await isSyntheticJobsVisible()), "wfh")
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()
     if (!sb) return local
     const { data } = await sb.from("wfh_jobs").select("*").eq("id", id).maybeSingle()
-    return (data as unknown as WfhJob) ?? local
+    // Exists but incomplete → not found (never an empty job page, never a local swap).
+    if (data) return renderableOrNull(data as unknown as WfhJob, "wfh")
+    return local
   } catch {
     return local
   }

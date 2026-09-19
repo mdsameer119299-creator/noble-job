@@ -13,6 +13,7 @@ import { detectCityLink } from '@/lib/seo/jobLinks'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
+import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
 
 interface Props { params: Promise<{ id: string }> }
 
@@ -27,10 +28,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       noIndex: true,
     })
   }
-  const salary = job.salary || formatSalary((job as { salary_min?: number }).salary_min, (job as { salary_max?: number }).salary_max)
+  const salary = displayValue(job.salary || formatSalary((job as { salary_min?: number }).salary_min, (job as { salary_max?: number }).salary_max))
   return buildPageMetadata({
     title: `${job.title} at ${job.company} in ${job.location} — Private Jobs India`,
-    description: `Apply for ${job.title} at ${job.company}, ${job.location}. Salary ${salary}. Full job description, responsibilities, eligibility, skills, benefits, how to apply & FAQs on Noble Job.`,
+    description: `Apply for ${job.title} at ${job.company}, ${job.location}.${salary ? ` Salary ${salary}.` : ''} Full job description, responsibilities, eligibility, skills, benefits, how to apply & FAQs on Noble Job.`,
     path: `/jobs/private/${id}`,
     keywords: ['Private Jobs', job.company, job.location, job.cat, job.title, 'Jobs in India'],
     ogType: 'article',
@@ -48,7 +49,10 @@ export default async function JobDetailPage({ params }: Props) {
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
   const fromIndexablePage = isIndexable(job)
   const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; application_deadline?: string | null; job_type?: string; experience_required?: string; description?: string }
-  const salary = job.salary || formatSalary(row.salary_min, row.salary_max)
+  // Only a real stated salary is shown — never "Competitive"/"undefined" filler.
+  const salary = displayValue(job.salary || formatSalary(row.salary_min, row.salary_max)) ?? ''
+  const jobType = displayValue(row.job_type || job.type) ?? ''
+  const experience = displayValue(row.experience_required || job.exp) ?? ''
 
   const content = buildJobContent({
     board: 'private',
@@ -57,8 +61,8 @@ export default async function JobDetailPage({ params }: Props) {
     category: job.cat,
     location: job.location,
     salary,
-    experience: row.experience_required || job.exp,
-    employmentType: row.job_type || job.type || 'Full Time',
+    experience,
+    employmentType: jobType,
     skills: job.skills,
     description: row.description || job.desc,
     // Stored posting timestamp only — `job.posted` is a display string, not a date.
@@ -79,14 +83,14 @@ export default async function JobDetailPage({ params }: Props) {
     'private',
     [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)],
     { fromIndexablePage, limit: 6 },
-    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }),
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: joinReal(j.location, j.salary) }),
   )
 
   const cityJobs = pool.filter(j => job.location && j.location?.includes(job.location.split(',')[0]))
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
-    meta: `${g.org} · ${g.vacancies} posts`,
+    meta: isRealDisplayValue(g.vacancies) ? `${g.org} · ${g.vacancies} posts` : g.org,
   }))
   const privateSuggestions: JobLink[] = related.slice(0, 5)
   const cityLink = detectCityLink(job.location, 'private')
@@ -100,8 +104,14 @@ export default async function JobDetailPage({ params }: Props) {
         { label: job.title },
       ]}
       title={job.title}
-      subtitle={`${job.company} · ${job.location} · ${row.job_type || job.type || 'Full Time'}`}
-      badges={[`🏢 ${job.company}`, `📍 ${job.location}`, `💰 ${salary}`, `💼 ${row.job_type || job.type || 'Full Time'}`, `🧑‍💼 ${row.experience_required || job.exp || 'Any'}`]}
+      subtitle={joinReal(job.company, job.location, jobType)}
+      badges={[
+        `🏢 ${job.company}`,
+        `📍 ${job.location}`,
+        salary ? `💰 ${salary}` : '',
+        jobType ? `💼 ${jobType}` : '',
+        experience ? `🧑‍💼 ${experience}` : '',
+      ].filter(Boolean)}
       content={content}
       jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
       applySlot={<ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} sample={isSample} />}
@@ -126,7 +136,7 @@ export default async function JobDetailPage({ params }: Props) {
           'private',
           cityJobs,
           { fromIndexablePage, limit: 5 },
-          (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }),
+          (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: joinReal(j.location, j.salary) }),
         ),
       } : undefined}
     />

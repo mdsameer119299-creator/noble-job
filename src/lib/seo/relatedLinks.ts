@@ -11,15 +11,23 @@
  * and the rows are never advertised anywhere indexable.
  */
 import { isIndexable, jobDetailHref, type Classifiable } from "../jobs/provenance"
+import { isRenderableJob, isValidJobId, type JobLike } from "../jobs/renderable"
 
 export type RelatedBoard = "private" | "wfh" | "abroad"
 
+/**
+ * NO EMPTY JOBS: a related/recommended link is only ever produced for a record
+ * that is renderable (real id, title, company, description, known provenance), on
+ * indexable AND noindex pages alike — a link to an incomplete job would land on a
+ * 404 (or worse, advertise an empty page).
+ */
 export function relatedJobHref(
   board: RelatedBoard,
   target: Classifiable & { id?: string | null },
   opts: { fromIndexablePage: boolean },
 ): string | null {
-  if (!target.id) return null
+  if (!isValidJobId(target.id)) return null
+  if (!isRenderableJob(target as JobLike, board)) return null
   if (!opts.fromIndexablePage) return `/jobs/${board}/${target.id}`
   return isIndexable(target) ? jobDetailHref(board, target) : null
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getGovtJobsLocal } from "@/lib/services/govtJobLocal"
+import { isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
+import { isServableGovtJob } from "@/lib/services/govtStatsSource"
 import type { GovtJobTab } from "@/types/govtJob"
 
 const CACHE_HEADERS = {
@@ -37,10 +39,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     if (err instanceof Error) {
       console.error("[govt-jobs] stack:", err.stack)
     }
-    const jobs = getGovtJobsLocal(tab, state)
+    // A failure on a SINGLE-JOB request must never be answered with a list (the
+    // caller would render an unrelated/empty job). A failure on a list request only
+    // falls back to the demo seed where policy allows it, and even then only to
+    // records that are complete enough to be jobs.
+    if (p?.length === 1 && !["stats", "states"].includes(p[0])) {
+      return NextResponse.json({ error: "Temporarily unavailable" }, { status: 503 })
+    }
+    const jobs = isGovtSeedFallbackAllowed() ? getGovtJobsLocal(tab, state).filter(isServableGovtJob) : []
     return NextResponse.json(
       { data: jobs, total: jobs.length },
-      { headers: CACHE_HEADERS },
+      { status: jobs.length ? 200 : 503, headers: jobs.length ? CACHE_HEADERS : { "Cache-Control": "no-store" } },
     )
   }
 }

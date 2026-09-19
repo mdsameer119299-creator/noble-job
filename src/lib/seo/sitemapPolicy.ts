@@ -11,6 +11,7 @@
  *    / closed / expired job pages.
  */
 import { isGenuine, isOpen, type Classifiable } from "../jobs/provenance"
+import { isRenderableJob } from "../jobs/renderable"
 import { parseRealDate } from "./jobPostingRules"
 
 export type SitemapChangeFreq = "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never"
@@ -140,6 +141,15 @@ export interface SitemapJobRow {
   status?: string | null
   source?: string | null
   application_deadline?: string | null
+  /**
+   * Completeness columns — a row without a real title / company / description
+   * (and location / country where required) is an EMPTY job and is never listed.
+   */
+  title?: string | null
+  company?: string | null
+  description?: string | null
+  location?: string | null
+  country?: string | null
 }
 
 export type SitemapJobBoard = "private" | "wfh" | "abroad"
@@ -178,6 +188,9 @@ export function jobRowsToSitemapEntries(
     }
     // Same predicate as `isIndexable`, with an injectable clock for tests.
     if (!(isGenuine(c) && isOpen(c, now))) continue
+    // NO EMPTY JOBS: a URL is listed only when the page would render a real job
+    // (the same gate the detail route uses to 404 an incomplete record).
+    if (!isRenderableJob({ ...r, ...c }, board)) continue
     out.push({
       url: `${root}/jobs/${board}/${r.id}`,
       lastModified: toLastModified([r.posted_at], now),

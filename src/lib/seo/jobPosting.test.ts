@@ -40,6 +40,7 @@ import {
   MAX_DESCRIPTION_HTML_CHARS,
 } from "./jobPostingDescription"
 import { ORG_LOGO } from "./constants"
+import { SOURCE_DATE_FIELD, originalPostingDate } from "./postingDate"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
@@ -58,7 +59,10 @@ const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 
 /* ------------------------------ fixtures ------------------------------ */
 
+/** The ORIGINAL employer/source publication date — the only thing that may become datePosted. */
 const POSTED = "2026-08-01T05:30:00.000Z"
+/** When NobleJob stored the row (`posted_at`, `created_at`, …) — must NEVER become datePosted. */
+const INGESTED = "2026-09-15T10:00:00.000Z"
 
 /** Realistic STORED employer descriptions (each is > 150 chars / > 20 words). */
 const PRIVATE_DESC =
@@ -95,7 +99,8 @@ const employerJob = (over: Partial<Job> & Obj = {}): Job =>
     verified: true,
     source: "employer",
     board: "private",
-    posted_at: POSTED,
+    posted_at: INGESTED,
+    source_posted_at: POSTED,
     ...over,
   }) as unknown as Job
 
@@ -124,7 +129,8 @@ const wfhJob = (over: Obj = {}): WfhJob =>
     salary: "₹20,000 per month",
     cat: "Support",
     qualification: "Graduate",
-    posted_at: POSTED,
+    posted_at: INGESTED,
+    source_posted_at: POSTED,
     apply_url: "https://careers.remoteco.example/apply/1",
     description: WFH_DESC,
     provenance: "AGGREGATED",
@@ -145,7 +151,8 @@ const abroadJob = (over: Obj = {}): AbroadJob =>
     salary: "AED 2,500 per month",
     experience: "3 years",
     category: "Construction",
-    posted_at: POSTED,
+    posted_at: INGESTED,
+    source_posted_at: POSTED,
     apply_url: "https://careers.gulfbuild.example/apply/1",
     description: ABROAD_DESC,
     provenance: "AGGREGATED",
@@ -209,40 +216,119 @@ test("job whose REAL employer deadline has passed → NO JobPosting", () => {
 })
 
 /* ------------------------------- dates ------------------------------- */
+/*
+ * `datePosted` is the ORIGINAL employer/source publication date. NobleJob's own
+ * ingestion / creation time (`posted_at`, `created_at`, `updated_at`, `fetched_at`,
+ * `last_confirmed_open_at`) is a different fact and must never stand in for it.
+ * The only stored field that may feed it is `source_posted_at` (govt:
+ * `source_published_at`). No source date → no JobPosting.
+ */
 
-test("genuine private job with a real posting date → JobPosting with THAT date", () => {
+test("genuine private job with a real SOURCE date → JobPosting with THAT date (not the ingestion time)", () => {
   const j = employerJob()
   const p = asObj(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED })))
   assert.equal(p["@type"], "JobPosting")
   assert.equal(p.datePosted, POSTED)
+  assert.notEqual(p.datePosted, INGESTED)
 })
-test("missing posting date → NO JobPosting (never falls back to now())", () => {
-  const j = employerJob({ posted_at: undefined, posted: "" })
+test("missing SOURCE date → NO JobPosting (never falls back to now() or posted_at)", () => {
+  const j = employerJob({ source_posted_at: undefined, posted: "" })
   assert.equal(buildPrivateJobPosting(j, contentFor(j)), null)
+  const k = employerJob({ source_posted_at: null })
+  assert.equal(buildPrivateJobPosting(k, contentFor(k)), null)
 })
-test("relative/junk posted text ('2 days ago') is not a real date → NO JobPosting", () => {
-  const j = employerJob({ posted_at: undefined, posted: "2 days ago" })
-  assert.equal(buildPrivateJobPosting(j, contentFor(j)), null)
+test("INGESTION timestamp only (posted_at / created_at / updated_at / fetched_at / last_confirmed_open_at) → NO JobPosting", () => {
+  const ingestionOnly = {
+    source_posted_at: undefined,
+    posted_at: INGESTED,
+    created_at: INGESTED,
+    updated_at: INGESTED,
+    fetched_at: INGESTED,
+    last_confirmed_open_at: INGESTED,
+  }
+  const j = employerJob(ingestionOnly)
+  assert.equal(buildPrivateJobPosting(j, contentFor(j, { postedAt: INGESTED })), null, "private")
+  assert.equal(buildWfhJobPosting(wfhJob({ ...ingestionOnly, applicant_country: "IN" }), contentFor(employerJob())), null, "wfh")
+  assert.equal(buildAbroadJobPosting(abroadJob(ingestionOnly), contentFor(employerJob())), null, "abroad")
 })
-test("private datePosted comes ONLY from the stored posted_at — never from the display string", () => {
-  // Display strings on the list path / synthetic inventory: never a schema date.
-  for (const posted of ["5 days ago", "Recent", "Just now", "2 weeks ago", "Job 1", "Yesterday"]) {
-    const j = employerJob({ posted_at: undefined, posted })
+test("the ingestion timestamp cannot become datePosted even when it is the only valid date on the record", () => {
+  for (const key of ["posted_at", "created_at", "updated_at", "fetched_at", "last_confirmed_open_at", "postedAt", "createdAt"]) {
+    const j = employerJob({ source_posted_at: undefined, [key]: "2026-09-10T00:00:00.000Z" })
+    const p = buildPrivateJobPosting(j, contentFor(j, { postedAt: "2026-09-10T00:00:00.000Z" }))
+    assert.equal(p, null, `${key} must not be used as datePosted`)
+  }
+})
+test("when BOTH exist and differ, datePosted is the source date — not posted_at", () => {
+  const j = employerJob({ posted_at: INGESTED, source_posted_at: POSTED })
+  assert.equal(asObj(buildPrivateJobPosting(j, contentFor(j))).datePosted, POSTED)
+})
+test("relative/junk display text ('2 days ago') is not a date → NO JobPosting", () => {
+  for (const posted of ["5 days ago", "Recent", "Just now", "2 weeks ago", "Job 1", "Yesterday", "2 days ago", ""]) {
+    const j = employerJob({ source_posted_at: undefined, posted })
     assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `posted=${JSON.stringify(posted)}`)
   }
   // Even a perfectly parseable display date is not the stored original date.
-  const j = employerJob({ posted_at: undefined, posted: "2026-08-01" })
+  const j = employerJob({ source_posted_at: undefined, posted: "2026-08-01" })
   assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, "job.posted is never a fallback")
-  // With a stored posted_at, a conflicting display string is ignored.
+  // With a stored source date, a conflicting display string is ignored.
   const k = employerJob({ posted: "5 days ago" })
   const p = asObj(buildPrivateJobPosting(k, contentFor(k, { postedAt: POSTED })))
   assert.equal(p.datePosted, POSTED)
   assert.doesNotMatch(JSON.stringify(p), /days ago/i)
 })
-test("private: a junk or future stored posted_at → NO JobPosting", () => {
-  for (const posted_at of ["Job 1", "5 days ago", "not-a-date", "", "1999-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
-    const j = employerJob({ posted_at })
-    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `posted_at=${JSON.stringify(posted_at)}`)
+test("INVALID source date → NO JobPosting", () => {
+  for (const source_posted_at of ["Job 1", "5 days ago", "not-a-date", "", "   ", "1999-01-01T00:00:00Z", "31/31/2026", "NaN"]) {
+    const j = employerJob({ source_posted_at })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `source_posted_at=${JSON.stringify(source_posted_at)}`)
+  }
+})
+test("FUTURE source date → NO JobPosting", () => {
+  for (const source_posted_at of ["2099-01-01T00:00:00Z", "2027-06-01T00:00:00Z", new Date(Date.now() + 3 * 86_400_000).toISOString()]) {
+    const j = employerJob({ source_posted_at })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `source_posted_at=${JSON.stringify(source_posted_at)}`)
+  }
+})
+test("WFH / abroad: genuine source date → JobPosting with that date; missing / invalid / future → none", () => {
+  const cw = contentFor(employerJob())
+  const w = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), cw))
+  assert.equal(w.datePosted, POSTED)
+  const a = asObj(buildAbroadJobPosting(abroadJob(), cw))
+  assert.equal(a.datePosted, POSTED)
+  for (const source_posted_at of [undefined, null, "", "5 days ago", "not-a-date", "2099-01-01T00:00:00Z"]) {
+    assert.equal(buildWfhJobPosting(wfhJob({ source_posted_at, applicant_country: "IN" }), cw), null, `wfh ${String(source_posted_at)}`)
+    assert.equal(buildAbroadJobPosting(abroadJob({ source_posted_at }), cw), null, `abroad ${String(source_posted_at)}`)
+  }
+})
+test("originalPostingDate: which stored field is the source date, per board", () => {
+  assert.equal(SOURCE_DATE_FIELD.private, "source_posted_at")
+  assert.equal(SOURCE_DATE_FIELD.wfh, "source_posted_at")
+  assert.equal(SOURCE_DATE_FIELD.abroad, "source_posted_at")
+  assert.equal(SOURCE_DATE_FIELD.govt, "source_published_at")
+  const now = new Date("2026-09-19T00:00:00Z")
+  assert.equal(originalPostingDate({ source_posted_at: POSTED, posted_at: INGESTED } as never, "private", now), POSTED)
+  assert.equal(originalPostingDate({ sourcePostedAt: POSTED }, "abroad", now), POSTED, "camelCase alias")
+  assert.equal(originalPostingDate({ posted_at: INGESTED, created_at: INGESTED, updated_at: INGESTED } as never, "private", now), undefined)
+  assert.equal(originalPostingDate({ source_posted_at: "2099-01-01T00:00:00Z" }, "wfh", now), undefined, "future")
+  assert.equal(originalPostingDate({ source_posted_at: "garbage" }, "wfh", now), undefined, "invalid")
+  assert.equal(originalPostingDate({ sourcePublishedAt: POSTED, source_posted_at: INGESTED }, "govt", now), POSTED, "govt reads ONLY its official publication date")
+  assert.equal(originalPostingDate({ source_posted_at: POSTED }, "govt", now), undefined, "a private-board field is not a govt date")
+})
+test("builders + postingDate never READ an ingestion/creation timestamp (static scan, comments stripped)", () => {
+  const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
+  const forbidden = /\b(posted_at|created_at|updated_at|fetched_at|last_confirmed_open_at|postedAt|createdAt|updatedAt|fetchedAt)\b/
+  for (const f of ["src/lib/seo/jobPostingBuilders.ts", "src/lib/seo/postingDate.ts"]) {
+    const code = strip(readFileSync(join(process.cwd(), f), "utf8"))
+    assert.doesNotMatch(code, forbidden, `${f} must not reference an ingestion/creation timestamp`)
+  }
+})
+test("the VISIBLE posting date is unchanged — the page still shows posted_at; only JobPosting.datePosted moved", () => {
+  const pg = readFileSync(join(process.cwd(), "src/app/jobs/private/[id]/page.tsx"), "utf8")
+  assert.match(pg, /postedAt:\s*row\.posted_at/, "visible 'Job Posted On' still comes from the stored row date")
+})
+test("private: a junk or future stored source date → NO JobPosting", () => {
+  for (const source_posted_at of ["Job 1", "5 days ago", "not-a-date", "", "1999-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
+    const j = employerJob({ source_posted_at })
+    assert.equal(buildPrivateJobPosting(j, contentFor(j)), null, `source_posted_at=${JSON.stringify(source_posted_at)}`)
   }
 })
 test("schema: future datePosted (beyond clock-skew tolerance) → null", () => {
@@ -544,8 +630,8 @@ test("WFH: explicitApplicantCountry — explicit single country only", () => {
   assert.equal(resolveApplicantCountry(undefined, "Remote - UAE"), "AE")
   assert.equal(resolveApplicantCountry("Atlantis", "Remote"), undefined)
 })
-test("WFH: missing posting date → NO JobPosting", () => {
-  assert.equal(buildWfhJobPosting(wfhJob({ posted_at: undefined, applicant_country: "IN" }), contentFor(employerJob())), null)
+test("WFH: missing SOURCE posting date (posted_at alone is not enough) → NO JobPosting", () => {
+  assert.equal(buildWfhJobPosting(wfhJob({ source_posted_at: undefined, applicant_country: "IN" }), contentFor(employerJob())), null)
 })
 test("WFH: no hard-coded applicant-country constant remains", () => {
   const consts = readFileSync(join(process.cwd(), "src/lib/seo/constants.ts"), "utf8")

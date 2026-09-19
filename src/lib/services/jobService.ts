@@ -1,11 +1,21 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
-import { PRIVATE_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { renderablePrivateInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
-import { classifyProvenance, KNOWN_PROVENANCE } from "@/lib/jobs/provenance"
+import { mapPrivateJobRow } from "@/lib/services/jobMapper"
+import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
-import type { Job, JobFilter, JobSearchResult, Provenance } from "@/types/job"
+import type { Job, JobFilter, JobSearchResult } from "@/types/job"
+
+/**
+ * Upper bound on rows read per list request. The renderable filter runs in memory
+ * so that `total`, `totalPages`, `counts` and the page rows all describe the SAME
+ * set (an SQL `count` cannot know which rows the gate will drop). The genuine
+ * inventory is far below this; hitting the cap is logged.
+ */
+const MAX_POOL_ROWS = 1000
 
 async function getSupabaseClient() {
   const { createClient } = await import("@/lib/supabase/server")
@@ -66,7 +76,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     const sb = await getSupabaseClient()
     if (!sb) return localResult()
 
-    let query = sb.from("jobs").select("*", { count: "exact" }).eq("status", "active")
+    let query = sb.from("jobs").select("*").eq("status", "active")
 
     if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`)
     if (category === "blue-collar") query = query.in("category", [...BLUE_COLLAR_CATEGORIES])
@@ -80,7 +90,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 
     if (filter.status && filter.status !== "all") query = query.eq("job_status", filter.status)
 
-    const { data, count, error } = await withTimeout(query.range((page - 1) * limit, page * limit - 1), 8000)
+    const { data, error } = await withTimeout(query.range(0, MAX_POOL_ROWS - 1), 8000)
     if (error) {
       console.error("[jobService:getJobs] live query returned an error, serving local fallback:", error.message)
       return localResult()
@@ -88,58 +98,23 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     if (!data?.length) {
       return localResult()
     }
-    const jobs = (data || []).map(row => {
-      const r = row as Record<string, unknown>
-      return {
-        id: String(r.id),
-        title: String(r.title),
-        company: String(r.company || ""),
-        logo: String((r.company as string)?.slice(0, 2) || "NJ"),
-        color: "#1847d4",
-        location: String(r.location || "India"),
-        type: String(r.job_type || "Full Time"),
-        exp: String(r.experience_required || ""),
-        salary: r.salary_min
-          ? `₹${Number(r.salary_min) / 100000}-${Number(r.salary_max) / 100000} LPA`
-          : "Competitive",
-        cat: String(r.category || ""),
-        skills: (r.skills as string[]) || [],
-        badge: r.badge as string | undefined,
-        jobStatus: (r.job_status as Job["jobStatus"]) || (r.is_verified ? "VERIFIED_JOB" : "LIVE_JOB"),
-        // A stored `provenance` wins; otherwise classify defensively (fail
-        // closed) so every read is gate-ready. Legacy rows without sufficient
-        // evidence resolve to UNCLASSIFIED, not a genuine class.
-        provenance:
-          (KNOWN_PROVENANCE.has(String(r.provenance || "").toUpperCase())
-            ? (r.provenance as Provenance)
-            : undefined) ||
-          classifyProvenance({
-            id: String(r.id),
-            board: "private",
-            source: r.source as string | undefined,
-            apply_url: r.apply_url as string | undefined,
-            employer_id: r.employer_id as string | undefined,
-            is_verified: Boolean(r.is_verified),
-            job_status: r.job_status as string | undefined,
-          }),
-        // Ownership evidence carried through for downstream genuineness checks.
-        employer_id: r.employer_id ? String(r.employer_id) : undefined,
-        applyUrl: String(r.apply_url || "#"),
-        desc: String(r.description || ""),
-        posted: String(r.posted_at || ""),
-        verified: Boolean(r.is_verified),
-        source: String(r.source || "Noble Job"),
-        board: "private" as const,
-      } satisfies Job
-    })
-    const sorted = sortByStatus(jobs)
-    if (shouldFallbackToLocal(sorted.length, PRIVATE_INVENTORY.length)) return localResult()
+    if (data.length >= MAX_POOL_ROWS) {
+      console.warn(`[jobService:getJobs] read ${MAX_POOL_ROWS} rows (the cap); later rows are not listed`)
+    }
+    // Map WITHOUT inventing values, drop every record that cannot be shown as a
+    // job (incomplete / placeholder / unknown provenance) — the rows stay in the
+    // database, they are just not exposed — then count and paginate the SAME set.
+    const pool = sortByStatus(
+      filterRenderable(data.map(row => mapPrivateJobRow(row as Record<string, unknown>)), "private"),
+    )
+    if (shouldFallbackToLocal(pool.length, renderablePrivateInventory().length)) return localResult()
+    const start = (page - 1) * limit
     return {
-      jobs: sorted,
-      total: count || jobs.length,
+      jobs: pool.slice(start, start + limit),
+      total: pool.length,
       page,
-      totalPages: Math.ceil((count || jobs.length) / limit),
-      counts: countByStatus(sorted),
+      totalPages: Math.ceil(pool.length / limit),
+      counts: countByStatus(pool),
     }
   } catch (err) {
     logQueryFallback("getJobs", err)
@@ -148,7 +123,9 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 }
 
 export async function getJobById(id: string): Promise<Job | null> {
-  const local = getPrivateJobByIdLocal(id, await isSyntheticJobsVisible())
+  // "undefined", "null", whitespace and path-like ids are not jobs (404), never a lookup.
+  if (!isValidJobId(id)) return null
+  const local = renderableOrNull(getPrivateJobByIdLocal(id, await isSyntheticJobsVisible()), "private")
   if (preferLocalInventory() || !isSupabaseConfigured()) return local
   try {
     const sb = await getSupabaseClient()
@@ -158,7 +135,10 @@ export async function getJobById(id: string): Promise<Job | null> {
       console.error("[jobService:getJobById] live query returned an error, serving local fallback:", error.message)
       return local
     }
-    return (data as unknown as Job) ?? local
+    // A row that EXISTS but is incomplete is "not found" — never an empty job page,
+    // and never silently swapped for a different (local) record.
+    if (data) return renderableOrNull(mapPrivateJobRow(data as Record<string, unknown>), "private")
+    return local
   } catch (err) {
     logQueryFallback("getJobById", err)
     return local

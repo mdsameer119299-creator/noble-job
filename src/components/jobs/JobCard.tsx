@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
 import { classifyProvenance, isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
+import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
 
@@ -19,7 +20,9 @@ export function JobCard({ job, onSave }: JobCardProps) {
   // (SYNTHETIC) rows: an application to one would go nowhere, yet the candidate
   // would be told it was submitted. Those show a "Sample listing" state instead.
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
-  const canApply = isActiveStatus(job.jobStatus) && !isSample
+  // …and only when the record is ACTIONABLE: complete, genuine, open, with a real
+  // application route (an employer-owned job or a real external URL).
+  const canApply = isActiveStatus(job.jobStatus) && !isSample && isActionableJob(job, 'private')
   // Only genuine jobs get a crawlable internal link to their detail page; for
   // synthetic/demo rows this is null so no dofollow discovery link is emitted.
   const detailHref = jobDetailHref('private', job)
@@ -64,11 +67,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
-          { icon: '📍', label: job.location },
-          { icon: '💼', label: job.type || job.job_type || 'Full Time' },
-          { icon: '📊', label: job.exp || 'Any Experience' },
-          { icon: '💰', label: job.salary || formatSalary((job as any).salary_min, (job as any).salary_max) },
-        ].map((t, i) => (
+          { icon: '📍', label: displayValue(job.location) },
+          { icon: '💼', label: displayValue(job.type || job.job_type) },
+          { icon: '📊', label: displayValue(job.exp) },
+          { icon: '💰', label: displayValue(job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)) },
+        ].filter(t => t.label).map((t, i) => (
           <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f0f4ff', color: '#374151', padding: '5px 11px', borderRadius: 20, fontSize: 12.5, fontWeight: 600 }}>
             {t.icon} {t.label}
           </span>
@@ -87,7 +90,10 @@ export function JobCard({ job, onSave }: JobCardProps) {
             ? `🗄 Archived Vacancy · ${job.source || 'Reference'}`
             : !genuine
               ? `📄 ${nonGenuineListingLabel(job)}`
-              : `${job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (job.source || 'Verified')} · ${formatDate((job as any).posted_at || job.posted || '')}`}
+              : [
+                  job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (displayValue(job.source) || 'Verified'),
+                  formatDate((job as any).posted_at || job.posted || ''),
+                ].filter(Boolean).join(' · ')}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           {onSave && (

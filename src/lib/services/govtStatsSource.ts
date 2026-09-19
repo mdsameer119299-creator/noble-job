@@ -25,7 +25,19 @@ import { isGovtRecordType } from "@/lib/govt/recordType"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import { resolveGovtPool, type GovtPoolSnapshot, type GovtPoolResult } from "@/lib/services/govtPoolResolver"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { isRenderableJob } from "@/lib/jobs/renderable"
 import type { GovtJob } from "@/types/govtJob"
+
+/**
+ * NO EMPTY JOBS: a government row is servable only when it is still active AND
+ * complete enough to be a job (real id, title, organisation, known provenance —
+ * "Untitled Notification" and friends are placeholders). Incomplete rows stay in
+ * the database; they are just never listed, counted, related, sitemapped or
+ * opened — every govt consumer reads through this one predicate.
+ */
+export function isServableGovtJob(job: GovtJob): boolean {
+  return isActiveGovtJob(job) && isRenderableJob(job as never, "govt")
+}
 
 /** Thrown for a single-row lookup when the database is unreachable and no last-known-good copy exists. */
 export class GovtSourceUnavailableError extends Error {
@@ -100,7 +112,7 @@ async function loadActiveGovtRows(): Promise<GovtJob[]> {
   const rows = (res.data ?? []).map(r =>
     enrichGovtJob(mapRow(r as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }),
   )
-  return rows.filter(isActiveGovtJob)
+  return rows.filter(isServableGovtJob)
 }
 
 /**
@@ -145,7 +157,7 @@ async function loadGovtJobRow(slugOrId: string): Promise<GovtJob | null> {
   }
   if (!row) return null
   const job = enrichGovtJob(mapRow(row) as GovtJob & { last_date: string; age_range: string })
-  return isActiveGovtJob(job) ? job : null
+  return isServableGovtJob(job) ? job : null
 }
 
 /**
@@ -167,7 +179,7 @@ export const getGovtJobRow = cache(async (slugOrId: string): Promise<GovtJob | n
     if (snap && Date.now() - snap.at <= govtLastKnownGoodMaxAgeMs()) {
       const hit = snap.rows.find(j => j.slug === slugOrId || j.id === slugOrId)
       console.warn(`[govtSource] single-row lookup failed (${reason}); ${hit ? "served last-known-good row" : "not in last-known-good"}`)
-      return hit && isActiveGovtJob(hit) ? hit : null
+      return hit && isServableGovtJob(hit) ? hit : null
     }
     if (isGovtSeedFallbackAllowed()) return null // caller may consult the dev seed
     throw new GovtSourceUnavailableError(reason)
@@ -208,7 +220,7 @@ const resolveActivePool = cache((): Promise<GovtPoolResult<GovtJob>> =>
     setLkg: s => { lastKnownGood = s },
     allowSeed: isGovtSeedFallbackAllowed(),
     seed: () => GOVT_JOBS,
-    isActive: isActiveGovtJob,
+    isActive: isServableGovtJob,
     maxAgeMs: govtLastKnownGoodMaxAgeMs(),
     warn: warnThrottled,
   }),

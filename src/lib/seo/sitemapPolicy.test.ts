@@ -41,8 +41,12 @@ const read = (p: string) => readFileSync(join(root, p), "utf8")
 const BASE = "https://www.noblejob.in"
 const NOW = new Date("2026-09-19T10:00:00.000Z")
 
+/** A COMPLETE genuine row: has the title / company / description / location / country a real job page needs. */
 const genuine = (id: string, posted: string, over: Partial<SitemapJobRow> = {}): SitemapJobRow => ({
-  id, posted_at: posted, provenance: "EMPLOYER", employer_id: "emp-1", is_verified: true, status: "active", ...over,
+  id, posted_at: posted, provenance: "EMPLOYER", employer_id: "emp-1", is_verified: true, status: "active",
+  title: "Accounts Executive", company: "Acme Pvt Ltd", location: "Delhi", country: "UAE",
+  description: "Maintain the company ledgers in Tally and reconcile vendor and bank statements every month.",
+  ...over,
 })
 
 /* ------------------------------ sitemap rows ------------------------------ */
@@ -338,8 +342,15 @@ test("query params never create keyword landing pages: no page maps ?q= to a can
 
 /* ------------------------------ related links ------------------------------ */
 
-const gJob = { id: "g1", provenance: "EMPLOYER", employer_id: "e", is_verified: true, status: "active" }
-const sJob = { id: "live-priv-9", jobStatus: "LIVE_JOB" }
+const gJob = {
+  id: "g1", provenance: "EMPLOYER", employer_id: "e", is_verified: true, status: "active",
+  title: "Accounts Executive", company: "Acme Pvt Ltd", location: "Delhi", country: "UAE",
+  description: "Maintain the company ledgers in Tally and reconcile vendor and bank statements every month.",
+}
+const sJob = {
+  id: "live-priv-9", jobStatus: "LIVE_JOB", title: "Sample Role", company: "Sample Co", location: "Delhi", country: "UAE",
+  description: "A generated sample listing used for browsing continuity only.",
+}
 
 test("a genuine indexable page never links to a synthetic/noindex job page", () => {
   assert.equal(relatedJobHref("private", sJob, { fromIndexablePage: true }), null)

@@ -59,6 +59,12 @@ export interface Job {
   category?:   string
   description?: string
   apply_url?:  string
+  /**
+   * The ORIGINAL employer/source publication date. The only field that may become
+   * JobPosting `datePosted`. `posted_at` (row creation) and `posted` (display
+   * string) are NOT it. Absent → no JobPosting. See seo/postingDate.ts.
+   */
+  source_posted_at?: string | null
 }
 
 export interface JobFilter {

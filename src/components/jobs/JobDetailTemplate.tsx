@@ -77,7 +77,7 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
   return (
     <div style={{ background: "#f8faff", minHeight: "100vh" }}>
       {props.jsonLdSlot}
-      <JsonLd data={faqPageSchema(content.faqs.map(f => ({ question: f.q, answer: f.a })))} />
+      {content.faqs.length > 0 && <JsonLd data={faqPageSchema(content.faqs.map(f => ({ question: f.q, answer: f.a })))} />}
 
       {/* Hero */}
       <div style={{ background: `linear-gradient(135deg,${accent},#0d1f4e)`, padding: "28px 0 32px" }}>
@@ -97,22 +97,31 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 24, alignItems: "flex-start" }} className="max-lg:!grid-cols-1">
           {/* Main column */}
           <div>
+            {content.overview.length > 0 && (
             <Section id="overview" title="Job Overview" icon="📋">
               {content.overview.map((p, i) => <p key={i} style={para}>{p}</p>)}
             </Section>
+            )}
 
+            {content.aboutOrg.trim().length > 0 && (
             <Section id="about-organization" title="About the Organization" icon="🏢">
               <p style={{ ...para, marginBottom: 0 }}>{content.aboutOrg}</p>
             </Section>
+            )}
 
+            {content.responsibilities.length > 0 && (
             <Section id="responsibilities" title="Key Responsibilities" icon="✅">
               <ul style={bulletList}>{content.responsibilities.map((r, i) => <li key={i}>{r}</li>)}</ul>
             </Section>
+            )}
 
+            {content.eligibility.length > 0 && (
             <Section id="eligibility" title="Eligibility Criteria" icon="🎓">
               <ul style={bulletList}>{content.eligibility.map((e, i) => <li key={i}>{e}</li>)}</ul>
             </Section>
+            )}
 
+            {content.skills.length > 0 && (
             <Section id="skills" title="Required Skills" icon="🛠️">
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {content.skills.map((s, i) => (
@@ -120,23 +129,33 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
                 ))}
               </div>
             </Section>
+            )}
 
+            {content.salaryDetails.trim().length > 0 && (
             <Section id="salary" title="Salary Details" icon="💰">
               <p style={{ ...para, marginBottom: 0 }}>{content.salaryDetails}</p>
             </Section>
+            )}
 
+            {content.benefits.length > 0 && (
             <Section id="benefits" title="Benefits & Perks" icon="🎁">
               <ul style={bulletList}>{content.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>
             </Section>
+            )}
 
+            {content.selectionProcess.length > 0 && (
             <Section id="selection-process" title="Selection Process" icon="🧭">
               <ol style={bulletList}>{content.selectionProcess.map((s, i) => <li key={i}>{s}</li>)}</ol>
             </Section>
+            )}
 
+            {content.howToApply.length > 0 && (
             <Section id="how-to-apply" title="How to Apply" icon="📝">
               <ol style={bulletList}>{content.howToApply.map((s, i) => <li key={i}>{s}</li>)}</ol>
             </Section>
+            )}
 
+            {content.importantDates.length > 0 && (
             <Section id="important-dates" title="Important Dates" icon="📅">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.8 }}>
                 <tbody>
@@ -149,6 +168,7 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
                 </tbody>
               </table>
             </Section>
+            )}
 
             <Section id="important-links" title="Important Links" icon="🔗">
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
@@ -166,6 +186,7 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
               </div>
             </Section>
 
+            {content.faqs.length > 0 && (
             <Section id="faqs" title="Frequently Asked Questions" icon="❓">
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {content.faqs.map((f, i) => (
@@ -176,6 +197,7 @@ export function JobDetailTemplate(props: JobDetailTemplateProps) {
                 ))}
               </div>
             </Section>
+            )}
 
             {/* Cross-board internal linking — keeps deep pages connected. */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 16 }}>

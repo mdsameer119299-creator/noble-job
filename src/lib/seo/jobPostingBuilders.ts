@@ -19,6 +19,8 @@ import {
   resolveCountryIso,
 } from "./jobPostingRules"
 import { buildGovtFactsDescription, buildStoredDescription } from "./jobPostingDescription"
+import { originalPostingDate } from "./postingDate"
+import { isRenderableJob } from "../jobs/renderable"
 import { isDeliveredToEmployerViaPlatform, isSchemaEligible } from "../jobs/provenance"
 import { govtClassifiable, isSchemaEligible as isGovtSchemaEligible } from "../jobs/govtProvenance"
 import { canEmitJobPosting, govtRecordTypeOf } from "../govt/recordType"
@@ -51,10 +53,11 @@ function salaryFields(s: JobContent["parsedSalary"]): SalaryFields {
 /* ------------------------------------------------------------------ */
 
 export function buildPrivateJobPosting(job: Job, content: JobContent) {
-  // Synthetic/demo, unclassified, closed or non-open rows never carry JobPosting.
-  if (!isSchemaEligible(job)) return null
+  // Synthetic/demo, unclassified, closed or non-open rows never carry JobPosting;
+  // neither does a record too incomplete to be shown as a job at all.
+  if (!isSchemaEligible(job) || !isRenderableJob(job, "private")) return null
   const row = job as Job & {
-    posted_at?: string
+    source_posted_at?: string | null
     description?: string
     job_type?: string
     experience_required?: string
@@ -76,10 +79,10 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
     title: job.title,
     description,
     url: `${siteUrl()}/jobs/private/${job.id}`,
-    // ONLY the stored original posting timestamp. `job.posted` is a display string
-    // ("5 days ago", "Recent") on the list path and must never become a schema date;
-    // no stored `posted_at` → no JobPosting.
-    datePosted: row.posted_at,
+    // ONLY the genuine ORIGINAL publication date (`source_posted_at`). `posted_at`
+    // is NobleJob's row-creation / ingestion time and `job.posted` is a display
+    // string — neither may become `datePosted`. No source date → no JobPosting.
+    datePosted: originalPostingDate(row, "private"),
     validThrough: content.validThrough, // employer's real deadline only
     employmentType: row.job_type || job.type,
     organizationName: job.company,
@@ -103,7 +106,7 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
 /* ------------------------------------------------------------------ */
 
 export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
-  if (!isSchemaEligible(job)) return null
+  if (!isSchemaEligible(job) || !isRenderableJob(job, "wfh")) return null
   // TELECOMMUTE only when the STORED record establishes the role is fully (100%)
   // remote: positive evidence in its type / description, and no hybrid, on-site or
   // office-day wording anywhere. Being on the WFH board is not evidence; a hybrid or
@@ -132,7 +135,7 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
     title: job.title,
     description,
     url: `${siteUrl()}/jobs/wfh/${job.id}`,
-    datePosted: job.posted_at,
+    datePosted: originalPostingDate(job, "wfh"), // source_posted_at only — never posted_at
     validThrough: content.validThrough,
     employmentType: job.type, // "Full-Time Remote" → FULL_TIME; unknown → omitted
     organizationName: job.company,
@@ -156,7 +159,7 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
 /* ------------------------------------------------------------------ */
 
 export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
-  if (!isSchemaEligible(job)) return null
+  if (!isSchemaEligible(job) || !isRenderableJob(job, "abroad")) return null
   const iso = resolveCountryIso(job.country)
   // The location is a city only when it is not just the country repeated.
   const loc = (job.location ?? "").trim()
@@ -178,7 +181,7 @@ export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
     title: job.title,
     description,
     url: `${siteUrl()}/jobs/abroad/${job.id}`,
-    datePosted: job.posted_at,
+    datePosted: originalPostingDate(job, "abroad"), // source_posted_at only — never posted_at
     validThrough: content.validThrough,
     employmentType: job.type,
     organizationName: job.company,
@@ -215,8 +218,10 @@ export interface GovtLocationHelpers {
  */
 export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) {
   if (!isGovtSchemaEligible(govtClassifiable(job))) return null
+  if (!isRenderableJob(job as never, "govt")) return null
   if (!canEmitJobPosting(govtRecordTypeOf(job))) return null
-  const datePosted = parseRealDate(job.sourcePublishedAt)
+  // The official source's real publication date only (never fetch / created / updated time).
+  const datePosted = originalPostingDate(job, "govt")
   if (!datePosted) return null
 
   // Stored fields only. `job.overview` (and eligibility / selection / FAQ copy) is

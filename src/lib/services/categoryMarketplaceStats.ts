@@ -9,7 +9,7 @@
 import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
-import { PRIVATE_INVENTORY, WFH_INVENTORY, ABROAD_INVENTORY, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
+import { renderablePrivateInventory, renderableWfhInventory, renderableAbroadInventory, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import type {
   CategoryIllustrationSlug,
   CategoryCardConfig,
@@ -39,7 +39,7 @@ function matchesCat(jobCat: string, needles: string[]): boolean {
 
 /** Actual count of browsable (non-archived) private catalog listings in a category. */
 function privateRoles(needles: string[]): number {
-  return PRIVATE_INVENTORY.filter(
+  return renderablePrivateInventory().filter(
     j =>
       j.jobStatus !== "ARCHIVED_JOB" &&
       matchesCat(j.cat || j.category || "", needles),
@@ -50,15 +50,15 @@ const BLUE_COLLAR_SET = new Set<string>(BLUE_COLLAR_CATEGORIES)
 
 /** Blue-collar umbrella count — exact category match, not the substring `matchesCat` heuristic. */
 function blueCollarRoles(): number {
-  return PRIVATE_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB" && BLUE_COLLAR_SET.has(j.cat)).length
+  return renderablePrivateInventory().filter(j => j.jobStatus !== "ARCHIVED_JOB" && BLUE_COLLAR_SET.has(j.cat)).length
 }
 
 function wfhRoles(needles: string[]): number {
-  return WFH_INVENTORY.filter(j => j.jobStatus !== "ARCHIVED_JOB" && matchesCat(j.cat, needles)).length
+  return renderableWfhInventory().filter(j => j.jobStatus !== "ARCHIVED_JOB" && matchesCat(j.cat, needles)).length
 }
 
 function abroadRoles(needles: string[]): number {
-  return ABROAD_INVENTORY.filter(
+  return renderableAbroadInventory().filter(
     j =>
       j.jobStatus !== "ARCHIVED_JOB" &&
       (matchesCat(j.category || "", needles) || needles.some(n => (j.country || "").toLowerCase().includes(n))),

@@ -23,8 +23,13 @@ export function formatSalary(
   return `Up to ${fmt(max!)}/yr`
 }
 
+/**
+ * Relative/absolute date label, or "" when `dateStr` is not a real date (a display
+ * string such as "6 hours ago", "Recent", empty, …). Never "Invalid Date"/"NaN".
+ */
 export function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
+  if (!dateStr || Number.isNaN(date.getTime())) return ""
   const now  = new Date()
   const diff = Math.floor((now.getTime() - date.getTime()) / 86_400_000)
   if (diff === 0) return "Today"

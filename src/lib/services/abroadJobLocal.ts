@@ -1,7 +1,7 @@
 /**
  * Local-only abroad job helpers (no Supabase imports).
  */
-import { ABROAD_INVENTORY } from "@/lib/data/jobInventory"
+import { renderableAbroadInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { JobStatus } from "@/types/job"
@@ -22,10 +22,10 @@ function filterAbroadWithCounts(jobs: AbroadJob[], filters: AbroadJobFilters) {
   if (q) {
     const term = q.toLowerCase()
     pre = pre.filter(
-      j => j.title.toLowerCase().includes(term) || j.company.toLowerCase().includes(term),
+      j => (j.title || "").toLowerCase().includes(term) || (j.company || "").toLowerCase().includes(term),
     )
   }
-  if (country) pre = pre.filter(j => j.country.toLowerCase() === country.toLowerCase())
+  if (country) pre = pre.filter(j => (j.country || "").toLowerCase() === country.toLowerCase())
   if (category) pre = pre.filter(j => j.category === category)
   const counts = countByStatus(pre)
   let list =
@@ -39,12 +39,14 @@ function filterAbroadWithCounts(jobs: AbroadJob[], filters: AbroadJobFilters) {
 export function getAbroadJobsPaginatedLocal(filters: AbroadJobFilters = {}, syntheticVisible = true): PaginatedResult<AbroadJob> {
   const page = filters.page ?? 1
   const limit = filters.limit ?? 20
-  const { list, counts } = filterAbroadWithCounts(applySyntheticVisibility(ABROAD_INVENTORY, syntheticVisible), filters)
+  // Renderable inventory only, filtered BEFORE counting/paginating (counts agree
+  // with the rows that can actually be displayed).
+  const { list, counts } = filterAbroadWithCounts(applySyntheticVisibility(renderableAbroadInventory(), syntheticVisible), filters)
   return paginate(list, page, limit, counts)
 }
 
 export function getAbroadJobByIdLocal(id: string, syntheticVisible = true): AbroadJob | null {
-  const job = ABROAD_INVENTORY.find(j => j.id === id) ?? null
+  const job = renderableAbroadInventory().find(j => j.id === id) ?? null
   if (!job) return null
   return applySyntheticVisibility([job], syntheticVisible)[0] ?? null
 }

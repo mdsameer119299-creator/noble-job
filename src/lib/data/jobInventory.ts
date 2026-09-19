@@ -9,6 +9,7 @@
 import { FALLBACK_PRIVATE_JOBS, FALLBACK_WFH_JOBS, FALLBACK_ABROAD_JOBS } from "./fallbackJobs"
 import { countByStatus } from "./inventoryPagination"
 import { isCountableAsGenuine, isPublishableAsOpen } from "@/lib/jobs/provenance"
+import { filterRenderable } from "@/lib/jobs/renderable"
 import { syntheticOpenLabel } from "@/lib/config/jobStrategy"
 import type { Job, JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
@@ -455,28 +456,48 @@ export const ABROAD_INVENTORY: AbroadJob[] = generateAbroadInventory()
 
 export { sortByStatus, countByStatus, paginate, type PaginatedResult } from "./inventoryPagination"
 
+// ── NO EMPTY JOBS: renderable views of the inventories ────────────────
+// The constants above are the raw generated data and stay untouched. Every read
+// path (lists, by-id, counts, hero/category counters) uses these instead, so a
+// malformed row can never surface as a job and every count describes exactly the
+// rows that can be displayed. Computed once per process.
+let _renderablePrivate: Job[] | undefined
+let _renderableWfh: WfhJob[] | undefined
+let _renderableAbroad: AbroadJob[] | undefined
+
+export function renderablePrivateInventory(): Job[] {
+  return (_renderablePrivate ??= filterRenderable(PRIVATE_INVENTORY, "private"))
+}
+export function renderableWfhInventory(): WfhJob[] {
+  return (_renderableWfh ??= filterRenderable(WFH_INVENTORY, "wfh"))
+}
+export function renderableAbroadInventory(): AbroadJob[] {
+  return (_renderableAbroad ??= filterRenderable(ABROAD_INVENTORY, "abroad"))
+}
+
 export function getPrivateInventoryCounts() {
-  return countByStatus(PRIVATE_INVENTORY)
+  return countByStatus(renderablePrivateInventory())
 }
 
 export function getWfhInventoryCounts() {
-  return countByStatus(WFH_INVENTORY)
+  return countByStatus(renderableWfhInventory())
 }
 
 export function getAbroadInventoryCounts() {
-  return countByStatus(ABROAD_INVENTORY)
+  return countByStatus(renderableAbroadInventory())
 }
 
-/** Actual per-country counts from inventory (for country cards). */
+/** Actual per-country counts from the renderable inventory (for country cards). */
 export function getAbroadCountryCounts() {
   const map = new Map<string, number>()
-  for (const j of ABROAD_INVENTORY) {
+  for (const j of renderableAbroadInventory()) {
     map.set(j.country, (map.get(j.country) || 0) + 1)
   }
   return ABROAD_COUNTRY_TARGETS.map(c => ({
     name: c.country,
     flag: c.flag,
-    jobs: map.get(c.country) || c.count,
+    // Exactly the jobs that can be shown — never the marketing target when a country has none.
+    jobs: map.get(c.country) ?? 0,
     desc: c.desc,
   }))
 }
@@ -510,12 +531,12 @@ export function getMarketplaceTotals() {
  * figures with synthetic content.
  */
 export function getGenuineTotals() {
-  const all = [...PRIVATE_INVENTORY, ...WFH_INVENTORY, ...ABROAD_INVENTORY]
+  const all = [...renderablePrivateInventory(), ...renderableWfhInventory(), ...renderableAbroadInventory()]
   const genuine = all.filter(isCountableAsGenuine)
   const live = genuine.filter(isPublishableAsOpen).length
   return { opportunities: genuine.length, liveJobs: live }
 }
 
 export function getInventoryCounts() {
-  return countByStatus([...PRIVATE_INVENTORY, ...WFH_INVENTORY, ...ABROAD_INVENTORY])
+  return countByStatus([...renderablePrivateInventory(), ...renderableWfhInventory(), ...renderableAbroadInventory()])
 }

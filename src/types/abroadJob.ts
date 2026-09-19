@@ -11,4 +11,6 @@ export interface AbroadJob {
   /** Owning employer id — evidence for EMPLOYER provenance genuineness checks. */
   employer_id?: string | null
   is_featured?: boolean
+  /** ORIGINAL employer/source publication date — the only source of JobPosting `datePosted`. */
+  source_posted_at?: string | null
 }

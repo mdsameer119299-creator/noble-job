@@ -2,6 +2,7 @@
 import{Modal}from'@/components/ui/Modal'
 import type{AbroadJob}from'@/types/abroadJob'
 import{AbroadApplySlot}from'./AbroadApplySlot'
+import{displayValue}from'@/lib/jobs/renderable'
 interface AbroadDetailModalProps{job:AbroadJob|null;open:boolean;onClose:()=>void}
 export function AbroadDetailModal({job,open,onClose}:AbroadDetailModalProps){
   if(!job)return null
@@ -10,14 +11,14 @@ export function AbroadDetailModal({job,open,onClose}:AbroadDetailModalProps){
       <div style={{background:'linear-gradient(135deg,#0369a1,#0d1f4e)',padding:'26px 28px',position:'relative'}}>
         <button onClick={onClose} style={{position:'absolute',top:14,right:14,background:'rgba(255,255,255,.2)',border:'none',color:'#fff',width:36,height:36,borderRadius:'50%',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
         <h2 style={{fontFamily:'Playfair Display,serif',fontSize:22,fontWeight:900,color:'#fff',marginBottom:4}}>{job.title}</h2>
-        <p style={{color:'rgba(255,255,255,.8)',marginBottom:12}}>{job.company} · {job.country}</p>
+        <p style={{color:'rgba(255,255,255,.8)',marginBottom:12}}>{[job.company,displayValue(job.country)].filter(Boolean).join(' · ')}</p>
         <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
-          {[job.salary,job.experience,job.type].map((v,i)=><span key={i} style={{background:'rgba(255,255,255,.15)',padding:'4px 12px',borderRadius:16,fontSize:12.5,color:'#fff',fontWeight:600}}>{v}</span>)}
+          {[displayValue(job.salary),displayValue(job.experience),displayValue(job.type)].filter(Boolean).map((v,i)=><span key={i} style={{background:'rgba(255,255,255,.15)',padding:'4px 12px',borderRadius:16,fontSize:12.5,color:'#fff',fontWeight:600}}>{v}</span>)}
         </div>
       </div>
       <div style={{padding:'24px 28px'}}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
-          {[{l:'Country',v:job.country},{l:'Location',v:job.location},{l:'Category',v:job.category},{l:'Type',v:job.type},{l:'Experience',v:job.experience},{l:'Salary',v:job.salary}].map((r,i)=>(
+          {[{l:'Country',v:displayValue(job.country)},{l:'Location',v:displayValue(job.location)},{l:'Category',v:displayValue(job.category)},{l:'Type',v:displayValue(job.type)},{l:'Experience',v:displayValue(job.experience)},{l:'Salary',v:displayValue(job.salary)}].filter(r=>r.v).map((r,i)=>(
             <div key={i} style={{background:'#f0f9ff',borderRadius:10,padding:'10px 14px'}}>
               <div style={{fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:3}}>{r.l}</div>
               <div style={{fontWeight:700,color:'#0d1f4e',fontSize:13.5}}>{r.v}</div>
@@ -25,7 +26,7 @@ export function AbroadDetailModal({job,open,onClose}:AbroadDetailModalProps){
           ))}
         </div>
         <p style={{color:'#374151',lineHeight:1.75,marginBottom:20,fontSize:14}}>{job.description}</p>
-        {job.skills?.length>0&&(
+        {(job.skills?.length??0)>0&&(
           <div style={{marginBottom:20}}>
             <h4 style={{fontWeight:800,color:'#0d1f4e',marginBottom:10}}>Required Skills</h4>
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
