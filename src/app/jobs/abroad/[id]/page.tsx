@@ -9,6 +9,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata'
 import { originalPostingDate } from '@/lib/seo/postingDate'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
@@ -46,6 +47,8 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   if (!job) notFound()
   void incrementJobViews('abroad', id)
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // Where Apply really goes (employer-delivered / external source / sample / info only).
+  const apply = applyStateFor('abroad', job, job.company)
   const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
@@ -64,6 +67,7 @@ export default async function AbroadJobDetailPage({ params }: Props) {
     sourcePostedAt: originalPostingDate(job, 'abroad'),
     applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
     sample: isSample,
+    applyKind: apply.kind,
   })
 
   const [allAbroad, govt, priv] = await Promise.all([

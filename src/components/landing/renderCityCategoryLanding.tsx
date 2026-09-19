@@ -24,7 +24,7 @@ export async function cityCategoryMetadata(citySlug: string, categorySlugParam: 
   }
   return buildPageMetadata({
     title: `${categoryLabel} Jobs in ${city.city} 2026 — ${jobs.length}+ Openings | Noble Job`,
-    description: `Find ${categoryLabel} jobs in ${city.city} — ${jobs.length}+ current openings. Apply directly to verified listings on Noble Job.`,
+    description: `Find ${categoryLabel} jobs in ${city.city} — ${jobs.length}+ current openings. See how to apply for each listing on Noble Job.`,
     path: `/${citySlug}/${categorySlugParam}`,
     keywords: [`${categoryLabel} jobs in ${city.city}`, `${categoryLabel} jobs ${city.city}`, `${city.city} ${categoryLabel} vacancies`],
   })

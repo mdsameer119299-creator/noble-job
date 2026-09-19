@@ -79,29 +79,35 @@ test("EMPLOYER job with an owner → route 'employer' on every board", () => {
   assert.equal(applyRouteFor("wfh", wfhJob() as never), "employer")
   assert.equal(applyRouteFor("abroad", abroadJob({ provenance: "EMPLOYER", employer_id: "emp-1", source: "employer" }) as never), "employer")
 })
-test("EMPLOYER without an owning employer is not genuine → 'unverified' (its application would reach nobody)", () => {
-  assert.equal(applyRouteFor("private", privateJob({ employer_id: undefined }) as never), "unverified")
+test("EMPLOYER without an owning employer is not genuine → 'none' (its application would reach nobody)", () => {
+  assert.equal(applyRouteFor("private", privateJob({ employer_id: undefined }) as never), "none")
 })
-test("aggregated / curated PRIVATE and WFH jobs → 'unverified' (the NobleJob form stores the application ownerless)", () => {
-  assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: REAL_URL }) as never), "unverified")
-  assert.equal(applyRouteFor("private", privateJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", applyUrl: REAL_URL }) as never), "unverified")
-  assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL }) as never), "unverified")
+test("aggregated / curated jobs with a REAL external URL → 'external' on every board (the candidate is sent to the source, never a NobleJob form)", () => {
+  assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: REAL_URL }) as never), "external")
+  assert.equal(applyRouteFor("private", privateJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", applyUrl: REAL_URL }) as never), "external")
+  assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL }) as never), "external")
 })
-test("abroad AGGREGATED with a real URL → 'external'; placeholder / missing URL or CURATED → 'unverified'", () => {
+test("aggregated / curated with a placeholder or missing URL → 'none' (no destination, no employer)", () => {
+  for (const url of ["#", "", "https://example.com/jobs/1", "ftp://x.y/z"]) {
+    assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: url }) as never), "none", url)
+    assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", apply_url: url }) as never), "none", url)
+  }
+})
+test("abroad AGGREGATED with a real URL → 'external'; placeholder / missing URL → 'none'", () => {
   assert.equal(applyRouteFor("abroad", abroadJob() as never), "external")
-  assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "#" }) as never), "unverified")
-  assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "" }) as never), "unverified")
-  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: "CURATED", source: "curated by editorial" }) as never), "unverified")
+  assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "#" }) as never), "none")
+  assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "" }) as never), "none")
+  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: "CURATED", source: "curated by editorial" }) as never), "external")
 })
-test("sample / unclassified jobs → 'unverified' (disabled or fake action)", () => {
-  assert.equal(applyRouteFor("private", privateJob({ provenance: "SYNTHETIC" }) as never), "unverified")
-  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: undefined, source: "unknown", employer_id: undefined }) as never), "unverified")
-  assert.equal(applyRouteFor("wfh", wfhJob({ id: "ver-wfh-7", provenance: undefined, employer_id: undefined, source: "live feed" }) as never), "unverified")
+test("sample / unclassified jobs → 'none' (disabled or no action)", () => {
+  assert.equal(applyRouteFor("private", privateJob({ provenance: "SYNTHETIC" }) as never), "none")
+  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: undefined, source: "unknown", employer_id: undefined }) as never), "none")
+  assert.equal(applyRouteFor("wfh", wfhJob({ id: "ver-wfh-7", provenance: undefined, employer_id: undefined, source: "live feed" }) as never), "none")
 })
 test("only 'employer' and 'external' are genuine application routes", () => {
   assert.equal(isGenuineApplyRoute("employer"), true)
   assert.equal(isGenuineApplyRoute("external"), true)
-  assert.equal(isGenuineApplyRoute("unverified"), false)
+  assert.equal(isGenuineApplyRoute("none"), false)
 })
 
 /* ───────────────────────────── government destination ───────────────────────────── */
@@ -114,7 +120,7 @@ test("a govt row whose ONLY link is the generic portal is not OFFICIAL → not g
   const j = govtJob({ officialUrl: "https://india.gov.in/", applyUrl: "https://india.gov.in/", notificationPdf: undefined })
   assert.equal(classifyProvenance(govtClassifiable(j)), "UNCLASSIFIED")
   assert.equal(isGenuine(govtClassifiable(j)), false)
-  assert.equal(govtApplyRoute(j), "unverified")
+  assert.equal(govtApplyRoute(j), "none")
   assert.equal(buildGovtJobPosting(j, helpers), null)
 })
 test("a govt row with a real recruiting-body URL → OFFICIAL and 'external'; the generic portal is ignored beside a real one", () => {
@@ -128,7 +134,7 @@ test("a govt row with a real recruiting-body URL → OFFICIAL and 'external'; th
 
 /* ───────────────────────────── JobPosting is gated on the route ───────────────────────────── */
 
-test("private / WFH: employer flow → JobPosting with directApply TRUE; aggregated / curated → NO JobPosting", () => {
+test("private / WFH: employer flow → JobPosting with directApply TRUE; aggregated / curated (even with an external Apply link) → NO JobPosting", () => {
   const p = asObj(buildPrivateJobPosting(privateJob(), c(privateJob(), "private")))
   assert.equal(p.directApply, true)
   assert.equal(asObj(buildWfhJobPosting(wfhJob(), c(wfhJob() as never, "wfh"))).directApply, true)
@@ -137,7 +143,7 @@ test("private / WFH: employer flow → JobPosting with directApply TRUE; aggrega
   const aggW = wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL })
   assert.equal(buildWfhJobPosting(aggW, c(aggW as never, "wfh")), null)
 })
-test("abroad: external redirect → JobPosting with directApply FALSE; curated / placeholder URL → NO JobPosting", () => {
+test("abroad: external redirect → JobPosting with directApply FALSE; curated (unchanged) / placeholder URL → NO JobPosting", () => {
   assert.equal(asObj(buildAbroadJobPosting(abroadJob(), c(abroadJob() as never, "abroad"))).directApply, false)
   for (const over of [{ provenance: "CURATED", source: "curated by editorial" }, { apply_url: "#" }, { apply_url: "" }]) {
     const j = abroadJob(over)
@@ -157,14 +163,18 @@ test("directApply is true ONLY for the employer route across every builder", () 
   ]
   assert.deepEqual(all.map(p => p.directApply), [true, true, false, true, false])
 })
-test("the apply control and JobPosting use ONE decision: AbroadApplySlot links out only for the 'external' route, never href='#'", () => {
+test("the apply control and JobPosting use ONE decision: every apply control renders applyStateFor; the link out exists only for the 'external' state, never href='#'", () => {
   const src = strip(read("src/components/abroad/AbroadApplySlot.tsx"))
-  assert.match(src, /applyRouteFor\('abroad', job\) === 'external'/)
-  assert.match(src, /href=\{job\.apply_url\}/)
+  assert.match(src, /applyStateFor\('abroad', job, job\.company\)/)
   assert.doesNotMatch(src, /href=["']#["']/)
+  const button = strip(read("src/components/jobs/ApplyButton.tsx"))
+  assert.match(button, /state\.kind === 'external' && state\.href/)
+  assert.doesNotMatch(button, /href=["']#["']/)
   const builders = strip(read("src/lib/seo/jobPostingBuilders.ts"))
-  assert.equal((builders.match(/isGenuineApplyRoute\(/g) ?? []).length, 4, "all four builders gate on the route")
-  assert.match(builders, /directApply:\s*route === "employer"/)
+  assert.equal((builders.match(/isJobPostingRoute\(/g) ?? []).length, 3, "private / WFH / abroad builders gate on the route")
+  assert.equal((builders.match(/isGenuineApplyRoute\(/g) ?? []).length, 1, "the govt builder gates on the govt route")
+  assert.match(builders, /directApply:\s*isDirectApply\(route\)/)
+  assert.doesNotMatch(builders, /directApply:\s*true/, "directApply never defaults to true")
   assert.match(builders, /directApply:\s*false/)
 })
 

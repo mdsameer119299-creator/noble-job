@@ -33,7 +33,7 @@ export async function tailCityMetadata(citySlug: string): Promise<Metadata> {
   }
   return buildPageMetadata({
     title: `Jobs in ${city.city} 2026 — ${jobs.length}+ Openings | Noble Job`,
-    description: `Find the latest jobs in ${city.city}, ${city.state} — ${jobs.length}+ current openings. Apply directly to verified listings on Noble Job.`,
+    description: `Find the latest jobs in ${city.city}, ${city.state} — ${jobs.length}+ current openings. See how to apply for each listing on Noble Job.`,
     path: `/jobs-in/${citySlug}`,
     keywords: [`jobs in ${city.city}`, `${city.city} jobs`, `${city.city} vacancies`, `private jobs in ${city.city}`],
   })
@@ -69,7 +69,7 @@ export async function tailCityCategoryMetadata(citySlug: string, categorySlugPar
   }
   return buildPageMetadata({
     title: `${categoryLabel} Jobs in ${city.city} 2026 — ${jobs.length}+ Openings | Noble Job`,
-    description: `Find ${categoryLabel} jobs in ${city.city} — ${jobs.length}+ current openings. Apply directly to verified listings on Noble Job.`,
+    description: `Find ${categoryLabel} jobs in ${city.city} — ${jobs.length}+ current openings. See how to apply for each listing on Noble Job.`,
     path: `/jobs-in/${citySlug}/${categorySlugParam}`,
     keywords: [`${categoryLabel} jobs in ${city.city}`, `${categoryLabel} jobs ${city.city}`, `${city.city} ${categoryLabel} vacancies`],
   })

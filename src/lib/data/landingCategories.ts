@@ -197,7 +197,7 @@ export const CATEGORY_LANDINGS: CategoryLanding[] = [
         steps: [
           "Shortlist roles that match your skills and experience from the live private-jobs listing below.",
           "Tailor your resume to each role - mirror the key skills and keywords in the job description.",
-          "Apply through the official 'Apply Now' link and complete the company's application form.",
+          "Use the listing's own apply option and complete the application form.",
           "Prepare for the interview: revise core concepts, practise common questions and research the company.",
           "Follow up politely and keep applying - a strong pipeline shortens your job search.",
         ],
@@ -293,7 +293,7 @@ export const CATEGORY_LANDINGS: CategoryLanding[] = [
         steps: [
           "Pick remote roles that match your skills from the live work-from-home listing below.",
           "Prepare a resume that highlights remote-friendly skills - communication, self-management and relevant tools.",
-          "Apply via the 'Apply Now' link and complete any short skills assessment.",
+          "Use the listing's own apply option and complete any short skills assessment.",
           "Set up a professional space for video interviews and test your audio/video beforehand.",
           "Once hired, agree on working hours, deliverables and communication channels in writing.",
         ],
@@ -492,7 +492,7 @@ export const CATEGORY_LANDINGS: CategoryLanding[] = [
         steps: [
           "Filter for entry-level roles that match your qualification from the live listing below.",
           "Polish a one-page, skills-focused resume tailored to each application.",
-          "Apply through the official 'Apply Now' link and watch for assessment invites.",
+          "Use the listing's own apply option and watch for assessment invites.",
           "Prepare for aptitude, communication and basic technical rounds.",
           "Apply widely and consistently - your first job often comes from volume plus persistence.",
         ],

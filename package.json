@@ -57,9 +57,10 @@
     "test:no-empty-jobs": "tsx src/lib/jobs/renderable.test.ts",
     "test:counts": "tsx src/lib/services/visibleCounts.test.ts",
     "test:apply-route": "tsx src/lib/jobs/applyRoute.test.ts",
+    "test:apply-state": "tsx src/lib/jobs/applyState.test.ts",
     "test:source-dates": "tsx src/lib/seo/sourceDateFlows.test.ts",
     "test:gate-coverage": "tsx src/lib/jobs/gateCoverage.test.ts",
-    "test:seo-phase1": "npm run test:seo-jobposting && npm run test:seo-sitemap && npm run test:govt-integrity && npm run test:job-lifecycle && npm run test:synthetic-apply && npm run test:no-empty-jobs && npm run test:gate-coverage && npm run test:counts && npm run test:apply-route && npm run test:source-dates",
+    "test:seo-phase1": "npm run test:seo-jobposting && npm run test:seo-sitemap && npm run test:govt-integrity && npm run test:job-lifecycle && npm run test:synthetic-apply && npm run test:no-empty-jobs && npm run test:gate-coverage && npm run test:counts && npm run test:apply-route && npm run test:apply-state && npm run test:source-dates",
     "validate:sitemap": "tsx scripts/validate-sitemap.ts",
     "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
     "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"

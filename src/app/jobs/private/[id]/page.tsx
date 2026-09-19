@@ -12,6 +12,7 @@ import { originalPostingDate } from '@/lib/seo/postingDate'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
@@ -48,6 +49,8 @@ export default async function JobDetailPage({ params }: Props) {
   void incrementJobViews('private', id)
 
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // Where Apply really goes (employer-delivered / external source / sample / info only).
+  const apply = applyStateFor('private', job, job.company)
   const fromIndexablePage = isIndexable(job)
   const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; application_deadline?: string | null; job_type?: string; experience_required?: string; description?: string }
   // Only a real stated salary is shown — never "Competitive"/"undefined" filler.
@@ -74,6 +77,7 @@ export default async function JobDetailPage({ params }: Props) {
     // The employer's real deadline only — never derived from the posting date.
     applicationDeadline: row.application_deadline ?? undefined,
     sample: isSample,
+    applyKind: apply.kind,
   })
 
   const [more, govt] = await Promise.all([
@@ -118,7 +122,7 @@ export default async function JobDetailPage({ params }: Props) {
       ].filter(Boolean)}
       content={content}
       jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} sample={isSample} />}
+      applySlot={<ApplyButton jobId={job.id} state={apply} title={job.title} company={job.company} location={job.location} salary={salary} />}
       actionsSlot={<JobActionBar board="private" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/private-jobs', label: 'Private Jobs in India' },

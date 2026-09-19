@@ -10,6 +10,7 @@ import { join } from "node:path"
 import { classifyProvenance, isIndexable, isOpen } from "./provenance"
 import { nonGenuineListingLabel, syntheticOpenLabel, SAMPLE_LISTING_LABEL, UNVERIFIED_LISTING_LABEL } from "../config/jobStrategy"
 import { buildJobContent } from "../seo/jobContent"
+import { applyStateFor, SAMPLE_APPLY_NOTE } from "./applyRoute"
 
 let passed = 0
 let failed = 0
@@ -36,23 +37,31 @@ test("all three detail pages render the disabled 'sample' apply state for SYNTHE
   for (const f of ["src/app/jobs/private/[id]/page.tsx", "src/app/jobs/wfh/[id]/page.tsx", "src/app/jobs/abroad/[id]/page.tsx"]) {
     assert.match(read(f), /classifyProvenance\([^)]*\)\s*===\s*['"]SYNTHETIC['"]/, f)
   }
-  assert.match(read("src/app/jobs/private/[id]/page.tsx"), /sample=\{isSample\}/)
-  assert.match(read("src/components/abroad/AbroadApplySlot.tsx"), /sample=\{/)
+  // The apply state (kind "sample" for SYNTHETIC) is what every Apply control renders.
+  assert.match(read("src/app/jobs/private/[id]/page.tsx"), /state=\{apply\}/)
+  assert.match(read("src/app/jobs/wfh/[id]/page.tsx"), /state=\{apply\}/)
+  assert.match(read("src/components/abroad/AbroadApplySlot.tsx"), /state=\{state\}/)
 })
 test("ApplyButton(sample): disabled control, plain 'no application can be submitted' note, and NO modal", () => {
   const src = read("src/components/jobs/ApplyButton.tsx")
-  const start = src.indexOf("if (sample)")
-  const sampleBranch = src.slice(start, src.indexOf("return (\n    <>", start))
+  const start = src.indexOf("if (state.kind === 'sample')")
+  const sampleBranch = src.slice(start, src.indexOf("if (state.kind === 'external'", start))
   assert.ok(sampleBranch.length > 50, "sample branch located")
   assert.match(sampleBranch, /disabled/)
-  assert.match(sampleBranch, /no application can be submitted/)
+  assert.match(sampleBranch, /state\.note/)
+  assert.match(SAMPLE_APPLY_NOTE, /no application can be submitted/)
   assert.doesNotMatch(sampleBranch, /ApplicationModal|setOpen\(true\)/)
   assert.match(sampleBranch, /Browse current openings/)
 })
 test("WFH detail modal has the same sample state and does not open ApplicationModal for demo rows", () => {
+  // The WFH modal renders the shared ApplyButton with the same apply state (kind "sample").
   const src = read("src/components/wfh/WfhDetailModal.tsx")
-  assert.match(src, /SYNTHETIC/)
-  assert.match(src, /no application can be submitted|not a confirmed/i)
+  assert.match(src, /applyStateFor\('wfh',job,job\.company\)/)
+  assert.match(src, /<ApplyButton[^>]*state=\{apply\}/)
+  assert.doesNotMatch(src, /ApplicationModal/, "the modal has no application form of its own")
+  assert.equal(applyStateFor("wfh", { id: "ver-wfh-7", provenance: "SYNTHETIC" } as never, "Acme").kind, "sample")
+  assert.match(SAMPLE_APPLY_NOTE, /no application can be submitted/)
+  assert.match(SAMPLE_APPLY_NOTE, /not a confirmed vacancy/)
 })
 test("job cards: a sample row's Apply CTA is withheld (canApply excludes samples)", () => {
   assert.match(read("src/components/jobs/JobCard.tsx"), /canApply\s*=\s*isActiveStatus\([^)]*\)\s*&&\s*!isSample/)

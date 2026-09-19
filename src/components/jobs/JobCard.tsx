@@ -9,6 +9,7 @@ import { classifyProvenance, isGenuine, jobDetailHref } from '@/lib/jobs/provena
 import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
 
@@ -20,9 +21,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
   // (SYNTHETIC) rows: an application to one would go nowhere, yet the candidate
   // would be told it was submitted. Those show a "Sample listing" state instead.
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
-  // …and only when the record is ACTIONABLE: complete, genuine, open, with a real
-  // application route (an employer-owned job or a real external URL).
-  const canApply = isActiveStatus(job.jobStatus) && !isSample && isActionableJob(job, 'private')
+  // …and only when the record is ACTIONABLE (complete, genuine, open) AND its application is
+  // delivered to an employer through NobleJob (the "employer" apply state). An external-source
+  // job has no on-site apply: its card shows "View Details", where the honest link to the
+  // source's own application page lives; an info-only record has no apply action at all.
+  const apply = applyStateFor('private', job, job.company)
+  const canApply = isActiveStatus(job.jobStatus) && !isSample && apply.kind === 'employer' && isActionableJob(job, 'private')
   // Only genuine jobs get a crawlable internal link to their detail page; for
   // synthetic/demo rows this is null so no dofollow discovery link is emitted.
   const detailHref = jobDetailHref('private', job)
@@ -122,8 +126,6 @@ export function JobCard({ job, onSave }: JobCardProps) {
         company={job.company}
         location={job.location}
         salary={job.salary}
-        sourceUrl={job.applyUrl || job.apply_url}
-        source={job.source}
         onApplied={() => setApplied(true)}
       />
     </div>

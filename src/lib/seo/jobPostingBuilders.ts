@@ -22,7 +22,7 @@ import { buildGovtFactsDescription, buildStoredDescription } from "./jobPostingD
 import { originalPostingDate } from "./postingDate"
 import { isRenderableJob } from "../jobs/renderable"
 import { isSchemaEligible } from "../jobs/provenance"
-import { applyRouteFor, govtApplyRoute, isGenuineApplyRoute } from "../jobs/applyRoute"
+import { applyRouteFor, govtApplyRoute, isDirectApply, isGenuineApplyRoute, isJobPostingRoute } from "../jobs/applyRoute"
 import { govtClassifiable, isSchemaEligible as isGovtSchemaEligible } from "../jobs/govtProvenance"
 import { canEmitJobPosting, govtRecordTypeOf } from "../govt/recordType"
 import { parseSalary } from "./salary"
@@ -64,11 +64,11 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
   // Synthetic/demo, unclassified, closed or non-open rows never carry JobPosting;
   // neither does a record too incomplete to be shown as a job at all.
   if (!isSchemaEligible(job) || !isRenderableJob(job, "private")) return null
-  // A JobPosting promises the candidate can apply. Only an employer-delivered NobleJob
-  // application (or an external redirect to the employer/source) is a real route; the
-  // private-board Apply control stores aggregated / curated applications ownerless.
+  // A JobPosting promises the candidate can apply. On the private board only an
+  // employer-delivered NobleJob application qualifies (an aggregated / curated posting
+  // links out to its source and carries no structured data — see isJobPostingRoute).
   const route = applyRouteFor("private", job)
-  if (!isGenuineApplyRoute(route)) return null
+  if (!isJobPostingRoute("private", job, route)) return null
   const row = job as Job & {
     source_posted_at?: string | null
     description?: string
@@ -113,7 +113,7 @@ export function buildPrivateJobPosting(job: Job, content: JobContent) {
     // `qualifications` is education/credentials — the record stores experience only.
     experienceRequirements: row.experience_required || job.exp,
     identifier: job.id,
-    directApply: route === "employer",
+    directApply: isDirectApply(route),
   })
 }
 
@@ -125,7 +125,7 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
   if (!isSchemaEligible(job) || !isRenderableJob(job, "wfh")) return null
   // Only a genuine application route (see private board above; same WFH Apply control).
   const route = applyRouteFor("wfh", job)
-  if (!isGenuineApplyRoute(route)) return null
+  if (!isJobPostingRoute("wfh", job, route)) return null
   // TELECOMMUTE only when the STORED record establishes the role is fully (100%)
   // remote: positive evidence in its type / description, and no hybrid, on-site or
   // office-day wording anywhere. Being on the WFH board is not evidence; a hybrid or
@@ -169,7 +169,7 @@ export function buildWfhJobPosting(job: WfhJob, content: JobContent) {
     educationRequirements: job.qualification,
     experienceRequirements: job.experience,
     identifier: job.id,
-    directApply: route === "employer",
+    directApply: isDirectApply(route),
   })
 }
 
@@ -182,7 +182,7 @@ export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
   // Employer-delivered application, or the external employer career page the abroad
   // Apply control really opens (AGGREGATED). Curated abroad postings apply ownerless.
   const route = applyRouteFor("abroad", job)
-  if (!isGenuineApplyRoute(route)) return null
+  if (!isJobPostingRoute("abroad", job, route)) return null
   const iso = resolveCountryIso(job.country)
   // The location is a city only when it is not just the country repeated.
   const loc = (job.location ?? "").trim()
@@ -217,7 +217,7 @@ export function buildAbroadJobPosting(job: AbroadJob, content: JobContent) {
     industry: job.category || undefined,
     experienceRequirements: job.experience,
     identifier: job.id,
-    directApply: route === "employer",
+    directApply: isDirectApply(route),
   })
 }
 

@@ -51,7 +51,24 @@ export interface JobContentInput {
    * named company is hiring or that an application can be submitted.
    */
   sample?: boolean
+  /**
+   * What "Apply" really does on this page (`applyStateFor(...).kind`, see
+   * src/lib/jobs/applyRoute.ts). The How-to-Apply steps, the "Mode of Application"
+   * row and the apply FAQ describe THAT — an on-site application that reaches the
+   * employer, a link to the source's own site, a closed job, or an information-only
+   * listing with no apply action. Omitted → the employer wording (legacy callers).
+   */
+  applyKind?: "employer" | "external" | "sample" | "closed" | "listing"
   remote?: boolean
+}
+
+/** "Mode of Application" row — describes what Apply actually does. */
+const MODE_OF_APPLICATION: Record<NonNullable<JobContentInput["applyKind"]>, string> = {
+  employer: "Online — through Noble Job (sent to the employer)",
+  external: "On the original listing's own website",
+  closed: "Closed — not accepting applications",
+  listing: "Not applicable — information only",
+  sample: "Not applicable — sample listing",
 }
 
 export interface JobContent {
@@ -317,17 +334,37 @@ export function buildJobContent(input: JobContentInput): JobContent {
     "Offer, document verification and onboarding",
   ]
 
-  const applyVerb = input.board === "abroad" ? "the official recruiter / company portal" : "Noble Job"
-  const howToApply: string[] = input.sample
+  const applyKind = input.sample ? "sample" : (input.applyKind ?? "employer")
+  const howToApply: string[] = applyKind === "sample"
     ? [
         "This is a sample listing, so there is nothing to apply for on this page.",
         "Browse Noble Job's current openings and open a listing marked as an active vacancy to apply.",
       ]
+    : applyKind === "closed"
+    ? [
+        "This job is closed and is no longer accepting applications.",
+        "Browse Noble Job's current openings to find roles you can still apply for.",
+      ]
+    : applyKind === "listing"
+    ? [
+        "This listing is for information only: it has no application link, and Noble Job does not send applications to an employer for it.",
+        "Browse Noble Job's current openings and open a listing with an Apply button to apply.",
+      ]
+    : applyKind === "external"
+    ? [
+        `Read this complete job listing for the ${input.title} role to confirm you meet the eligibility criteria.`,
+        "Keep an updated resume highlighting your relevant skills, experience and achievements ready.",
+        "Use the apply link on this page. It opens the original listing on its own website — Noble Job does not receive or forward applications made there.",
+        "Complete the application on that website, following its instructions, and attach your resume and any required documents.",
+        validLabel
+          ? `Submit your application before the closing date of ${validLabel}.`
+          : "Submit your application as early as you can. No closing date is stated on this listing.",
+      ]
     : [
     `Read this complete job listing for the ${input.title} role to confirm you meet the eligibility criteria.`,
     "Keep an updated resume highlighting your relevant skills, experience and achievements ready.",
-    `Click the "Apply Now" button on this page to proceed to ${applyVerb}.`,
-    "Fill in the application form accurately and attach your resume and any required documents.",
+    `Click the "Apply Now" button on this page to apply to ${company} through Noble Job.`,
+    "Fill in the application form accurately and attach your resume. Your application is sent to the employer through Noble Job.",
     validLabel
       ? `Submit your application before the closing date of ${validLabel} and watch your email for next steps.`
       : "Submit your application as early as you can and watch your email for next steps. The employer has not published a closing date on this listing.",
@@ -351,12 +388,12 @@ export function buildJobContent(input: JobContentInput): JobContent {
       label: "Application Closes",
       value: validLabel ?? "Not stated by the employer — confirm on the application page",
     },
-    { label: "Mode of Application", value: "Online" },
+    { label: "Mode of Application", value: MODE_OF_APPLICATION[applyKind] },
     { label: "Job Type", value: empType },
     ...(input.jobId ? [{ label: "Job ID", value: input.jobId }] : []),
   ]
 
-  const faqs = buildFaqs(input, { parsedSalary, fresher, validLabel, cat, where, company })
+  const faqs = buildFaqs({ ...input, applyKind }, { parsedSalary, fresher, validLabel, cat, where, company })
 
   return {
     overview,
@@ -413,7 +450,13 @@ function buildFaqs(
       q: `How do I apply for the ${title} job on Noble Job?`,
       a: input.sample
         ? `This is a sample listing, so it cannot be applied to. Browse Noble Job's current openings and apply to a listing that is marked as an active vacancy.`
-        : `Click the "Apply Now" button on this page, keep an updated resume ready, complete the application form and submit it${ctx.validLabel ? ` before ${ctx.validLabel}` : " as early as you can"}. Detailed steps are in the How to Apply section.`,
+        : input.applyKind === "closed"
+        ? `This job is closed and is no longer accepting applications. Browse Noble Job's current openings to find roles you can still apply for.`
+        : input.applyKind === "listing"
+        ? `This listing is for information only. It has no application link, and Noble Job does not send applications to an employer for it, so there is nothing to apply to here. Browse Noble Job's current openings and open one with an Apply button.`
+        : input.applyKind === "external"
+        ? `Use the apply link on this page. It takes you to the original listing on its own website, where you complete the application${ctx.validLabel ? ` before ${ctx.validLabel}` : " as early as you can"}. Noble Job does not receive or forward applications made on that website. Detailed steps are in the How to Apply section.`
+        : `Click the "Apply Now" button on this page, keep an updated resume ready, complete the application form and submit it${ctx.validLabel ? ` before ${ctx.validLabel}` : " as early as you can"}. Your application is sent to the employer through Noble Job. Detailed steps are in the How to Apply section.`,
     },
     {
       q: `What is the last date to apply?`,

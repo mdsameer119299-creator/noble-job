@@ -64,7 +64,7 @@ export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCate
     },
     {
       q: `How do I apply for jobs in ${city.city} on Noble Job?`,
-      a: `Browse the listings for ${city.city} on this page, click "Apply Now" on a role that fits, and complete the application with an updated resume.`,
+      a: `Browse the listings for ${city.city} on this page, open a role that fits and use its apply option (employer-posted jobs are applied for through Noble Job; other listings link to the original application page), and complete the application with an updated resume.`,
     },
   ]
 
@@ -82,8 +82,8 @@ export function buildTailCityView(city: TailCityDef, jobs: Job[], qualifyingCate
       `Looking for jobs in ${city.city}? This page lists current openings in ${city.city}, ${city.state} on Noble Job` +
         (companies.length ? `, from employers including ${companies.slice(0, 3).join(", ")}.` : "."),
       categories.length
-        ? `Categories currently hiring in ${city.city} include ${categories.slice(0, 5).join(", ")}, among others — browse the full list below and apply directly.`
-        : `Browse the full list below and apply directly to roles that match your experience.`,
+        ? `Categories currently hiring in ${city.city} include ${categories.slice(0, 5).join(", ")}, among others — browse the full list below and open a listing to see how to apply.`
+        : `Browse the full list below and open the roles that match your experience to see how to apply.`,
     ],
     sections: [
       {

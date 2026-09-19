@@ -13,6 +13,7 @@ import { countryDisplayName, resolveApplicantCountry } from '@/lib/seo/jobPostin
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
 import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
@@ -49,6 +50,8 @@ export default async function WfhJobDetailPage({ params }: Props) {
   if (!job) notFound()
   void incrementJobViews('wfh', id)
   const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  // Where Apply really goes (employer-delivered / external source / sample / info only).
+  const apply = applyStateFor('wfh', job, job.company)
   const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
@@ -68,6 +71,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
     sourcePostedAt: originalPostingDate(job, 'wfh'),
     applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
     sample: isSample,
+    applyKind: apply.kind,
     remote: true,
   })
 
@@ -125,7 +129,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
       ].filter(Boolean)}
       content={content}
       jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} sample={isSample} />}
+      applySlot={<ApplyButton jobId={job.id} board="wfh" state={apply} title={job.title} company={job.company} salary={job.salary} />}
       actionsSlot={<JobActionBar board="wfh" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },

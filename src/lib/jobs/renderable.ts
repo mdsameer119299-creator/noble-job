@@ -12,6 +12,12 @@
  *   • a real description (private / WFH / abroad; govt rows carry no narrative);
  *   • a real location (private) / country (abroad);
  *   • a KNOWN provenance (UNCLASSIFIED = missing/invalid/insufficient evidence);
+ *   • an APPLICATION ROUTE when it claims a genuine provenance (private / WFH / abroad):
+ *     an employer-owned job that reaches its employer, or a real external application
+ *     URL. A genuine-class record with neither (an "employer" job with no employer, an
+ *     "aggregated" job with no apply URL) would be a dead end whose Apply could only
+ *     mislead the candidate, so it is not shown as a job (sample rows are unaffected:
+ *     they are labelled samples with a disabled control);
  *   • no accidental placeholder output ("undefined", "null", "NaN", "N/A", "#", …)
  *     in any of the identifying fields.
  *
@@ -25,12 +31,14 @@
  */
 import {
   classifyProvenance,
+  GENUINE_PROVENANCE,
   hasRealApplyUrl,
   isGenuine,
   isOpen,
   type Classifiable,
   type Provenance,
 } from "./provenance"
+import { applyRouteFor } from "./applyRoute"
 import { plainTextOf } from "../seo/jobPostingDescription"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
@@ -181,7 +189,14 @@ export function checkJobRecord(rec: JobLike | null | undefined, board: Renderabl
   }
 
   // Missing / invalid / insufficient-evidence provenance is not a job we can vouch for.
-  if (provenanceOf(rec, board) === "UNCLASSIFIED") reasons.push("missing-provenance")
+  const provenance = provenanceOf(rec, board)
+  if (provenance === "UNCLASSIFIED") reasons.push("missing-provenance")
+  // A genuine-class record must lead somewhere: to its employer through NobleJob, or to a
+  // real external application page. Neither → excluded, never a fake / misleading Apply.
+  // (Government rows carry their own evidence-based classification and official links.)
+  else if (board !== "govt" && GENUINE_PROVENANCE.has(provenance) && applyRouteFor(board, rec) === "none") {
+    reasons.push("no-application-route")
+  }
 
   return { renderable: reasons.length === 0, reasons }
 }

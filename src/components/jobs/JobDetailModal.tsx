@@ -2,7 +2,8 @@
 import { Modal } from '@/components/ui/Modal'
 import type { Job } from '@/types/job'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
-import { hasRealApplyUrl } from '@/lib/jobs/provenance'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
+import { ApplyButton } from './ApplyButton'
 import { displayValue } from '@/lib/jobs/renderable'
 
 interface JobDetailModalProps { job: Job | null; open: boolean; onClose: () => void }
@@ -32,18 +33,9 @@ export function JobDetailModal({ job, open, onClose }: JobDetailModalProps) {
             </div>
           </div>
         )}
-        {/* No application destination → no "Apply" control (never a "#" link). */}
-        {hasRealApplyUrl(job.applyUrl || job.apply_url) && (
-          <>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <a href={job.applyUrl || job.apply_url} target="_blank" rel="noopener noreferrer"
-                style={{ flex: 1, background: '#1847d4', color: '#fff', padding: '14px', borderRadius: 12, fontWeight: 900, fontSize: 16, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Playfair Display,serif' }}>
-                Apply on Official Site
-              </a>
-            </div>
-            <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 10 }}>Noble Job never charges candidates. This links to the official company career page.</p>
-          </>
-        )}
+        {/* The honest apply state: on-site flow only for an employer-delivered job, a source link
+            only for a genuine external URL, and NO apply control otherwise (never a "#" link). */}
+        <ApplyButton jobId={job.id} board="private" state={applyStateFor('private', job, job.company)} title={job.title} company={job.company} location={job.location} salary={job.salary} block />
       </div>
     </Modal>
   )

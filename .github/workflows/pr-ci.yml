@@ -73,7 +73,7 @@ jobs:
       - name: Ingest-run status tests
         run: npm run test:ingest-status
 
-      - name: SEO Phase 1 tests (JobPosting, sitemap, govt integrity, lifecycle, synthetic apply, no-empty-jobs, gate coverage, counts, apply route, source dates)
+      - name: SEO Phase 1 tests (JobPosting, sitemap, govt integrity, lifecycle, synthetic apply, no-empty-jobs, gate coverage, counts, apply route, apply state, source dates)
         run: npm run test:seo-phase1
 
       - name: SEO verification (static)

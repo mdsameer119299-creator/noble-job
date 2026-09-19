@@ -217,18 +217,31 @@ test("filler ('Competitive', 'Any Experience', 'Recent', 'Invalid Date') is neve
 
 /* ------------- missing application route → not in the ACTIONABLE inventory ------------- */
 
-test("missing application route → excluded from the ACTIONABLE inventory (but still a renderable job page)", () => {
-  // Aggregated / curated jobs need a real external URL; without one they cannot be applied to.
+test("dead-end genuine-class record (no employer delivery, no genuine external URL) → NOT renderable ('no-application-route'): excluded from the candidate inventory, never a misleading Apply", () => {
+  // Aggregated / curated jobs need a real external URL; without one there is nowhere to send the candidate.
   const noRoute = goodWfh({ apply_url: "" }) as never
-  assert.equal(isRenderableJob(noRoute, "wfh"), true, "still a real, known-provenance record")
+  assert.equal(isRenderableJob(noRoute, "wfh"), false, "no destination and no employer → not shown as a job")
+  assert.ok(checkJobRecord(noRoute, "wfh").reasons.includes("no-application-route"))
   assert.equal(isActionableJob(noRoute, "wfh"), false)
   const placeholderRoute = goodWfh({ apply_url: "#" }) as never
-  assert.equal(isActionableJob(placeholderRoute, "wfh"), false, "'#' is not an application destination")
-  assert.equal(isActionableJob(goodWfh({ apply_url: "https://example.com/apply" }) as never, "wfh"), false, "example.* is not real")
+  assert.equal(isRenderableJob(placeholderRoute, "wfh"), false, "'#' is not an application destination")
+  assert.equal(isActionableJob(placeholderRoute, "wfh"), false)
+  const exampleRoute = goodWfh({ apply_url: "https://example.com/apply" }) as never
+  assert.equal(isRenderableJob(exampleRoute, "wfh"), false, "example.* is not real")
   // Employer-owned jobs apply through NobleJob (no external URL needed) — but need the employer id.
   assert.equal(isActionableJob(good(), "private"), true)
-  assert.equal(isActionableJob(good({ employer_id: undefined }), "private"), false)
-  assert.deepEqual(filterActionable([goodWfh(), noRoute, placeholderRoute] as never[], "wfh").length, 1)
+  assert.equal(isRenderableJob(good({ employer_id: undefined }), "private"), false, "an 'employer' job that no employer owns receives nobody's application")
+  assert.ok(checkJobRecord(good({ employer_id: undefined }), "private").reasons.includes("no-application-route"))
+  assert.equal(filterRenderable([goodWfh(), noRoute, placeholderRoute, exampleRoute] as never[], "wfh").length, 1)
+  assert.equal(filterActionable([goodWfh(), noRoute, placeholderRoute] as never[], "wfh").length, 1)
+})
+test("a record WITH a genuine route stays renderable: employer-owned, or a real external apply URL (no employer needed)", () => {
+  assert.equal(isRenderableJob(good(), "private"), true)
+  assert.equal(isRenderableJob(goodWfh({ employer_id: undefined }) as never, "wfh"), true, "aggregated + real URL → external Apply")
+  assert.equal(isRenderableJob(goodWfh({ apply_url: "https://careers.acme.org/apply/9" }) as never, "wfh"), true)
+})
+test("sample (SYNTHETIC) rows are unaffected by the route gate: still labelled samples with a disabled control", () => {
+  assert.equal(checkJobRecord(good({ provenance: "SYNTHETIC", id: "live-priv-1", employer_id: undefined }), "private").reasons.includes("no-application-route"), false)
 })
 
 test("closed / archived / past-deadline / synthetic jobs are not actionable", () => {

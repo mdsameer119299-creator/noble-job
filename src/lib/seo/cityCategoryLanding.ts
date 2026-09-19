@@ -112,7 +112,7 @@ export function buildCityCategoryView(
     },
     {
       q: `How do I apply for ${categoryLabel} jobs in ${city.city} on Noble Job?`,
-      a: `Browse the ${categoryLabel} listings for ${city.city} on this page, click "Apply Now" on a role that fits, and complete the application with an updated resume.`,
+      a: `Browse the ${categoryLabel} listings for ${city.city} on this page, open a role that fits and use its apply option (employer-posted jobs are applied for through Noble Job; other listings link to the original application page), and complete the application with an updated resume.`,
     },
   ]
 
@@ -131,8 +131,8 @@ export function buildCityCategoryView(
       `Looking for ${categoryLabel} jobs in ${city.city}? This page lists current ${categoryLabel} openings in ${city.city} on Noble Job` +
         (companies.length ? `, from employers including ${companies.slice(0, 3).join(", ")}.` : "."),
       titles.length
-        ? `Roles currently listed include ${titles.slice(0, 4).join(", ")}, among others — browse the full list below and apply directly.`
-        : `Browse the full list below and apply directly to roles that match your experience.`,
+        ? `Roles currently listed include ${titles.slice(0, 4).join(", ")}, among others — browse the full list below and open a listing to see how to apply.`
+        : `Browse the full list below and open the roles that match your experience to see how to apply.`,
     ],
     sections: [
       {
