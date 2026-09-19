@@ -23,5 +23,14 @@ export function siteUrl(): string {
 }
 
 export const ORG_LOGO = "/opengraph-image"
+
+/**
+ * Applicant country asserted for a fully-remote job on the Work-From-Home board
+ * (`applicantLocationRequirements`). The WFH board is NobleJob's India board and
+ * no per-job applicant country is stored yet, so this board-level default is the
+ * ONE place that assumption lives. Remove it (and store a per-job value) if WFH
+ * roles open to applicants outside India are ever listed.
+ */
+export const WFH_APPLICANT_COUNTRY_ISO = "IN"
 export const SUPPORT_EMAIL = "support@noblejob.in"
 export const SUPPORT_PHONE = "+91-9971177468"

@@ -9,9 +9,8 @@ interface AbroadApplySlotProps { job: AbroadJob }
  * Abroad jobs split into two apply workflows depending on provenance:
  * AGGREGATED (real third-party feed, e.g. a trusted API) sends the candidate
  * to the employer's own career site — Noble Job never collects a resume for
- * those. Everything else that can apply (EMPLOYER-posted, or SYNTHETIC while
- * visible) uses Noble Job's internal application + resume-collection flow,
- * same as private/WFH.
+ * those. Everything else that can apply (EMPLOYER-posted) uses Noble Job's internal application + resume-collection flow,
+ * same as private/WFH. SYNTHETIC (demo) listings show an unavailable state.
  */
 export function AbroadApplySlot({ job }: AbroadApplySlotProps) {
   const isAggregated = classifyProvenance(job) === 'AGGREGATED'
@@ -53,6 +52,7 @@ export function AbroadApplySlot({ job }: AbroadApplySlotProps) {
       company={job.company}
       location={job.location || job.country}
       salary={job.salary}
+      sample={classifyProvenance(job) === 'SYNTHETIC'}
     />
   )
 }

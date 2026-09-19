@@ -9,6 +9,7 @@
  */
 
 import { parseSalary, describeSalary, type ParsedSalary } from "./salary"
+import { parseRealDate } from "./jobPostingRules"
 
 export type JobBoard = "private" | "wfh" | "abroad"
 
@@ -24,7 +25,20 @@ export interface JobContentInput {
   employmentType?: string     // "Full Time", "Full Time Remote", ...
   skills?: string[]
   description?: string
+  /** REAL stored posting date. When absent the page shows no posted date. */
   postedAt?: string
+  /**
+   * The employer's REAL application deadline, if the record has one. NobleJob
+   * never derives a deadline from the posting date, and its internal review date
+   * must never be passed here.
+   */
+  applicationDeadline?: string
+  /**
+   * True for a generated demo / sample listing (SYNTHETIC provenance). The copy
+   * then says plainly that it is an illustrative listing — it never claims the
+   * named company is hiring or that an application can be submitted.
+   */
+  sample?: boolean
   remote?: boolean
 }
 
@@ -41,7 +55,8 @@ export interface JobContent {
   howToApply: string[]
   importantDates: { label: string; value: string }[]
   faqs: { q: string; a: string }[]
-  validThrough: string          // ISO — also fed to JobPosting schema
+  /** ISO — the employer's real deadline only; undefined when none is stored. */
+  validThrough?: string
   /** HTML description for the JobPosting schema `description` field. */
   schemaDescriptionHtml: string
   wordCountHint: number
@@ -214,10 +229,9 @@ function isFresher(exp?: string) {
   return !exp || /fresher|0\s*-|^0|entry|trainee/i.test(exp)
 }
 
-function addDaysIso(fromIso: string | undefined, days: number): string {
-  const base = fromIso ? new Date(fromIso) : new Date()
-  const d = Number.isNaN(base.getTime()) ? new Date() : base
-  return new Date(d.getTime() + days * 86400000).toISOString()
+function formatDateLabel(iso: string | undefined): string | null {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" })
 }
 
 function locationPhrase(input: JobContentInput): string {
@@ -235,20 +249,24 @@ export function buildJobContent(input: JobContentInput): JobContent {
   const where = locationPhrase(input)
   const company = input.company || "the hiring organisation"
   const empType = input.employmentType || "Full Time"
-  const postedDate = input.postedAt ? new Date(input.postedAt) : new Date()
-  const postedLabel = Number.isNaN(postedDate.getTime())
-    ? new Date().toDateString()
-    : postedDate.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
-  const validThrough = addDaysIso(input.postedAt, 30)
-  const validLabel = new Date(validThrough).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+  // Dates come ONLY from the stored record. No "today" / "+30 days" fallbacks.
+  const postedLabel = formatDateLabel(parseRealDate(input.postedAt))
+  const validThrough = parseRealDate(input.applicationDeadline)
+  const validLabel = formatDateLabel(validThrough)
 
   const overview: string[] = [
-    `${company} is hiring for the position of ${input.title} ${where}. This is a ${empType.toLowerCase()} opportunity in the ${cat} domain, listed on Noble Job — India's trusted job portal by NCC Foundation. ${fresher ? "Freshers and early-career candidates are encouraged to apply." : `Candidates with ${input.experience} of relevant experience are preferred.`} ${parsedSalary ? `The role offers a competitive package of ${describeSalary(parsedSalary)}.` : "Compensation is competitive and discussed during the interview."}`,
+    input.sample
+      ? `Sample listing: this page illustrates what a ${input.title} role ${where} in the ${cat} domain can look like. It is not a confirmed vacancy — ${company} has not asked Noble Job to advertise it and no application can be submitted for it. Browse Noble Job's current openings to find roles you can apply for.`
+      : `${company} is hiring for the position of ${input.title} ${where}. This is a ${empType.toLowerCase()} opportunity in the ${cat} domain, listed on Noble Job — India's trusted job portal by NCC Foundation. ${fresher ? "Freshers and early-career candidates are encouraged to apply." : `Candidates with ${input.experience} of relevant experience are preferred.`} ${parsedSalary ? `The role offers a competitive package of ${describeSalary(parsedSalary)}.` : "Compensation is competitive and discussed during the interview."}`,
     `As a ${input.title}, you will work within ${company}'s ${profile.domain} function. ${input.description ? input.description.trim() + " " : ""}The position is well suited to professionals who are organised, dependable and keen to grow their career in ${cat}. You will use ${profile.tools} as part of your everyday work and collaborate closely with a supportive team.`,
-    `This listing covers everything you need before applying — the full job overview, responsibilities, eligibility and required skills, salary and benefits, the selection process, step-by-step application instructions, and answers to the most frequently asked questions. Review the details below and apply before the closing date of ${validLabel}.`,
+    input.sample
+      ? `This sample page shows how a full Noble Job listing is laid out — job overview, responsibilities, eligibility and skills, salary and benefits, selection process and FAQs. The details are illustrative and are not confirmed by ${company}.`
+      : `This listing covers everything you need before applying — the full job overview, responsibilities, eligibility and required skills, salary and benefits, the selection process, step-by-step application instructions, and answers to the most frequently asked questions. Review the details below${validLabel ? ` and apply before the closing date of ${validLabel}` : " and confirm the application deadline with the employer before applying"}.`,
   ]
 
-  const aboutOrg = `${company} is a recognised employer in the ${cat} space and a sought-after destination for ${input.board === "abroad" ? "international" : "Indian"} job seekers. The organisation invests in its people through structured onboarding, mentoring and clear growth paths. By hiring through Noble Job, ${company} reaches verified, job-ready candidates across India. Always confirm the latest company and role information on the official application page before submitting your application.`
+  const aboutOrg = input.sample
+    ? `${company} is named here only as an example employer for this sample listing. Noble Job has not confirmed a vacancy with ${company}, and nothing on this page should be read as a hiring announcement by that company.`
+    : `${company} is a recognised employer in the ${cat} space and a sought-after destination for ${input.board === "abroad" ? "international" : "Indian"} job seekers. The organisation invests in its people through structured onboarding, mentoring and clear growth paths. By hiring through Noble Job, ${company} reaches verified, job-ready candidates across India. Always confirm the latest company and role information on the official application page before submitting your application.`
 
   const responsibilities = profile.responsibilities
 
@@ -289,17 +307,32 @@ export function buildJobContent(input: JobContentInput): JobContent {
   ]
 
   const applyVerb = input.board === "abroad" ? "the official recruiter / company portal" : "Noble Job"
-  const howToApply: string[] = [
+  const howToApply: string[] = input.sample
+    ? [
+        "This is a sample listing, so there is nothing to apply for on this page.",
+        "Browse Noble Job's current openings and open a listing marked as an active vacancy to apply.",
+      ]
+    : [
     `Read this complete job listing for the ${input.title} role to confirm you meet the eligibility criteria.`,
     "Keep an updated resume highlighting your relevant skills, experience and achievements ready.",
     `Click the "Apply Now" button on this page to proceed to ${applyVerb}.`,
     "Fill in the application form accurately and attach your resume and any required documents.",
-    `Submit your application before the closing date of ${validLabel} and watch your email for next steps.`,
+    validLabel
+      ? `Submit your application before the closing date of ${validLabel} and watch your email for next steps.`
+      : "Submit your application as early as you can and watch your email for next steps. The employer has not published a closing date on this listing.",
   ]
 
-  const importantDates = [
-    { label: "Job Posted On", value: postedLabel },
-    { label: "Application Closes", value: validLabel },
+  const importantDates = input.sample
+    ? [
+        { label: "Listing Type", value: "Sample listing — not an open vacancy" },
+        { label: "Applications", value: "Not accepted for this listing" },
+      ]
+    : [
+    ...(postedLabel ? [{ label: "Job Posted On", value: postedLabel }] : []),
+    {
+      label: "Application Closes",
+      value: validLabel ?? "Not stated by the employer — confirm on the application page",
+    },
     { label: "Mode of Application", value: "Online" },
     { label: "Job Type", value: empType },
   ]
@@ -335,7 +368,7 @@ export function buildJobContent(input: JobContentInput): JobContent {
 
 function buildFaqs(
   input: JobContentInput,
-  ctx: { parsedSalary: ParsedSalary | null; fresher: boolean; validLabel: string; cat: string; where: string; company: string },
+  ctx: { parsedSalary: ParsedSalary | null; fresher: boolean; validLabel: string | null; cat: string; where: string; company: string },
 ): { q: string; a: string }[] {
   const { title, board, remote } = input
   const company = ctx.company
@@ -368,11 +401,17 @@ function buildFaqs(
     },
     {
       q: `How do I apply for the ${title} job on Noble Job?`,
-      a: `Click the "Apply Now" button on this page, keep an updated resume ready, complete the application form and submit it before ${ctx.validLabel}. Detailed steps are in the How to Apply section.`,
+      a: input.sample
+        ? `This is a sample listing, so it cannot be applied to. Browse Noble Job's current openings and apply to a listing that is marked as an active vacancy.`
+        : `Click the "Apply Now" button on this page, keep an updated resume ready, complete the application form and submit it${ctx.validLabel ? ` before ${ctx.validLabel}` : " as early as you can"}. Detailed steps are in the How to Apply section.`,
     },
     {
       q: `What is the last date to apply?`,
-      a: `Applications for this ${title} role close on ${ctx.validLabel}. We recommend applying early, as employers may close listings once enough applications are received.`,
+      a: input.sample
+        ? `There is no application date because this is a sample listing, not an open vacancy.`
+        : ctx.validLabel
+        ? `Applications for this ${title} role close on ${ctx.validLabel}. We recommend applying early, as employers may close listings once enough applications are received.`
+        : `The employer has not published a closing date for this ${title} role. We recommend applying early and confirming the deadline on the application page, as employers may close listings once enough applications are received.`,
     },
     {
       q: `Is there any fee to apply through Noble Job?`,

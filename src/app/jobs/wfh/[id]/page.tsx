@@ -10,7 +10,8 @@ import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemp
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { describeSalary } from '@/lib/seo/salary'
-import { isIndexable } from '@/lib/jobs/provenance'
+import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 
 interface Props { params: Promise<{ id: string }> }
@@ -42,6 +43,8 @@ export default async function WfhJobDetailPage({ params }: Props) {
   const job = await getWfhJobById(id)
   if (!job) notFound()
   void incrementJobViews('wfh', id)
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
     board: 'wfh',
@@ -56,6 +59,8 @@ export default async function WfhJobDetailPage({ params }: Props) {
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
+    sample: isSample,
     remote: true,
   })
 
@@ -66,9 +71,12 @@ export default async function WfhJobDetailPage({ params }: Props) {
   ])
 
   const pool = allWfh.filter(j => j.id !== job.id)
-  const related: JobLink[] = [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)]
-    .slice(0, 6)
-    .map(j => ({ href: `/jobs/wfh/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.cat} · ${j.salary}` }))
+  const related: JobLink[] = toRelatedLinks(
+    'wfh',
+    [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)],
+    { fromIndexablePage, limit: 6 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.cat} · ${j.salary}` }),
+  )
 
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
@@ -76,11 +84,12 @@ export default async function WfhJobDetailPage({ params }: Props) {
     meta: `${g.org} · ${g.vacancies} posts`,
   }))
 
-  const privateSuggestions: JobLink[] = priv.jobs.slice(0, 5).map(p => ({
-    href: `/jobs/private/${p.id}`,
-    title: `${p.title} — ${p.company}`,
-    meta: `${p.location} · ${p.salary}`,
-  }))
+  const privateSuggestions: JobLink[] = toRelatedLinks(
+    'private',
+    priv.jobs,
+    { fromIndexablePage, limit: 5 },
+    (p, href) => ({ href, title: `${p.title} — ${p.company}`, meta: `${p.location} · ${p.salary}` }),
+  )
 
   const salaryBadge = content.parsedSalary ? describeSalary(content.parsedSalary) : job.salary
 
@@ -97,7 +106,7 @@ export default async function WfhJobDetailPage({ params }: Props) {
       badges={['🏠 Work From Home', `💼 ${job.type || 'Full Time'}`, `💰 ${salaryBadge}`, `🎓 ${job.qualification || 'Any Graduate'}`, `📅 ${job.experience || 'Freshers'}`]}
       content={content}
       jsonLdSlot={<WfhJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} />}
+      applySlot={<ApplyButton jobId={job.id} board="wfh" title={job.title} company={job.company} salary={job.salary} applyUrl={job.apply_url} sample={isSample} />}
       actionsSlot={<JobActionBar board="wfh" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/jobs/wfh', label: 'All Work From Home Jobs' },

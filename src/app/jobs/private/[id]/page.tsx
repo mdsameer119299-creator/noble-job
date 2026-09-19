@@ -10,7 +10,8 @@ import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemp
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
 import { detectCityLink } from '@/lib/seo/jobLinks'
-import { isIndexable } from '@/lib/jobs/provenance'
+import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 
 interface Props { params: Promise<{ id: string }> }
@@ -44,7 +45,9 @@ export default async function JobDetailPage({ params }: Props) {
   if (!job) notFound()
   void incrementJobViews('private', id)
 
-  const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; job_type?: string; experience_required?: string; description?: string }
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  const fromIndexablePage = isIndexable(job)
+  const row = job as typeof job & { salary_min?: number; salary_max?: number; posted_at?: string; application_deadline?: string | null; job_type?: string; experience_required?: string; description?: string }
   const salary = job.salary || formatSalary(row.salary_min, row.salary_max)
 
   const content = buildJobContent({
@@ -59,6 +62,9 @@ export default async function JobDetailPage({ params }: Props) {
     skills: job.skills,
     description: row.description || job.desc,
     postedAt: row.posted_at || job.posted,
+    // The employer's real deadline only — never derived from the posting date.
+    applicationDeadline: row.application_deadline ?? undefined,
+    sample: isSample,
   })
 
   const [more, govt] = await Promise.all([
@@ -67,11 +73,15 @@ export default async function JobDetailPage({ params }: Props) {
   ])
 
   const pool = more.jobs.filter(j => j.id !== job.id)
-  const related: JobLink[] = [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)]
-    .slice(0, 6)
-    .map(j => ({ href: `/jobs/private/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }))
+  // Genuine indexable pages only link to genuine indexable jobs (see relatedLinks).
+  const related: JobLink[] = toRelatedLinks(
+    'private',
+    [...pool.filter(j => j.cat === job.cat), ...pool.filter(j => j.cat !== job.cat)],
+    { fromIndexablePage, limit: 6 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }),
+  )
 
-  const cityJobs = pool.filter(j => job.location && j.location?.includes(job.location.split(',')[0])).slice(0, 5)
+  const cityJobs = pool.filter(j => job.location && j.location?.includes(job.location.split(',')[0]))
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
@@ -93,7 +103,7 @@ export default async function JobDetailPage({ params }: Props) {
       badges={[`🏢 ${job.company}`, `📍 ${job.location}`, `💰 ${salary}`, `💼 ${row.job_type || job.type || 'Full Time'}`, `🧑‍💼 ${row.experience_required || job.exp || 'Any'}`]}
       content={content}
       jsonLdSlot={<PrivateJobJsonLd job={job} content={content} />}
-      applySlot={<ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} />}
+      applySlot={<ApplyButton jobId={job.id} applyUrl={row.apply_url || job.applyUrl} title={job.title} company={job.company} location={job.location} salary={salary} sample={isSample} />}
       actionsSlot={<JobActionBar board="private" jobId={job.id} jobTitle={job.title} />}
       internalLinks={{
         list: { href: '/private-jobs', label: 'Private Jobs in India' },
@@ -111,7 +121,12 @@ export default async function JobDetailPage({ params }: Props) {
       privateSuggestions={privateSuggestions}
       citySuggestions={cityLink ? {
         title: cityLink.label,
-        links: cityJobs.map(j => ({ href: `/jobs/private/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` })),
+        links: toRelatedLinks(
+          'private',
+          cityJobs,
+          { fromIndexablePage, limit: 5 },
+          (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.location} · ${j.salary}` }),
+        ),
       } : undefined}
     />
   )

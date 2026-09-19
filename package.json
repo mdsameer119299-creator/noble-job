@@ -49,6 +49,13 @@
     "test:egress": "tsx src/lib/config/govtCache.test.ts",
     "test:jobservice-timeout": "tsx src/lib/services/jobService.test.ts",
     "test:ingest-status": "tsx src/lib/services/govtAutoUpdate.test.ts",
+    "test:seo-jobposting": "tsx src/lib/seo/jobPosting.test.ts",
+    "test:seo-sitemap": "tsx src/lib/seo/sitemapPolicy.test.ts",
+    "test:govt-integrity": "tsx src/lib/govt/govtIntegrity.test.ts",
+    "test:job-lifecycle": "tsx src/lib/services/jobExpiryPlan.test.ts",
+    "test:synthetic-apply": "tsx src/lib/jobs/syntheticApply.test.ts",
+    "test:seo-phase1": "npm run test:seo-jobposting && npm run test:seo-sitemap && npm run test:govt-integrity && npm run test:job-lifecycle && npm run test:synthetic-apply",
+    "validate:sitemap": "tsx scripts/validate-sitemap.ts",
     "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
     "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"
   },

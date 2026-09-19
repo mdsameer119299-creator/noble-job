@@ -21,6 +21,7 @@
  *   Phase 3 → synthetic catalog gradually replaced until the portal is mostly genuine.
  */
 import type { JobStatus } from "@/types/job"
+import { classifyProvenance, type Classifiable } from "@/lib/jobs/provenance"
 
 export const JOB_STATUS_META: Record<
   JobStatus,
@@ -35,17 +36,27 @@ export const JOB_STATUS_META: Record<
 export const ARCHIVED_ALT_LABEL = "Archived Vacancy"
 
 /**
- * Rotated badge labels for OPEN synthetic/demo rows. These must read exactly
- * like a normal open-role badge (no "Sample"/"Demo"/"Synthetic" text) while
- * never claiming employer verification — "Verified" stays reserved for
- * genuine provenance (see hasVerifiedTrust in provenance.ts).
+ * Honest label for generated demo (SYNTHETIC) rows. Earlier revisions rotated
+ * "Live Vacancy" / "Hiring Now" / "Recently Posted" so demo rows read exactly
+ * like real open roles. That implied a confirmed vacancy the employer never
+ * posted, so demo inventory is now labelled as what it is. The rows are NOT
+ * deleted — they stay browsable local inventory, just not presented as live jobs.
  */
-const SYNTHETIC_OPEN_LABELS = ["Live Vacancy", "Hiring Now", "Recently Posted"] as const
+export const SAMPLE_LISTING_LABEL = "Sample listing"
+export const UNVERIFIED_LISTING_LABEL = "Unverified listing"
 
-/** Deterministic per-row pick from SYNTHETIC_OPEN_LABELS, keyed by job id. */
-export function syntheticOpenLabel(id: string): string {
-  const n = parseInt(id.replace(/\D/g, ""), 10) || 0
-  return SYNTHETIC_OPEN_LABELS[n % SYNTHETIC_OPEN_LABELS.length]
+/** Label for a generated open row. (`id` retained for call-site compatibility.) */
+export function syntheticOpenLabel(_id?: string): string {
+  return SAMPLE_LISTING_LABEL
+}
+
+/**
+ * Label for any NON-genuine open row: SYNTHETIC → "Sample listing"; UNCLASSIFIED
+ * (legacy/insufficient evidence — not proven demo, but not vouched for either)
+ * → "Unverified listing".
+ */
+export function nonGenuineListingLabel(j: Classifiable): string {
+  return classifyProvenance(j) === "SYNTHETIC" ? SAMPLE_LISTING_LABEL : UNVERIFIED_LISTING_LABEL
 }
 
 /** A status counts as an "active opening" only when not archived. */

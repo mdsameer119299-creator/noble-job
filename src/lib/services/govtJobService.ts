@@ -6,6 +6,7 @@ import { jobMatchesQualification } from "@/lib/services/govtQualificationMatch"
 import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLocal"
 import { getActiveGovtRows, getGovtJobRow } from "@/lib/services/govtStatsSource"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
 /**
@@ -19,14 +20,16 @@ export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): P
 }
 
 // Single-row fetch (indexed slug/id lookup) instead of loading the full active
-// dataset and filtering in memory. Same visibility + local-seed fallback.
+// dataset and filtering in memory. The demo seed is consulted ONLY when
+// `isGovtSeedFallbackAllowed()` (dev / explicit opt-in) — never as a silent
+// production fallback, so a seed record can't be served as a current official job.
 export async function getGovtJobById(id: string): Promise<GovtJob | null> {
-  return (await getGovtJobRow(id)) ?? getGovtJobByIdLocal(id)
+  return (await getGovtJobRow(id)) ?? (isGovtSeedFallbackAllowed() ? getGovtJobByIdLocal(id) : null)
 }
 
-/** Look up a single government job by SEO slug (falls back to id, then local). */
+/** Look up a single government job by SEO slug (falls back to id; dev seed only when policy allows). */
 export async function getGovtJobBySlug(slug: string): Promise<GovtJob | null> {
-  return (await getGovtJobRow(slug)) ?? getGovtJobByIdLocal(slug)
+  return (await getGovtJobRow(slug)) ?? (isGovtSeedFallbackAllowed() ? getGovtJobByIdLocal(slug) : null)
 }
 
 export interface GovtJobFilters {

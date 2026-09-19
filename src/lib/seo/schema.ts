@@ -1,26 +1,58 @@
 import { ORG_LOGO, SITE_NAME, SUPPORT_EMAIL, SUPPORT_PHONE, siteUrl } from "./constants"
+import {
+  cleanHttpUrl,
+  isPast,
+  normalizeEmploymentType,
+  parseRealDate,
+  resolveCountryIso,
+  sameUrl,
+} from "./jobPostingRules"
 
 export type JobPostingSchemaInput = {
   title: string
   description: string
   url: string
+  /**
+   * REAL first-publication date from the stored record. Required: when it is
+   * missing or unparseable `jobPostingSchema` returns `null` (no JobPosting)
+   * rather than substituting the current time.
+   */
   datePosted?: string
+  /**
+   * The employer's REAL application deadline, when one exists. Never derive it
+   * from `datePosted`, and never pass NobleJob's internal review date here. When
+   * omitted, `validThrough` is omitted. A deadline already in the past means the
+   * job is closed, so no JobPosting is emitted.
+   */
   validThrough?: string
+  /** Free text from the record; mapped to a schema.org value or omitted. */
   employmentType?: string
   organizationName: string
-  organizationUrl?: string
+  /**
+   * The EMPLOYER's or SOURCE's own website (never an application URL, an ATS
+   * link or a NobleJob page). Emitted as `hiringOrganization.sameAs` only when
+   * it is a real http(s) URL that differs from `applyUrl`.
+   */
+  organizationSameAs?: string
+  /** The application URL — used only to make sure it is never emitted as `sameAs`. */
+  applyUrl?: string
+  /** The EMPLOYER's own logo URL. There is no fallback to a NobleJob asset. */
   organizationLogo?: string
   location: string
   addressLocality?: string
   addressRegion?: string
+  /** ISO 3166-1 alpha-2. If it cannot be resolved (and the role is not remote) no JobPosting is emitted. */
   addressCountry?: string
   /** Only pass when a real street address exists — never fabricate. */
   streetAddress?: string
   /** Only pass when a real postal/PIN code exists — never fabricate. */
   postalCode?: string
-  /** Set for fully remote roles — emits jobLocationType TELECOMMUTE. */
+  /**
+   * Set ONLY when the stored record explicitly says the role is fully remote.
+   * Requires `applicantCountry`; without it TELECOMMUTE is not emitted.
+   */
   remote?: boolean
-  /** Country/ies a remote applicant may be located in. */
+  /** Country a remote applicant may be located in (name or ISO alpha-2). */
   applicantCountry?: string
   /** Structured pay (preferred). When present, a valid baseSalary is emitted. */
   salaryMin?: number
@@ -33,10 +65,10 @@ export type JobPostingSchemaInput = {
   experienceRequirements?: string
   identifier?: string
   /**
-   * Emit `directApply`. Only pass true for a genuine posting whose apply URL
-   * leads directly to this specific role's application. Defaults to true because
-   * every caller gates on the publication predicates in
-   * `src/lib/jobs/provenance.ts` before rendering JobPosting schema.
+   * `directApply` is emitted ONLY when the caller passes an explicit boolean —
+   * there is no default. Pass `true` only when the application is delivered to
+   * the employer through NobleJob itself; aggregated, curated and government
+   * postings that send candidates to a third-party site pass `false`.
    */
   directApply?: boolean
 }
@@ -86,13 +118,6 @@ export function websiteSchema() {
   }
 }
 
-/** Normalize any date-ish string to ISO-8601; undefined when unparseable. */
-function toIsoOrUndefined(input?: string): string | undefined {
-  if (!input) return undefined
-  const d = new Date(input)
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
-}
-
 /**
  * Map a free-text qualification to a Google-recognized credentialCategory.
  * Google requires educationRequirements to be an EducationalOccupationalCredential
@@ -139,15 +164,26 @@ function experienceMonths(raw?: string): number | undefined {
   return rounded >= 0 && rounded <= 600 ? rounded : undefined
 }
 
+/**
+ * Build a schema.org JobPosting, or return `null` when the record cannot
+ * truthfully support one. Callers MUST handle `null` (emit nothing).
+ *
+ * Returns `null` when:
+ *  - there is no real, parseable `datePosted`;
+ *  - a real `validThrough` deadline exists and is already past (job closed);
+ *  - the role has neither a resolvable country nor a valid remote applicant
+ *    country (Google requires one of them).
+ */
 export function jobPostingSchema(job: JobPostingSchemaInput) {
   const base = siteUrl()
-  // Always emit ISO-8601 — upstream sources sometimes carry display-format dates
-  // (e.g. "30 Jun 2026"), which Google rejects as an invalid datePosted.
-  const datePosted = toIsoOrUndefined(job.datePosted) || new Date().toISOString()
-  // Google strongly recommends validThrough; default to 30 days after posting.
-  const validThrough =
-    toIsoOrUndefined(job.validThrough) ||
-    new Date(new Date(datePosted).getTime() + 30 * 86400000).toISOString()
+
+  // datePosted must be a real stored date. Never `new Date()`.
+  const datePosted = parseRealDate(job.datePosted)
+  if (!datePosted) return null
+
+  // validThrough only from a real employer deadline. Never derived (+30d etc.).
+  const validThrough = parseRealDate(job.validThrough)
+  if (validThrough && isPast(validThrough)) return null
 
   const educationCred = educationCredential(job.educationRequirements)
   const expMonths = experienceMonths(job.experienceRequirements)
@@ -170,17 +206,45 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
         }
       : {}
 
-  // Remote roles: TELECOMMUTE + applicantLocationRequirements (Google requires
-  // this instead of a physical jobLocation for fully remote postings).
-  const remoteFields = job.remote
+  // Remote: TELECOMMUTE needs applicantLocationRequirements. Emitted only when
+  // the caller established the role is fully remote AND supplied a country.
+  const applicantIso = resolveCountryIso(job.applicantCountry)
+  const remote = Boolean(job.remote && applicantIso)
+  const remoteFields = remote
     ? {
         jobLocationType: "TELECOMMUTE",
-        applicantLocationRequirements: {
-          "@type": "Country",
-          name: job.applicantCountry || "India",
+        applicantLocationRequirements: { "@type": "Country", name: applicantIso },
+      }
+    : {}
+
+  // Physical location: requires a real ISO country. No default country.
+  const countryIso = resolveCountryIso(job.addressCountry)
+  if (!countryIso && !remote) return null
+  const jobLocation = countryIso
+    ? {
+        jobLocation: {
+          "@type": "Place",
+          address: {
+            "@type": "PostalAddress",
+            // streetAddress / postalCode are emitted only when the caller supplies
+            // real data — a fabricated value is worse than an omitted one.
+            ...(job.streetAddress ? { streetAddress: job.streetAddress } : {}),
+            // addressLocality only for a real city (never a state / "All India").
+            ...(job.addressLocality ? { addressLocality: job.addressLocality } : {}),
+            ...(job.addressRegion ? { addressRegion: job.addressRegion } : {}),
+            ...(job.postalCode ? { postalCode: job.postalCode } : {}),
+            addressCountry: countryIso,
+          },
         },
       }
     : {}
+
+  const employmentType = normalizeEmploymentType(job.employmentType)
+
+  // Employer identity: own logo only, sameAs only from an employer/source site.
+  const logo = cleanHttpUrl(job.organizationLogo)
+  const sameAs = cleanHttpUrl(job.organizationSameAs)
+  const emitSameAs = sameAs && !sameUrl(sameAs, job.applyUrl) ? sameAs : undefined
 
   return {
     "@context": "https://schema.org",
@@ -188,31 +252,15 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     title: job.title,
     description: job.description.slice(0, 5000),
     datePosted,
-    validThrough,
-    employmentType: job.employmentType || "FULL_TIME",
+    ...(validThrough ? { validThrough } : {}),
+    ...(employmentType ? { employmentType } : {}),
     hiringOrganization: {
       "@type": "Organization",
       name: job.organizationName,
-      logo: job.organizationLogo || `${base}${ORG_LOGO}`,
-      ...(job.organizationUrl ? { sameAs: job.organizationUrl } : {}),
+      ...(logo ? { logo } : {}),
+      ...(emitSameAs ? { sameAs: emitSameAs } : {}),
     },
-    jobLocation: {
-      "@type": "Place",
-      address: {
-        "@type": "PostalAddress",
-        // streetAddress / postalCode are emitted only when the caller supplies
-        // real data — Google treats them as recommended, and a fabricated value
-        // is worse than an omitted one.
-        ...(job.streetAddress ? { streetAddress: job.streetAddress } : {}),
-        // addressLocality is emitted only when the caller supplies a real city.
-        // We no longer fall back to the raw `location` string, which could be a
-        // state or a national placeholder ("All India") and is not a locality.
-        ...(job.addressLocality ? { addressLocality: job.addressLocality } : {}),
-        ...(job.addressRegion ? { addressRegion: job.addressRegion } : {}),
-        ...(job.postalCode ? { postalCode: job.postalCode } : {}),
-        addressCountry: job.addressCountry || "IN",
-      },
-    },
+    ...jobLocation,
     ...remoteFields,
     ...baseSalary,
     ...(job.identifier
@@ -225,7 +273,7 @@ export function jobPostingSchema(job: JobPostingSchemaInput) {
     ...(expMonths !== undefined
       ? { experienceRequirements: { "@type": "OccupationalExperienceRequirements", monthsOfExperience: expMonths } }
       : {}),
-    directApply: job.directApply ?? true,
+    ...(typeof job.directApply === "boolean" ? { directApply: job.directApply } : {}),
   }
 }
 

@@ -3,6 +3,7 @@ import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { getApplicationsByCandidate, updateApplicationStatus } from "@/lib/services/applicationService"
 import { applyJobSchema, updateApplicationStatusSchema } from "@/lib/validations/applicationSchema"
 import { createNotification } from "@/lib/services/notificationService"
+import { classifyProvenance } from "@/lib/jobs/provenance"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -51,6 +52,15 @@ export async function POST(req: NextRequest) {
   const parsed = applyJobSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.errors[0]?.message ?? "Invalid data" }, { status: 400 })
+  }
+
+  // Generated demo (SYNTHETIC) listings cannot take applications. Classified from
+  // id + source ONLY (never the client-supplied URL, which is "#" for many real
+  // jobs) so a genuine application can't be rejected by this guard. Mirrors the
+  // disabled "Sample listing" state in the UI, so a direct API call can't create
+  // an ownerless application against a vacancy that does not exist.
+  if (classifyProvenance({ id: parsed.data.jobId, source: parsed.data.source }) === "SYNTHETIC") {
+    return NextResponse.json({ error: "This is a sample listing and is not accepting applications." }, { status: 422 })
   }
 
   const { data: candidate } = await sb

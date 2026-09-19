@@ -12,10 +12,9 @@ export function TopHiringRemotely() {
             </div>
             <div className="wfh-top-hiring__info">
               <p className="wfh-top-hiring__name">{co.name}</p>
-              <div className="wfh-top-hiring__badges">
-                <span className="wfh-top-hiring__badge wfh-top-hiring__badge--hiring">Hiring Now</span>
-                <span className="wfh-top-hiring__badge wfh-top-hiring__badge--verified">Verified Employer</span>
-              </div>
+              {/* The "Hiring Now" / "Verified Employer" badges were removed: this is a static
+                  list of well-known company names, not evidence that any of them has an
+                  open role or has been verified by Noble Job. */}
             </div>
           </div>
         ))}

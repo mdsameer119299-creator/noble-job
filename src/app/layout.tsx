@@ -14,11 +14,15 @@ import { SITE_TAGLINE } from '@/lib/seo/constants'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
+  // The root layout supplies site-wide DEFAULTS only. It must NOT set a canonical
+  // or og:url: every route without its own would inherit it, canonicalising
+  // /auth (and any future page) to the homepage. Each page sets its own canonical
+  // via buildPageMetadata; the homepage does so in src/app/page.tsx.
   ...buildPageMetadata({
     title: `Noble Job — ${SITE_TAGLINE}`,
     description:
       "Job Portal India for Jobs in India — Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. 80,000+ verified openings by NCC Foundation.",
-    path: "/",
+    noCanonical: true,
   }),
   title: {
     default: `Noble Job — ${SITE_TAGLINE}`,

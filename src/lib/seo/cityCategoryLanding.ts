@@ -4,11 +4,12 @@
  * landingCategories.ts (1500+ words of editorial content per page), these are
  * generated — so uniqueness comes from the REAL underlying data (actual job
  * count, actual companies, actual roles) rather than templated prose. A combo
- * with too few real+synthetic matches is gated out entirely (see
+ * with too few GENUINE matches (demo rows never count) is gated out entirely (see
  * CITY_CATEGORY_MIN_JOBS) rather than shipped as a thin page — same principle
  * already used for empty govt category/qualification URLs in sitemap.ts.
  */
-import { getJobs } from "@/lib/services/jobService"
+import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import { CITY_CATEGORY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
 import { PRIVATE_CATEGORIES, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import type { CityLanding } from "@/lib/seo/landingTypes"
@@ -38,8 +39,12 @@ export interface MinimalCity {
   hrefBase?: string
 }
 
-/** A page below this real job count is not generated — gate, not a thin page. */
-export const CITY_CATEGORY_MIN_JOBS = 3
+/**
+ * A page below this GENUINE open-job count is not generated — gate, not a thin
+ * page. Synthetic / unclassified / archived rows do not count. Configurable:
+ * SEO_MIN_GENUINE_JOBS_CITY_CATEGORY (see indexThresholds.ts).
+ */
+export const CITY_CATEGORY_MIN_JOBS = CITY_CATEGORY_MIN_GENUINE_JOBS
 
 /** Real category labels that exist on generated job rows (see jobInventory.ts). */
 export const CITY_CATEGORY_LIST: readonly string[] = [...PRIVATE_CATEGORIES, ...BLUE_COLLAR_CATEGORIES]
@@ -66,10 +71,9 @@ const privateCard = (j: Job) => ({
   badge: j.badge,
 })
 
-/** Fetch jobs for a city+category combo. Also used to decide the min-count gate. */
+/** GENUINE open jobs for a city+category combo. Also used to decide the min-count gate. */
 export async function getCityCategoryJobs(city: MinimalCity, categoryLabel: string, limit = 24): Promise<Job[]> {
-  const r = await getJobs({ location: city.locationQuery, category: categoryLabel, limit, sort: "latest" })
-  return r.jobs
+  return getGenuineOpenJobs({ location: city.locationQuery, category: categoryLabel, limit, sort: "latest" })
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { buildPageMetadata } from "@/lib/seo/metadata"
+import { buildPageMetadata, listingMeta } from "@/lib/seo/metadata"
 import { GOVT_TOP_CATEGORIES, getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { getGovtJobsFiltered, getGovtContent } from "@/lib/services/govtJobService"
 import { GovtListingView } from "@/components/govt/GovtListingView"
@@ -16,16 +16,20 @@ export function generateStaticParams() {
   return GOVT_TOP_CATEGORIES.map(c => ({ slug: c.slug }))
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params
   const cat = getCategoryBySlug(slug)
   if (!cat) return { title: "Government Jobs — Noble Job" }
-  return buildPageMetadata({
+  return {
+    ...buildPageMetadata({
     title: `${cat.label} 2026 — Latest Government Job Notifications`,
     description: cat.description,
     path: `/jobs/govt/category/${slug}`,
     keywords: [cat.label, "government jobs", "sarkari naukri", "Jobs in India"],
-  })
+    }),
+    // page>=2 and filter/keyword params → noindex,follow.
+    ...listingMeta(`/jobs/govt/category/${slug}`, await searchParams),
+  }
 }
 
 export default async function GovtCategoryPage({ params, searchParams }: Props) {

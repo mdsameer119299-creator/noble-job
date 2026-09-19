@@ -4,8 +4,8 @@ import { useState } from 'react'
 import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
-import { isActiveStatus, ARCHIVED_ALT_LABEL, syntheticOpenLabel } from '@/lib/config/jobStrategy'
-import { isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
+import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
+import { classifyProvenance, isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
 
@@ -15,11 +15,11 @@ export function JobCard({ job, onSave }: JobCardProps) {
   const initials = job.company?.slice(0, 2).toUpperCase() || 'NJ'
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
   const genuine = isGenuine(job)
-  // Any currently-open role may present a live "Apply Now" action — synthetic
-  // rows collect resumes into the same pipeline as genuine ones (by design;
-  // see src/lib/jobs/provenance.ts for what stays genuine-gated: indexing,
-  // schema, counting, and the "Verified" trust badge).
-  const canApply = isActiveStatus(job.jobStatus)
+  // A currently-open role may present "Apply Now" — EXCEPT generated demo
+  // (SYNTHETIC) rows: an application to one would go nowhere, yet the candidate
+  // would be told it was submitted. Those show a "Sample listing" state instead.
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  const canApply = isActiveStatus(job.jobStatus) && !isSample
   // Only genuine jobs get a crawlable internal link to their detail page; for
   // synthetic/demo rows this is null so no dofollow discovery link is emitted.
   const detailHref = jobDetailHref('private', job)
@@ -46,10 +46,10 @@ export function JobCard({ job, onSave }: JobCardProps) {
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {job.jobStatus && (
                 <JobStatusBadge
-                  status={job.jobStatus}
+                  status={!genuine && !isArchived ? 'ARCHIVED_JOB' : job.jobStatus}
                   label={
                     !genuine && !isArchived
-                      ? syntheticOpenLabel(job.id)
+                      ? nonGenuineListingLabel(job)
                       : isArchived && parseInt(job.id.replace(/\D/g, ''), 10) % 2 === 0
                         ? ARCHIVED_ALT_LABEL
                         : undefined
@@ -86,7 +86,7 @@ export function JobCard({ job, onSave }: JobCardProps) {
           {isArchived
             ? `🗄 Archived Vacancy · ${job.source || 'Reference'}`
             : !genuine
-              ? `🟢 ${syntheticOpenLabel(job.id)}`
+              ? `📄 ${nonGenuineListingLabel(job)}`
               : `${job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (job.source || 'Verified')} · ${formatDate((job as any).posted_at || job.posted || '')}`}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>

@@ -85,7 +85,22 @@ export interface GovtJob {
   howToApply?:     string[]
   /** Auto-generated article body (markdown-ish plain text). */
   article?:        string
+  /**
+   * @deprecated NOT a real posting date. It was historically stamped at
+   * ingestion/render time. Never use it as JobPosting `datePosted` — use
+   * `sourcePublishedAt`.
+   */
   postedAt?:       string
+  // ── Record integrity (migration 20260727000001) ─────────
+  /** What kind of record this is; only "notification" may emit JobPosting. */
+  recordType?:         import("@/lib/govt/recordType").GovtRecordType
+  /** When the SOURCE published the notification. Never fabricated; absent when unknown. */
+  sourcePublishedAt?:  string
+  /** When NobleJob's public content for this row last actually changed. */
+  contentChangedAt?:   string
+  /** When an editor/source check last confirmed the record against the official source. */
+  verifiedAt?:         string
+  verifiedBy?:         string
   /** Legacy snake_case aliases (fallback SQL / seed data). */
   age_range?:      string
   last_date?:      string
@@ -96,6 +111,11 @@ export interface GovtJob {
   result_url?:     string
   admit_url?:      string
   answer_url?:     string
+  record_type?:         string
+  source_published_at?: string
+  content_changed_at?:  string
+  verified_at?:         string
+  verified_by?:         string
 }
 
 /** Non-job government content (admit cards, results, answer keys, syllabus, previous papers). */

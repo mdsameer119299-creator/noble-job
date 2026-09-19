@@ -56,6 +56,11 @@ export const EMPLOYER_PROTECTED_JOB_FIELDS = [
   "approved_at",
   "provenance",
   "views_count",
+  // Lifecycle bookkeeping is NobleJob-internal. `application_deadline` stays
+  // employer-editable: it is the employer's own real closing date.
+  "review_due_at",
+  "last_confirmed_open_at",
+  "closed_at",
 ] as const
 
 /** Remove protected fields from an employer-supplied job update. */

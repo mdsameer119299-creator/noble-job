@@ -45,3 +45,22 @@ export const GOVT_LIST_COLUMNS = LIST_COLUMNS.join(", ")
 
 /** PostgREST select() for a single detail row (light + heavy body columns). */
 export const GOVT_DETAIL_COLUMNS = [...LIST_COLUMNS, ...HEAVY_DETAIL_COLUMNS].join(", ")
+
+/**
+ * Record-integrity columns (migration 20260727000001). Kept OUT of the base
+ * projections above so a database that has not been migrated yet still serves
+ * the pool: readers ask for `withGovtIntegrityColumns(...)` first and retry with
+ * the base projection when Postgres reports the columns do not exist.
+ */
+export const GOVT_INTEGRITY_COLUMN_LIST: readonly string[] = [
+  "record_type",
+  "source_published_at",
+  "content_changed_at",
+  "verified_at",
+  "verified_by",
+]
+
+/** Append the record-integrity columns to a base projection. */
+export function withGovtIntegrityColumns(base: string): string {
+  return `${base}, ${GOVT_INTEGRITY_COLUMN_LIST.join(", ")}`
+}

@@ -1,20 +1,12 @@
 import { JsonLd } from "@/components/seo/JsonLd"
-import { faqPageSchema, jobPostingSchema } from "@/lib/seo/schema"
-import { siteUrl } from "@/lib/seo/constants"
-import { parseSalary } from "@/lib/seo/salary"
+import { faqPageSchema } from "@/lib/seo/schema"
+import { buildGovtJobPosting } from "@/lib/seo/jobPostingBuilders"
 import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
 import { govtClassifiable, isSchemaEligible } from "@/lib/jobs/govtProvenance"
 import type { GovtJob } from "@/types/govtJob"
 
 /** Known Indian state/UT names (lowercased) — a state is never a city locality. */
 const STATE_NAMES = new Set(INDIAN_STATES.map(s => s.label.toLowerCase()))
-
-/** Convert a display date like "30 Jun 2026" to ISO; undefined if unparseable. */
-function toIso(date?: string): string | undefined {
-  if (!date || date === "TBA" || date === "-") return undefined
-  const d = new Date(date)
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
-}
 
 /**
  * National / non-geographic placeholders that are not a real addressRegion.
@@ -49,46 +41,24 @@ function localityFor(location?: string, state?: string): string | undefined {
   return first
 }
 
-/** Schema.org JobPosting + optional FAQ for a government vacancy. */
+/** Schema.org JobPosting (recruitment notifications only) + optional FAQ for a government record. */
 export function GovtJobJsonLd({ job }: { job: GovtJob }) {
-  // Fail closed: emit JobPosting only for a genuine OFFICIAL row (real official
-  // or notification URL), never merely because it is on the government board.
+  // Fail closed: nothing at all unless this is a genuine OFFICIAL row (real
+  // official or notification URL), never merely because it is on the govt board.
   if (!isSchemaEligible(govtClassifiable(job))) return null
-  const base = siteUrl()
-  const url = `${base}/jobs/govt/${job.slug || job.id}`
-  const s = parseSalary(job.salary)
-  const posting = jobPostingSchema({
-    title: job.title,
-    description: job.overview || `${job.org} recruitment for ${job.post}. ${job.vacancies} vacancies.`,
-    url,
-    datePosted: job.postedAt || new Date().toISOString(),
-    validThrough: toIso(job.lastDate),
-    employmentType: "FULL_TIME",
-    organizationName: job.org,
-    organizationUrl: job.officialUrl,
-    location: job.location || job.state || "India",
-    // Populate addressLocality only when the location names a real city, and
-    // addressRegion whenever the state is a real region; always IN.
-    // streetAddress/postalCode are intentionally never set — govt vacancies
-    // carry no such source data, so emitting them would fabricate values.
-    addressLocality: localityFor(job.location, job.state),
-    addressRegion: regionFor(job.state),
-    addressCountry: "IN",
-    ...(s ? { salaryMin: s.minValue, salaryMax: s.maxValue, salaryCurrency: s.currency, salaryUnit: s.unitText } : {}),
-    industry: "Government",
-    qualifications: job.qualification,
-    educationRequirements: job.qualification,
-    identifier: job.id,
-    // Government applications are made on the official portal, not on-site.
-    directApply: false,
-  })
 
-  const schemas: Record<string, unknown>[] = [posting]
+  // JobPosting only for a recruitment NOTIFICATION with a real source
+  // publication date — never for results, answer keys, admit cards, cut-offs,
+  // syllabi or previous papers (see buildGovtJobPosting).
+  const posting = buildGovtJobPosting(job, { regionFor, localityFor })
+
+  const schemas: Record<string, unknown>[] = posting ? [posting] : []
   if (job.faqs?.length) {
     schemas.push(
       faqPageSchema(job.faqs.map(f => ({ question: f.q, answer: f.a })))
     )
   }
+  if (!schemas.length) return null
 
   return <JsonLd data={schemas} />
 }

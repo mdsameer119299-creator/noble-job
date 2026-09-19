@@ -6,7 +6,8 @@
  * minimum real-job threshold is gated out rather than shipped as a thin
  * page — same principle as cityCategoryLanding.ts.
  */
-import { getJobs } from "@/lib/services/jobService"
+import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import { TAIL_CITY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { TAIL_CITIES, getTailCityBySlug, type TailCityDef } from "@/lib/data/cityTaxonomy"
 import { getQualifyingCategorySlugsForCity, categoryFromSlug } from "@/lib/seo/cityCategoryLanding"
 import { jobDetailHref } from "@/lib/jobs/provenance"
@@ -14,16 +15,22 @@ import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
 import type { LandingJobBlocks } from "@/lib/seo/landing"
 import type { Job } from "@/types/job"
 
-/** A tail-city hub below this real job count is not generated — gate, not a thin page. */
-export const TAIL_CITY_MIN_JOBS = 5
+/**
+ * A tail-city hub below this GENUINE open-job count is not generated — gate, not
+ * a thin page. Synthetic / unclassified / archived rows do not count. Configurable:
+ * SEO_MIN_GENUINE_JOBS_TAIL_CITY (see indexThresholds.ts).
+ */
+export const TAIL_CITY_MIN_JOBS = TAIL_CITY_MIN_GENUINE_JOBS
 
 export { TAIL_CITIES, getTailCityBySlug }
 export type { TailCityDef }
 
-/** Fetch jobs for a whole city (all categories). Also used to decide the min-count gate. */
+/**
+ * GENUINE open jobs for a whole city (all categories). Also used to decide the
+ * min-count gate and the counts/lists rendered on the page, so all three agree.
+ */
 export async function getTailCityJobs(city: TailCityDef, limit = 30): Promise<Job[]> {
-  const r = await getJobs({ location: city.locationQuery, limit, sort: "latest" })
-  return r.jobs
+  return getGenuineOpenJobs({ location: city.locationQuery, limit, sort: "latest" })
 }
 
 const privateCard = (j: Job) => ({

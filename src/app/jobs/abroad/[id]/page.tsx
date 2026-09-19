@@ -7,7 +7,8 @@ import { AbroadJobJsonLd } from '@/components/seo/AbroadJobJsonLd'
 import { JobDetailTemplate, type JobLink } from '@/components/jobs/JobDetailTemplate'
 import { buildPageMetadata } from '@/lib/seo/metadata'
 import { buildJobContent } from '@/lib/seo/jobContent'
-import { isIndexable } from '@/lib/jobs/provenance'
+import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
+import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
 import { JobActionBar } from '@/components/jobs/JobActionBar'
@@ -41,6 +42,8 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   const job = await getAbroadJobById(id)
   if (!job) notFound()
   void incrementJobViews('abroad', id)
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  const fromIndexablePage = isIndexable(job)
 
   const content = buildJobContent({
     board: 'abroad',
@@ -54,6 +57,8 @@ export default async function AbroadJobDetailPage({ params }: Props) {
     skills: job.skills,
     description: job.description,
     postedAt: job.posted_at,
+    applicationDeadline: (job as { application_deadline?: string | null }).application_deadline ?? undefined,
+    sample: isSample,
   })
 
   const [allAbroad, govt, priv] = await Promise.all([
@@ -63,22 +68,34 @@ export default async function AbroadJobDetailPage({ params }: Props) {
   ])
 
   const pool = allAbroad.filter(j => j.id !== job.id)
-  const related: JobLink[] = [
-    ...pool.filter(j => j.country === job.country || j.category === job.category),
-    ...pool.filter(j => j.country !== job.country && j.category !== job.category),
-  ].slice(0, 6).map(j => ({ href: `/jobs/abroad/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` }))
+  const related: JobLink[] = toRelatedLinks(
+    'abroad',
+    [
+      ...pool.filter(j => j.country === job.country || j.category === job.category),
+      ...pool.filter(j => j.country !== job.country && j.category !== job.category),
+    ],
+    { fromIndexablePage, limit: 6 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` }),
+  )
 
-  const countryJobs = pool.filter(j => j.country === job.country).slice(0, 5)
+  const countryJobs = pool.filter(j => j.country === job.country)
+  const countryLinks: JobLink[] = toRelatedLinks(
+    'abroad',
+    countryJobs,
+    { fromIndexablePage, limit: 5 },
+    (j, href) => ({ href, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` }),
+  )
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
     meta: `${g.org} · ${g.vacancies} posts`,
   }))
-  const privateSuggestions: JobLink[] = priv.jobs.slice(0, 5).map(p => ({
-    href: `/jobs/private/${p.id}`,
-    title: `${p.title} — ${p.company}`,
-    meta: `${p.location} · ${p.salary}`,
-  }))
+  const privateSuggestions: JobLink[] = toRelatedLinks(
+    'private',
+    priv.jobs,
+    { fromIndexablePage, limit: 5 },
+    (p, href) => ({ href, title: `${p.title} — ${p.company}`, meta: `${p.location} · ${p.salary}` }),
+  )
 
   return (
     <JobDetailTemplate
@@ -107,9 +124,9 @@ export default async function AbroadJobDetailPage({ params }: Props) {
       relatedJobs={related}
       govtSuggestions={govtSuggestions}
       privateSuggestions={privateSuggestions}
-      citySuggestions={countryJobs.length ? {
+      citySuggestions={countryLinks.length ? {
         title: `More Jobs in ${job.country}`,
-        links: countryJobs.map(j => ({ href: `/jobs/abroad/${j.id}`, title: `${j.title} — ${j.company}`, meta: `${j.country} · ${j.salary}` })),
+        links: countryLinks,
       } : undefined}
     />
   )
