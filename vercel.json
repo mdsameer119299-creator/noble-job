@@ -1,6 +1,5 @@
 {
   "crons": [
-    { "path": "/api/cron/govt-jobs", "schedule": "0 1 * * *" },
-    { "path": "/api/external/jobs", "schedule": "17 * * * *" }
+    { "path": "/api/cron/govt-jobs", "schedule": "0 1 * * *" }
   ]
 }
