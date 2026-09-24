@@ -5,6 +5,7 @@ import { renderablePrivateInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
 import { getPrivateJobsLocal, getPrivateJobByIdLocal } from "@/lib/services/jobLocal"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
+import { getLivePrivateJobs, getLivePrivateJobById } from "@/lib/services/liveJobOpportunities"
 import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import { isSyntheticJobsVisible, applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
 import type { Job, JobFilter, JobSearchResult } from "@/types/job"
@@ -12,8 +13,7 @@ import type { Job, JobFilter, JobSearchResult } from "@/types/job"
 /**
  * Upper bound on rows read per list request. The renderable filter runs in memory
  * so that `total`, `totalPages`, `counts` and the page rows all describe the SAME
- * set (an SQL `count` cannot know which rows the gate will drop). The genuine
- * inventory is far below this; hitting the cap is logged.
+ * set. Genuine inventory is expected to remain well below this cap.
  */
 const MAX_POOL_ROWS = 1000
 
@@ -22,12 +22,6 @@ async function getSupabaseClient() {
   return createClient()
 }
 
-/**
- * A stalled/slow network call to Supabase never rejects on its own, so a plain
- * `await` can hang the caller indefinitely — and for callers with no Suspense
- * boundary of their own (e.g. JobsBrowseIndex), that hang blocks the entire
- * page. Race every live query against a bound so it always settles.
- */
 export class QueryTimeoutError extends Error {
   constructor(ms: number) {
     super(`Supabase query exceeded ${ms}ms`)
@@ -45,20 +39,11 @@ export function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> 
   })
 }
 
-/**
- * The local-inventory fallback is a legitimate degraded mode (e.g. Supabase
- * genuinely has no matching rows), so it must never itself look like an
- * error. But a *forced* fallback — the live query timed out or threw — is a
- * signal worth keeping visible, or a real outage silently reads as "working
- * as intended" forever. Timeouts and other failures are logged distinctly so
- * a persistent flood of one or the other in production logs is diagnosable
- * (slow query / missing index vs. Supabase down / misconfigured).
- */
 function logQueryFallback(scope: string, err: unknown): void {
   if (err instanceof QueryTimeoutError) {
-    console.warn(`[jobService:${scope}] live query timed out, serving local fallback:`, err.message)
+    console.warn(`[jobService:${scope}] live query timed out, serving fallback:`, err.message)
   } else {
-    console.error(`[jobService:${scope}] live query failed, serving local fallback:`, err)
+    console.error(`[jobService:${scope}] live query failed, serving fallback:`, err)
   }
 }
 
@@ -68,7 +53,27 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
   const { q, category, location, exp, type: jType, sort = "latest" } = filter
   const syntheticVisible = await isSyntheticJobsVisible()
   const localResult = () => getPrivateJobsLocal(filter, syntheticVisible)
+
+  // Candidate-facing production inventory is built from genuine database jobs plus
+  // the current employer-direct external feed. Synthetic/reference rows never make
+  // it into this combined candidate set when the production switch is OFF.
+  const liveExternal = filter.status && filter.status !== "all" && filter.status !== "LIVE_JOB"
+    ? []
+    : await getLivePrivateJobs({ q, location, type: jType })
+
   if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (liveExternal.length) {
+      const local = localResult()
+      const combined = [...liveExternal, ...local.jobs.filter(j => !liveExternal.some(x => x.id === j.id))]
+      const start = (page - 1) * limit
+      return {
+        jobs: combined.slice(start, start + limit),
+        total: combined.length,
+        page,
+        totalPages: Math.ceil(combined.length / limit),
+        counts: countByStatus(combined),
+      }
+    }
     return localResult()
   }
 
@@ -92,59 +97,77 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 
     const { data, error } = await withTimeout(query.range(0, MAX_POOL_ROWS - 1), 8000)
     if (error) {
-      console.error("[jobService:getJobs] live query returned an error, serving local fallback:", error.message)
+      console.error("[jobService:getJobs] live query returned an error, using external/local fallback:", error.message)
+      if (liveExternal.length) {
+        const start = (page - 1) * limit
+        return {
+          jobs: liveExternal.slice(start, start + limit),
+          total: liveExternal.length,
+          page,
+          totalPages: Math.ceil(liveExternal.length / limit),
+          counts: countByStatus(liveExternal),
+        }
+      }
       return localResult()
     }
-    if (!data?.length) {
-      return localResult()
-    }
-    if (data.length >= MAX_POOL_ROWS) {
-      console.warn(`[jobService:getJobs] read ${MAX_POOL_ROWS} rows (the cap); later rows are not listed`)
-    }
-    // Map WITHOUT inventing values, drop every record that cannot be shown as a
-    // job (incomplete / placeholder / unknown provenance) — the rows stay in the
-    // database, they are just not exposed — then count and paginate the SAME set.
-    // The admin "synthetic jobs visible" switch applies to database rows too.
+
     const pool = sortByStatus(
       applySyntheticVisibility(
-        filterRenderable(data.map(row => mapPrivateJobRow(row as Record<string, unknown>)), "private"),
+        filterRenderable(data?.map(row => mapPrivateJobRow(row as Record<string, unknown>)) ?? [], "private"),
         syntheticVisible,
       ),
     )
-    if (shouldFallbackToLocal(pool.length, renderablePrivateInventory().length)) return localResult()
+
+    const combined = [...liveExternal, ...pool.filter(j => !liveExternal.some(x => x.id === j.id))]
+    if (shouldFallbackToLocal(combined.length, renderablePrivateInventory().length) && !liveExternal.length) return localResult()
+
     const start = (page - 1) * limit
     return {
-      jobs: pool.slice(start, start + limit),
-      total: pool.length,
+      jobs: combined.slice(start, start + limit),
+      total: combined.length,
       page,
-      totalPages: Math.ceil(pool.length / limit),
-      counts: countByStatus(pool),
+      totalPages: Math.ceil(combined.length / limit),
+      counts: countByStatus(combined),
     }
   } catch (err) {
     logQueryFallback("getJobs", err)
+    if (liveExternal.length) {
+      const start = (page - 1) * limit
+      return {
+        jobs: liveExternal.slice(start, start + limit),
+        total: liveExternal.length,
+        page,
+        totalPages: Math.ceil(liveExternal.length / limit),
+        counts: countByStatus(liveExternal),
+      }
+    }
     return localResult()
   }
 }
 
 export async function getJobById(id: string): Promise<Job | null> {
-  // "undefined", "null", whitespace and path-like ids are not jobs (404), never a lookup.
   if (!isValidJobId(id)) return null
-  const local = renderableOrNull(getPrivateJobByIdLocal(id, await isSyntheticJobsVisible()), "private")
-  if (preferLocalInventory() || !isSupabaseConfigured()) return local
+  const syntheticVisible = await isSyntheticJobsVisible()
+  const local = renderableOrNull(getPrivateJobByIdLocal(id, syntheticVisible), "private")
+  if (preferLocalInventory() || !isSupabaseConfigured()) return (await getLivePrivateJobById(id)) || local
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return local
+    if (!sb) return (await getLivePrivateJobById(id)) || local
     const { data, error } = await withTimeout(sb.from("jobs").select("*").eq("id", id).maybeSingle(), 8000)
     if (error) {
-      console.error("[jobService:getJobById] live query returned an error, serving local fallback:", error.message)
-      return local
+      console.error("[jobService:getJobById] live query returned an error:", error.message)
+      return (await getLivePrivateJobById(id)) || local
     }
-    // A row that EXISTS but is incomplete is "not found" — never an empty job page,
-    // and never silently swapped for a different (local) record.
-    if (data) return renderableOrNull(applySyntheticVisibility([mapPrivateJobRow(data as Record<string, unknown>)], await isSyntheticJobsVisible())[0] ?? null, "private")
-    return local
+    if (data) {
+      const mapped = renderableOrNull(
+        applySyntheticVisibility([mapPrivateJobRow(data as Record<string, unknown>)], syntheticVisible)[0] ?? null,
+        "private",
+      )
+      if (mapped) return mapped
+    }
+    return (await getLivePrivateJobById(id)) || local
   } catch (err) {
     logQueryFallback("getJobById", err)
-    return local
+    return (await getLivePrivateJobById(id)) || local
   }
 }
