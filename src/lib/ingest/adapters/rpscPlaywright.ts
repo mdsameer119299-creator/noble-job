@@ -8,14 +8,15 @@
  *
  * RUNTIME GATING: Playwright/Chromium is NOT available on Vercel's serverless
  * sandbox, so this adapter only activates when INGEST_PLAYWRIGHT=1 (set in the
- * GitHub Actions workflow / a VPS). Everywhere else it ships disabled and the
- * dynamic import is never reached, so the Vercel build/runtime is unaffected.
- * playwright lives in devDependencies for the same reason.
+ * GitHub Actions workflow / a VPS). Everywhere else it ships disabled.
+ *
+ * IMPORTANT: the Playwright import is intentionally hidden behind Function()
+ * so Next/Vercel does not try to resolve/bundle the optional package during the
+ * production build. The ingestion runner installs Playwright separately.
  */
 import type { SourceAdapter, RawNotification } from "../types"
 
-// Minimal structural types for the subset of the Playwright API used here, so
-// this file type-checks without the package present (it's installed only in CI).
+// Minimal structural types for the subset of the Playwright API used here.
 interface PwPage {
   goto(url: string, opts?: unknown): Promise<unknown>
   waitForSelector(sel: string, opts?: unknown): Promise<unknown>
@@ -25,6 +26,9 @@ interface PwBrowser {
   newPage(opts?: unknown): Promise<PwPage>
   close(): Promise<void>
 }
+interface PwModule {
+  chromium: { launch: (opts?: unknown) => Promise<PwBrowser> }
+}
 
 const LIST_URL = "https://rpsc.rajasthan.gov.in/recruitment-advertisement"
 const ORG = "Rajasthan Public Service Commission"
@@ -32,12 +36,14 @@ const KEEP = /\b(recruit|advertis|advt|vacan|notification|appli|invited|posts?\b
 const DROP = /\b(result|answer key|marks|interview|admit|cut[- ]?off|syllabus|merit|score)\b/i
 
 async function fetchRpsc(): Promise<RawNotification[]> {
-  // Untyped dynamic import: keeps playwright OUT of the Vercel build entirely.
-  // The GitHub Actions workflow installs it before running (see workflow file).
-  let chromium: { launch: (o?: unknown) => Promise<PwBrowser> }
+  // Do not use a literal import("playwright") here: Next's server build would
+  // attempt to resolve the optional dependency even though this adapter is
+  // disabled in Vercel production.
+  const loadPlaywright = new Function("return import('playwright')") as () => Promise<PwModule>
+
+  let chromium: PwModule["chromium"]
   try {
-    const pw = (await import("playwright" as string)) as { chromium: typeof chromium }
-    chromium = pw.chromium
+    chromium = (await loadPlaywright()).chromium
   } catch {
     return [] // playwright not installed in this runtime — no-op
   }
@@ -46,7 +52,6 @@ async function fetchRpsc(): Promise<RawNotification[]> {
   try {
     const page = await browser.newPage({ userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36" })
     await page.goto(LIST_URL, { waitUntil: "networkidle", timeout: 45000 })
-    // Best-effort wait for any anchor list to appear.
     await page.waitForSelector("a", { timeout: 15000 }).catch(() => {})
 
     const links = await page.$$eval("a", as =>
@@ -87,7 +92,6 @@ export const rpscPlaywrightAdapter: SourceAdapter = {
   id: "rpsc",
   label: "RPSC (Rajasthan, headless)",
   kind: "html",
-  // Only run where a headless browser exists (GitHub Actions / VPS).
   enabled: process.env.INGEST_PLAYWRIGHT === "1",
   fetch: fetchRpsc,
 }
