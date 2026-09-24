@@ -1,17 +1,21 @@
 import { isSupabaseConfigured } from "./config"
 
-/** True when listings should use seeded inventories (no Supabase on the request path). */
+/** True when listings should use seeded inventories because Supabase is unavailable or local mode is explicitly requested. */
 export function useLocalInventoryOnly(): boolean {
   return !isSupabaseConfigured() || preferLocalInventory()
 }
 
 /**
  * Job listing source selection.
- * - Default: local seeded inventories (full demo data)
- * - Set `NEXT_PUBLIC_JOB_DATA_SOURCE=supabase` when the remote DB is fully seeded
+ * - Production default: Supabase when it is configured.
+ * - Local/demo seed: set NEXT_PUBLIC_JOB_DATA_SOURCE=local explicitly.
+ *
+ * The previous default silently selected the seeded demo inventory whenever the
+ * environment variable was missing. That made production candidate pages fall
+ * back to sample rows instead of the live database/feed.
  */
 export function preferLocalInventory(): boolean {
-  return process.env.NEXT_PUBLIC_JOB_DATA_SOURCE?.trim().toLowerCase() !== "supabase"
+  return process.env.NEXT_PUBLIC_JOB_DATA_SOURCE?.trim().toLowerCase() === "local"
 }
 
 /** Use local seed when remote has too few rows to be useful. */
