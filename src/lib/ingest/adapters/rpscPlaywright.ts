@@ -32,11 +32,11 @@ const KEEP = /\b(recruit|advertis|advt|vacan|notification|appli|invited|posts?\b
 const DROP = /\b(result|answer key|marks|interview|admit|cut[- ]?off|syllabus|merit|score)\b/i
 
 async function fetchRpsc(): Promise<RawNotification[]> {
-  // Untyped dynamic import: keeps playwright OUT of the Vercel build entirely.
+  // webpackIgnore prevents Next/Vercel from trying to resolve Playwright at build time.
   // The GitHub Actions workflow installs it before running (see workflow file).
   let chromium: { launch: (o?: unknown) => Promise<PwBrowser> }
   try {
-    const pw = (await import("playwright" as string)) as { chromium: typeof chromium }
+    const pw = (await import(/* webpackIgnore: true */ "playwright")) as { chromium: typeof chromium }
     chromium = pw.chromium
   } catch {
     return [] // playwright not installed in this runtime — no-op
