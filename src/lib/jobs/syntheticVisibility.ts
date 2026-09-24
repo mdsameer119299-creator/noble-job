@@ -6,12 +6,12 @@ const KEY = "synthetic_jobs_visible"
 /**
  * Admin kill-switch for synthetic/demo job rows.
  *
- * Production is fail-closed: when the setting is absent, generated inventory is
- * hidden. Samples must never become candidate-facing content just because an
- * admin setting was not seeded. An explicit "true" can still be used by an
- * administrator for a controlled internal/demo environment.
+ * Candidate-facing production is always fail-closed: generated inventory can
+ * never be presented as a live vacancy, even if an old admin setting was left
+ * enabled. The setting remains useful for local/demo environments.
  */
 export async function isSyntheticJobsVisible(): Promise<boolean> {
+  if (process.env.NODE_ENV === "production") return false
   const settings = await getAdminSettings()
   return settings[KEY] === "true"
 }
