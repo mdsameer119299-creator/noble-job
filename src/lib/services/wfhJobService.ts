@@ -50,7 +50,10 @@ export async function getWfhJobsPaginated(filters: WfhJobFilters = {}) {
 export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]> {
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = getWfhJobsPaginatedLocal(filters, syntheticVisible).items
-  const liveExternal = await getLiveWfhJobs({ q: filters.q, type: filters.type })
+  // WfhJobFilters has no employment-type field; the live source is queried by
+  // search only here. Type/category filtering remains applied by the existing
+  // DB/local pipeline below.
+  const liveExternal = await getLiveWfhJobs({ q: filters.q })
 
   if (preferLocalInventory() || !isSupabaseConfigured()) {
     return [...liveExternal, ...local.filter(j => !liveExternal.some(x => x.id === j.id))]
