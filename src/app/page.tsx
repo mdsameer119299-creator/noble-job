@@ -27,8 +27,12 @@ export const metadata = buildPageMetadata({
   keywords: ['Jobs in India', 'Job Portal India', 'Government Jobs', 'Private Jobs', 'Work From Home Jobs', 'Abroad Jobs'],
 })
 
-// Refresh so homepage category cards (CategoryChips) reflect govt_jobs without a redeploy.
-export const revalidate = 600
+// The homepage now reads genuine live external inventory for Private/WFH/Abroad.
+// Keep that network-dependent work out of the Vercel build phase. The page itself
+// is rendered at request time, while the underlying external fetches retain their
+// own short Next.js cache windows (currently 5 minutes), so candidates see fresh
+// inventory without a redeploy and a failed provider never breaks the build.
+export const dynamic = 'force-dynamic'
 
 export default function HomePage() {
   return (
