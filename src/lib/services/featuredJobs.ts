@@ -119,7 +119,7 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
     board: "wfh", id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
   }))
   const abroadCards: FeaturedJobCard[] = abroadJobs.map(j => ({
-    board: "abroad", id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary), color: j.color,
+    board: "abroad", id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary),
   }))
 
   const lists = [privateCards, wfhCards, abroadCards]
@@ -157,7 +157,7 @@ export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promis
     const live = await getLiveAbroadJobs()
     if (live.length) {
       return live.slice(0, limit).map(j => ({
-        board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary), color: j.color,
+        board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary),
       }))
     }
   }
@@ -186,7 +186,7 @@ export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promis
       }))
     }
     return filterActionable(rows as unknown as AbroadJob[], "abroad").slice(0, limit).map(j => ({
-      board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary), color: j.color,
+      board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary),
     }))
   } catch {
     return []
