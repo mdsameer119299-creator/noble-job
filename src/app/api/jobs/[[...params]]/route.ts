@@ -15,7 +15,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
 
   try {
     if (p?.length === 1 && p[0] !== "live" && p[0] !== "featured" && p[0] !== "count") {
-      // "undefined" / "null" / whitespace / path-like ids are not jobs → 404.
       if (!isValidJobId(p[0])) return NextResponse.json({ error: "Not found" }, { status: 404 })
       if (useLocalInventoryOnly()) {
         const job = getPrivateJobByIdLocal(p[0], syntheticVisible)
@@ -29,16 +28,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (p?.[0] === "live") {
-      try {
-        const { getHimalayasJobsForDisplay } = await import("@/lib/services/himalayasCache")
-        const jobs = await getHimalayasJobsForDisplay(100)
-        return NextResponse.json(
-          { data: jobs },
-          { headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200" } },
-        )
-      } catch {
-        return NextResponse.json({ data: [] })
-      }
+      // Candidate-facing private listings use the same employer-direct India
+      // feed as the server job service. This avoids falling back to the old
+      // remote-only Himalayas cache and accidentally mixing unrelated/sample data.
+      const { getLivePrivateJobs } = await import("@/lib/services/liveJobOpportunities")
+      const jobs = await getLivePrivateJobs()
+      return NextResponse.json(
+        { data: jobs },
+        { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } },
+      )
     }
 
     if (p?.[0] === "featured") {
@@ -47,9 +45,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
     }
 
     if (p?.[0] === "count") {
-      // NO EMPTY JOBS / count integrity: the number of OPEN jobs in the SAME renderable,
-      // switch-honouring set the list serves (its Live + Verified tabs) — in local and
-      // database mode alike. Never a raw row count.
       const { getJobs } = await import("@/lib/services/jobService")
       const { counts } = await getJobs({ page: 1, limit: 1 })
       return NextResponse.json({ count: Math.max(0, (counts?.all ?? 0) - (counts?.archived ?? 0)) })
