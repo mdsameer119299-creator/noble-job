@@ -38,7 +38,7 @@ import {
   type Classifiable,
   type Provenance,
 } from "./provenance"
-import { applyRouteFor } from "./applyRoute"
+import { applyRouteFor, isGenuineApplyRoute } from "./applyRoute"
 import { plainTextOf } from "../seo/jobPostingDescription"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
@@ -191,10 +191,17 @@ export function checkJobRecord(rec: JobLike | null | undefined, board: Renderabl
   // Missing / invalid / insufficient-evidence provenance is not a job we can vouch for.
   const provenance = provenanceOf(rec, board)
   if (provenance === "UNCLASSIFIED") reasons.push("missing-provenance")
-  // A genuine-class record must lead somewhere: to its employer through NobleJob, or to a
-  // real external application page. Neither → excluded, never a fake / misleading Apply.
+  // A genuine-class record must carry EVIDENCE for its claimed provenance — employer
+  // ownership (EMPLOYER), or a real, non-placeholder source URL (AGGREGATED / CURATED /
+  // OFFICIAL) — or it is an unverifiable claim, never a job (sample rows are unaffected).
+  // This is deliberately independent of whether a candidate can APPLY through it today:
+  // an aggregated / curated record with a real source URL is genuine and renderable —
+  // shown as an INFORMATIONAL listing (no Apply action, no JobPosting; see
+  // `applyRouteFor` / `isActionableJob`) until its employer posts it on Noble Job.
+  // Only a claim with NO evidence at all (e.g. an "employer" record no employer owns)
+  // is hidden entirely.
   // (Government rows carry their own evidence-based classification and official links.)
-  else if (board !== "govt" && GENUINE_PROVENANCE.has(provenance) && applyRouteFor(board, rec) === "none") {
+  else if (board !== "govt" && GENUINE_PROVENANCE.has(provenance) && !isGenuine(rec)) {
     reasons.push("no-application-route")
   }
 
@@ -216,15 +223,21 @@ export function filterRenderable<T extends JobLike>(list: readonly T[] | null | 
 }
 
 /**
- * Renderable AND a genuine, currently-open opportunity that a candidate can act
- * on. Employer-owned jobs apply through NobleJob (needs `employer_id`); every
- * other genuine class needs a real external application/official URL. Synthetic /
- * sample rows are never actionable.
+ * Renderable, genuine, currently open, AND — private / WFH / abroad only — carries
+ * a genuine application ROUTE today (employer-owned, needs `employer_id`; see
+ * `applyRouteFor`). This is stricter than "renderable": an aggregated / curated
+ * record with a real source URL is renderable (shown as an informational listing)
+ * but not actionable until its employer posts it on Noble Job, so it is correctly
+ * excluded from "Live Jobs" / genuine counts, job-alert dispatch and any Apply CTA.
+ * Government rows keep their own evidence-based genuineness check (no separate
+ * route requirement here — `govtApplyRoute` is already implied by `isGenuine`).
+ * Synthetic / sample rows are never actionable.
  */
 export function isActionableJob(rec: JobLike | null | undefined, board: RenderableBoard, now: Date = new Date()): boolean {
   if (!rec || !isRenderableJob(rec, board)) return false
   const c = board === "govt" ? { ...rec, board: "govt" } : rec
-  return isGenuine(c) && isOpen(c, now)
+  if (!(isGenuine(c) && isOpen(c, now))) return false
+  return board === "govt" || isGenuineApplyRoute(applyRouteFor(board, rec))
 }
 
 /** Keep only actionable records (order preserved). */

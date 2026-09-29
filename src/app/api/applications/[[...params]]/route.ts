@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
     status: "new",
     admin_review_status: "pending_review",
     notes: JSON.stringify(meta),
-  } as any)
+  })
   if (error) {
     if (error.code === "23505") return NextResponse.json({ error: "You have already applied to this job" }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 400 })

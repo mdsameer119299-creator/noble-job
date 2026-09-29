@@ -13,6 +13,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { applyRouteFor, govtApplyRoute, isGenuineApplyRoute } from "./applyRoute"
+import { isRenderableJob, isActionableJob } from "./renderable"
 import { classifyProvenance, isGenericGovPortalUrl, isGenuine, hasRealApplyUrl } from "./provenance"
 import { govtClassifiable } from "./govtProvenance"
 import { buildPrivateJobPosting, buildWfhJobPosting, buildAbroadJobPosting, buildGovtJobPosting } from "../seo/jobPostingBuilders"
@@ -82,22 +83,41 @@ test("EMPLOYER job with an owner → route 'employer' on every board", () => {
 test("EMPLOYER without an owning employer is not genuine → 'none' (its application would reach nobody)", () => {
   assert.equal(applyRouteFor("private", privateJob({ employer_id: undefined }) as never), "none")
 })
-test("aggregated / curated jobs with a REAL external URL → 'external' on every board (the candidate is sent to the source, never a NobleJob form)", () => {
-  assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: REAL_URL }) as never), "external")
-  assert.equal(applyRouteFor("private", privateJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", applyUrl: REAL_URL }) as never), "external")
-  assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL }) as never), "external")
+// Policy (applyRoute.ts, "Keep private WFH and abroad applications on Noble Job"):
+// a sourced / aggregated Private, WFH or Abroad listing is informational until its
+// employer posts it on Noble Job — it never gets an application route (no Apply
+// action, no JobPosting), REAL external URL or not. "external" now only ever comes
+// from `govtApplyRoute` (below). The record is still RENDERABLE — shown as an
+// informational listing (see the "informational, no evidence lost" tests further
+// down) — this section only covers the *route* (can a candidate apply through it).
+test("aggregated / curated jobs are informational on Private / WFH → route 'none' even with a REAL external URL (never a NobleJob form, never sent to the source)", () => {
+  assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: REAL_URL }) as never), "none")
+  assert.equal(applyRouteFor("private", privateJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", applyUrl: REAL_URL }) as never), "none")
+  assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL }) as never), "none")
 })
-test("aggregated / curated with a placeholder or missing URL → 'none' (no destination, no employer)", () => {
-  for (const url of ["#", "", "https://example.com/jobs/1", "ftp://x.y/z"]) {
+test("aggregated / curated with a placeholder or missing URL → also 'none' (no destination, no employer)", () => {
+  for (const url of ["#", "", "https://example.com/jobs/1", "ftp://x.y/z", REAL_URL]) {
     assert.equal(applyRouteFor("private", privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: url }) as never), "none", url)
     assert.equal(applyRouteFor("wfh", wfhJob({ provenance: "CURATED", employer_id: undefined, source: "curated by editorial", apply_url: url }) as never), "none", url)
   }
 })
-test("abroad AGGREGATED with a real URL → 'external'; placeholder / missing URL → 'none'", () => {
-  assert.equal(applyRouteFor("abroad", abroadJob() as never), "external")
+test("abroad AGGREGATED is informational too → route 'none' whether or not it has a real URL", () => {
+  assert.equal(applyRouteFor("abroad", abroadJob() as never), "none")
   assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "#" }) as never), "none")
   assert.equal(applyRouteFor("abroad", abroadJob({ apply_url: "" }) as never), "none")
-  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: "CURATED", source: "curated by editorial" }) as never), "external")
+  assert.equal(applyRouteFor("abroad", abroadJob({ provenance: "CURATED", source: "curated by editorial" }) as never), "none")
+})
+test("informational ≠ hidden: aggregated / curated WITH real-URL evidence stays RENDERABLE (an unverifiable claim — no employer AND no real URL — is what gets hidden)", () => {
+  const aggPrivate = privateJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", applyUrl: REAL_URL })
+  assert.equal(isRenderableJob(aggPrivate as never, "private"), true, "shown as an informational listing")
+  assert.equal(isActionableJob(aggPrivate as never, "private"), false, "but not actionable — no apply route")
+  const aggAbroad = abroadJob()
+  assert.equal(isRenderableJob(aggAbroad as never, "abroad"), true)
+  assert.equal(isActionableJob(aggAbroad as never, "abroad"), false)
+  const noEvidence = abroadJob({ apply_url: "" })
+  assert.equal(isRenderableJob(noEvidence as never, "abroad"), false, "no employer and no real URL → nothing to vouch for, hidden")
+  const unownedEmployer = privateJob({ employer_id: undefined })
+  assert.equal(isRenderableJob(unownedEmployer as never, "private"), false, "claims 'employer' provenance but no employer owns it → hidden")
 })
 test("sample / unclassified jobs → 'none' (disabled or no action)", () => {
   assert.equal(applyRouteFor("private", privateJob({ provenance: "SYNTHETIC" }) as never), "none")
@@ -143,12 +163,13 @@ test("private / WFH: employer flow → JobPosting with directApply TRUE; aggrega
   const aggW = wfhJob({ provenance: "AGGREGATED", employer_id: undefined, source: "himalayas", apply_url: REAL_URL })
   assert.equal(buildWfhJobPosting(aggW, c(aggW as never, "wfh")), null)
 })
-test("abroad: external redirect → JobPosting with directApply FALSE; curated (unchanged) / placeholder URL → NO JobPosting", () => {
-  assert.equal(asObj(buildAbroadJobPosting(abroadJob(), c(abroadJob() as never, "abroad"))).directApply, false)
-  for (const over of [{ provenance: "CURATED", source: "curated by editorial" }, { apply_url: "#" }, { apply_url: "" }]) {
+test("abroad: aggregated (informational) → NO JobPosting, real URL or not; only the employer route ever emits one, with directApply TRUE", () => {
+  for (const over of [{}, { provenance: "CURATED", source: "curated by editorial" }, { apply_url: "#" }, { apply_url: "" }]) {
     const j = abroadJob(over)
     assert.equal(buildAbroadJobPosting(j, c(j as never, "abroad")), null, JSON.stringify(over))
   }
+  const emp = abroadJob({ provenance: "EMPLOYER", employer_id: "emp-1", source: "employer" })
+  assert.equal(asObj(buildAbroadJobPosting(emp, c(emp as never, "abroad"))).directApply, true)
 })
 test("govt: directApply is false (the application is completed on the official portal, not on NobleJob)", () => {
   assert.equal(asObj(buildGovtJobPosting(govtJob(), helpers)).directApply, false)
@@ -157,11 +178,12 @@ test("directApply is true ONLY for the employer route across every builder", () 
   const all = [
     asObj(buildPrivateJobPosting(privateJob(), c(privateJob(), "private"))),
     asObj(buildWfhJobPosting(wfhJob(), c(wfhJob() as never, "wfh"))),
-    asObj(buildAbroadJobPosting(abroadJob(), c(abroadJob() as never, "abroad"))),
     asObj(buildAbroadJobPosting(abroadJob({ provenance: "EMPLOYER", employer_id: "e", source: "employer" }), c(abroadJob() as never, "abroad"))),
     asObj(buildGovtJobPosting(govtJob(), helpers)),
   ]
-  assert.deepEqual(all.map(p => p.directApply), [true, true, false, true, false])
+  assert.deepEqual(all.map(p => p.directApply), [true, true, true, false])
+  // Aggregated abroad (no employer) is informational — it never reaches the schema.
+  assert.equal(buildAbroadJobPosting(abroadJob(), c(abroadJob() as never, "abroad")), null)
 })
 test("the apply control and JobPosting use ONE decision: every apply control renders applyStateFor; the link out exists only for the 'external' state, never href='#'", () => {
   const src = strip(read("src/components/abroad/AbroadApplySlot.tsx"))
@@ -197,7 +219,8 @@ test("industry / qualifications appear only when the record states them", () => 
   assert.equal(asObj(buildPrivateJobPosting(privateJob({ cat: "" }), c(privateJob(), "private"))).industry, undefined)
   assert.equal(asObj(buildPrivateJobPosting(privateJob(), c(privateJob(), "private"))).industry, "Accounting")
   assert.ok(!("qualifications" in asObj(buildPrivateJobPosting(privateJob(), c(privateJob(), "private")))), "private records store no qualification")
-  assert.ok(!("qualifications" in asObj(buildAbroadJobPosting(abroadJob(), c(abroadJob() as never, "abroad")))))
+  const abroadEmp = abroadJob({ provenance: "EMPLOYER", employer_id: "emp-1", source: "employer" })
+  assert.ok(!("qualifications" in asObj(buildAbroadJobPosting(abroadEmp, c(abroadEmp as never, "abroad")))))
   assert.ok(!("qualifications" in asObj(buildGovtJobPosting(govtJob(), helpers))), "govt states education via educationRequirements")
   assert.equal(asObj(buildWfhJobPosting(wfhJob(), c(wfhJob() as never, "wfh"))).qualifications, "Graduate")
   assert.equal(asObj(buildWfhJobPosting(wfhJob({ qualification: "" }), c(wfhJob() as never, "wfh"))).qualifications, undefined)

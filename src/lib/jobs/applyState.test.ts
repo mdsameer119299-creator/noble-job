@@ -98,8 +98,9 @@ const DEAD_END_URLS = ["", "#", "   ", "https://example.com/jobs/1", "javascript
 
 const content = (j: { title: string; company: string; location?: string }, board: "private" | "wfh" | "abroad") =>
   buildJobContent({ board, title: j.title, company: j.company, location: j.location } as never)
-// Affirmative "your application was sent / stored / received" claims (a negation such as "is not sent to any employer" is honest).
-const MISLEADING = /(?<!not )\b(sent to|stored|saved on|stays on|is submitted|has been submitted|received by)\b/i
+// Affirmative "your application was sent / stored / received" claims (a negation such as
+// "is not sent to any employer" or "never sent to an external website" is honest).
+const MISLEADING = /(?<!not )(?<!never )\b(sent to|stored|saved on|stays on|is submitted|has been submitted|received by)\b/i
 
 /* ═════════════ 1. employer-delivered job → a valid Apply route ═════════════ */
 
@@ -112,10 +113,10 @@ test("employer-delivered job → the NobleJob 'Apply Now' state, route 'employer
     assert.equal(s.href, undefined, "the on-site flow has no external href")
   }
 })
-test("employer state: the copy says the application is sent to THAT employer through NobleJob (true, because the API delivers it)", () => {
+test("employer state: the copy says the application is reviewed by Noble Job before being shared with THAT employer (admin-review-gate architecture)", () => {
   const s = applyStateFor("private", employerPrivate(), "Acme Pvt Ltd")
-  assert.match(s.note, /sent to Acme Pvt Ltd through Noble Job/)
-  assert.match(applyStateFor("private", employerPrivate()).note, /sent to the employer through Noble Job/)
+  assert.match(s.note, /reviewed by Noble Job before being shared with Acme Pvt Ltd/)
+  assert.match(applyStateFor("private", employerPrivate()).note, /reviewed by Noble Job before being shared with the employer/)
 })
 test("employer-delivered application: the API accepts it, addressed to the OWNING employer", () => {
   const v = applicationTargetVerdict({ board: "private", sample: false, row: { employer_id: "emp-1", status: "active" } })
@@ -136,50 +137,51 @@ test("an employer job that is CLOSED shows no Apply action, and the API refuses 
   assert.equal(!v.ok && v.reason, "closed")
 })
 
-/* ═════════════ 2. genuine external URL → an external Apply route ═════════════ */
+/* ═════════════ 2. aggregated / curated with a genuine URL → informational, no apply action ═════════════
+ *
+ * Policy (unchanged by this file): applyRouteFor never returns "external" for private / WFH /
+ * abroad — a sourced/aggregated listing is informational until its employer posts it on Noble
+ * Job. Having REAL evidence (a genuine source URL) is what keeps the record renderable/visible
+ * (see applyRoute.test.ts / renderable.ts), but it is not an apply route: no button, no off-site
+ * link, no JobPosting. This is the "informational, no-apply listings" behavior. */
 
-test("aggregated / curated job with a genuine URL → 'external': a link to THAT URL, never an on-site application", () => {
+test("aggregated / curated job with a genuine URL → route 'none', state 'listing': informational only, never an off-site Apply link", () => {
   for (const [board, rec] of [
     ["private", externalPrivate()],
     ["private", externalPrivate({ provenance: "CURATED", source: "curated by editorial" })],
     ["wfh", externalWfh()],
     ["abroad", externalAbroad()],
   ] as const) {
+    assert.equal(applyRouteFor(board, rec as never), "none", `${board}/${asObj(rec).provenance}`)
     const s = applyStateFor(board, rec as never, "Someone Ltd")
-    assert.equal(s.kind, "external", `${board}/${asObj(rec).provenance}`)
-    assert.equal(s.route, "external")
-    assert.equal(s.href, REAL_URL)
-    assert.ok(s.cta && !/apply now/i.test(s.cta), "not the NobleJob 'Apply Now' button")
-    assert.equal(externalApplyUrl(rec as never), REAL_URL)
+    assert.equal(s.kind, "listing", `${board}/${asObj(rec).provenance}`)
+    assert.equal(s.cta, null, "no Apply action of any kind — not on-site, not off-site")
+    assert.equal(s.href, undefined)
+    assert.equal(s.directApply, false)
+    assert.equal(s.note, LISTING_ONLY_NOTE)
+    assert.equal(externalApplyUrl(rec as never), "", "externalApplyUrl is reserved for govt/OFFICIAL — never populated for private/wfh/abroad")
   }
 })
-test("external state is honest: it says you are LEAVING NobleJob and that NobleJob does not receive the application", () => {
-  const s = applyStateFor("private", externalPrivate(), "Acme")
-  assert.match(s.note, /leave Noble Job/)
-  assert.match(s.note, /does not receive or forward/)
-  assert.doesNotMatch(s.note, MISLEADING)
+test("informational listing copy is honest: it never claims the application is sent, stored or received anywhere", () => {
+  assert.doesNotMatch(LISTING_ONLY_NOTE, MISLEADING)
+  assert.doesNotMatch(LISTING_ONLY_NOTE, /apply now/i)
+  assert.match(LISTING_ONLY_NOTE, /informational/i)
 })
-test("external → directApply FALSE everywhere (an off-site redirect is never direct apply)", () => {
-  assert.equal(applyStateFor("private", externalPrivate(), "A").directApply, false)
-  assert.equal(applyStateFor("wfh", externalWfh(), "A").directApply, false)
-  assert.equal(applyStateFor("abroad", externalAbroad(), "A").directApply, false)
-  const p = asObj(buildAbroadJobPosting(externalAbroad(), content(externalAbroad() as never, "abroad")))
-  assert.equal(p.directApply, false, "the abroad external JobPosting is directApply:false")
+test("aggregated job with a real URL still gets NO JobPosting and NO off-site apply link rendered (same treatment as a dead end)", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server")
+  const { ApplyButton } = await import("../../components/jobs/ApplyButton")
+  const html = renderToStaticMarkup(React.createElement(ApplyButton, { jobId: "x", state: applyStateFor("private", externalPrivate(), "Acme") }))
+  assert.doesNotMatch(html, /<button/)
+  assert.doesNotMatch(html, /Apply Now/i)
+  assert.doesNotMatch(html, new RegExp(`href="${REAL_URL.replace(/[/.]/g, "\\$&")}"`), "the real source URL is never surfaced as a candidate-facing Apply link")
+  assert.doesNotMatch(html, MISLEADING)
+  assert.equal(buildAbroadJobPosting(externalAbroad(), content(externalAbroad() as never, "abroad")), null, "no JobPosting for an aggregated abroad job even with a real URL")
 })
-test("an external job is NOT sent through /api/applications: the on-site form is unreachable (no employer → 422)", () => {
+test("an aggregated/informational job is NOT sent through /api/applications: the on-site form is unreachable (no employer → 422)", () => {
   const v = applicationTargetVerdict({ board: "private", sample: false, row: { employer_id: null, status: "active" } })
   assert.equal(v.ok, false)
   assert.equal(!v.ok && v.status, 422)
   assert.equal(!v.ok && v.error, NO_EMPLOYER_MESSAGE)
-})
-test("rendered Apply control for an external job is an <a href> to the source — target=_blank, noopener, nofollow — and NO button / form", async () => {
-  const { renderToStaticMarkup } = await import("react-dom/server")
-  const { ApplyButton } = await import("../../components/jobs/ApplyButton")
-  const html = renderToStaticMarkup(React.createElement(ApplyButton, { jobId: "x", state: applyStateFor("private", externalPrivate(), "Acme") }))
-  assert.match(html, new RegExp(`<a href="${REAL_URL.replace(/[/.]/g, "\\$&")}" target="_blank" rel="noopener noreferrer nofollow"`))
-  assert.doesNotMatch(html, /<button/)
-  assert.doesNotMatch(html, /Apply Now/)
-  assert.doesNotMatch(html, MISLEADING)
 })
 
 /* ═════════════ 3. aggregated, no employer, no external URL → NO misleading Apply ═════════════ */
@@ -200,8 +202,8 @@ test("dead end (aggregated, no employer, placeholder / missing URL) → route 'n
 test("dead end: the copy never says the application is sent / stored / saved for the employer", () => {
   assert.doesNotMatch(LISTING_ONLY_NOTE, MISLEADING)
   assert.doesNotMatch(LISTING_ONLY_NOTE, /apply now/i)
-  assert.match(LISTING_ONLY_NOTE, /Information only/)
-  assert.match(LISTING_ONLY_NOTE, /no application link/)
+  assert.match(LISTING_ONLY_NOTE, /informational/i)
+  assert.match(LISTING_ONLY_NOTE, /never sent to an external website/)
 })
 test("rendered control for a dead end has NO button, NO apply link, NO application modal — only an information-only label", async () => {
   const { renderToStaticMarkup } = await import("react-dom/server")
@@ -211,7 +213,7 @@ test("rendered control for a dead end has NO button, NO apply link, NO applicati
   assert.doesNotMatch(html, /Apply Now/i)
   assert.doesNotMatch(html, /target="_blank"/)
   assert.doesNotMatch(html, MISLEADING)
-  assert.match(html, /Information only/)
+  assert.match(html, /informational/i)
   // The only link is the SEPARATE, labelled profile registration — not an application.
   assert.deepEqual([...html.matchAll(/href="([^"]+)"/g)].map(m => m[1]), [TALENT_REGISTRATION.href])
 })
@@ -290,7 +292,7 @@ test("talent registration is a separate, general-profile action: no job id, no c
   assert.ok(!("jobId" in TALENT_REGISTRATION) && !("board" in TALENT_REGISTRATION))
   assert.doesNotMatch(TALENT_REGISTRATION.href, /\?|job|board|id=/i, "the link carries no vacancy reference")
   assert.doesNotMatch(TALENT_REGISTRATION.label, /\bappl(y|ication|ied)\b/i, "the label is not an apply label")
-  assert.match(TALENT_REGISTRATION.note, /not a job application/)
+  assert.match(TALENT_REGISTRATION.note, /general profile registration/)
   assert.match(TALENT_REGISTRATION.note, /not sent to any employer/)
   assert.doesNotMatch(TALENT_REGISTRATION.note, /\{|\$\{/, "no templating that could inject a vacancy / company name")
 })
@@ -307,14 +309,27 @@ test("talent registration can never become an application record: the only appli
   const popup = strip(read("src/components/govt/SaveResumePopup.tsx"))
   assert.doesNotMatch(popup, /\/api\/applications/)
 })
-test("the talent link is offered only beside the info-only state — never beside an employer's Apply Now or an external Apply link", async () => {
+test("the talent link is offered only beside the info-only 'listing' state — never beside an employer's Apply Now", async () => {
+  // The "employer" branch renders ApplicationModal unconditionally (gated only by the `open`
+  // prop internally), which calls next/navigation's useRouter() and so needs an app-router
+  // context to render at all — this suite renders the non-employer branches directly (as the
+  // other tests in this file already do) and checks the employer branch's own source instead.
+  const btn = strip(read("src/components/jobs/ApplyButton.tsx"))
+  const employerBranchStart = btn.indexOf("return (\n    <>")
+  assert.ok(employerBranchStart > 0, "employer branch located")
+  const employerBranch = btn.slice(employerBranchStart)
+  assert.doesNotMatch(employerBranch, /TALENT_REGISTRATION|general profile/, "no talent-registration link beside the employer Apply Now control")
+  assert.match(employerBranch, /state\.cta/, "the employer branch renders the state's own Apply Now cta")
+
+  // aggregated-with-real-URL and dead-end (no URL) both land in the same informational "listing"
+  // state, and both get the talent-registration link beside them — never an Apply Now button.
   const { renderToStaticMarkup } = await import("react-dom/server")
   const { ApplyButton } = await import("../../components/jobs/ApplyButton")
-  const ext = renderToStaticMarkup(React.createElement(ApplyButton, { jobId: "x", state: applyStateFor("private", externalPrivate(), "A") }))
-  assert.doesNotMatch(ext, /general profile/)
-  const dead = renderToStaticMarkup(React.createElement(ApplyButton, { jobId: "x", state: applyStateFor("private", deadEndPrivate(""), "A") }))
-  assert.match(dead, /general profile registration, not a job application/)
-  assert.doesNotMatch(dead, /Acme|Apply Now/)
+  for (const rec of [externalPrivate(), deadEndPrivate("")]) {
+    const html = renderToStaticMarkup(React.createElement(ApplyButton, { jobId: "x", state: applyStateFor("private", rec as never, "A") }))
+    assert.match(html, /general profile registration/)
+    assert.doesNotMatch(html, /Acme|Apply Now/)
+  }
 })
 test("historical ownerless applications are kept but labelled 'Not sent to an employer' (never a pending 'New')", () => {
   assert.equal(isDeliveredToEmployer({ employer_id: null }), false)
@@ -425,10 +440,17 @@ test("DIRECT_APPLY_FLOW is asserted against the implementation, not just declare
   const pushes = modal.match(/router\.push\(/g) ?? []
   assert.equal(pushes.length, 1, "exactly one navigation (the sign-in)")
   assert.match(modal, /redirect=\$\{encodeURIComponent\(here\)\}/, "sign-in returns to the same job page")
-  // the submission is delivered: the API notifies the owning employer (and emails a verified one)
+  // the submission is captured for the owning employer and enters the Noble Job admin-review
+  // pipeline — it is NOT delivered/notified to the employer at submission time; only the
+  // separate admin-approval route notifies the employer, once an admin approves it (the
+  // Candidate → Noble Job → Admin Review → Employer architecture).
   const api = strip(read("src/app/api/applications/[[...params]]/route.ts"))
-  assert.match(api, /createNotification\(\s*ownerRow\.user_id/)
   assert.match(api, /employer_id: employerId/)
+  assert.match(api, /admin_review_status:\s*["']pending_review["']/)
+  assert.match(api, /notifyAdmins\(/, "submission notifies Noble Job admins, not the employer")
+  assert.doesNotMatch(api, /createNotification\(\s*employerId|createNotification\(\s*employer\.user_id/, "no employer notification on submission")
+  const review = strip(read("src/app/api/admin/application-review/route.ts"))
+  assert.match(review, /createNotification\(\s*employer\.user_id/, "the employer is notified only once an admin approves the application")
   // job details are public — the detail pages never gate on a session
   for (const f of ["src/app/jobs/private/[id]/page.tsx", "src/app/jobs/wfh/[id]/page.tsx", "src/app/jobs/abroad/[id]/page.tsx"]) {
     assert.doesNotMatch(strip(read(f)), /requireAuth|redirect\(['"]\/auth|getUser\(/, f)

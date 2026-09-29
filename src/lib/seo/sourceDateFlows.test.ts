@@ -94,11 +94,19 @@ const abroad = (over: Obj = {}) => buildAbroadJobPosting(abroadJob(over), conten
 test("AGGREGATED (abroad): only NobleJob timestamps, no source date → NO JobPosting", () => {
   assert.equal(abroad(), null)
 })
-test("AGGREGATED (abroad): a real source date → JobPosting whose datePosted is THAT date, never any NobleJob time", () => {
-  const p = asObj(abroad({ source_posted_at: SOURCE }))
+test("abroad EMPLOYER job with a real source date → JobPosting whose datePosted is THAT date, never any NobleJob time", () => {
+  // Under the "informational listings" policy, applyRouteFor/isJobPostingRoute return a genuine
+  // route only for provenance EMPLOYER — an AGGREGATED abroad job (the default `abroad()` fixture)
+  // never qualifies for a JobPosting, real source date or not (see applyRoute.ts / applyRoute.test.ts
+  // "abroad: aggregated (informational) → NO JobPosting..."). This test exercises the still-genuine
+  // employer-authored flow's date provenance instead.
+  const p = asObj(abroad({ provenance: "EMPLOYER", employer_id: "emp-1", source: "employer", source_posted_at: SOURCE }))
   assert.equal(p["@type"], "JobPosting")
   assert.equal(p.datePosted, SOURCE)
   for (const [k, v] of Object.entries(NOBLE_TIMES)) assert.notEqual(p.datePosted, v, k)
+})
+test("AGGREGATED (abroad): NO JobPosting even with a real source date (informational, never widened)", () => {
+  assert.equal(abroad({ source_posted_at: SOURCE }), null)
 })
 test("originalPostingDate reads ONLY the source-date fields — every NobleJob-created timestamp is ignored", () => {
   for (const board of ["private", "wfh", "abroad", "govt"] as const) {

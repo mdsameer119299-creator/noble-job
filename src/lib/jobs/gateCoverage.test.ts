@@ -149,12 +149,29 @@ test("sitemap job rows: none while detail pages serve the local inventory (even 
 
 test("saved jobs: a reference resolves only to a renderable job — bogus ids, unknown boards and missing jobs are dropped", async () => {
   const { resolveSavedJob, normalizeSavedBoard } = await import("../services/savedJobsResolver")
+  const { getPrivateJobByIdLocal } = await import("../services/jobLocal")
   const { renderablePrivateInventory } = await import("../data/jobInventory")
   const real = renderablePrivateInventory()[0]
-  const ok = await resolveSavedJob(real.id, "private")
-  assert.ok(ok)
-  assert.equal(ok!.title, real.title)
-  assert.ok(ok!.company)
+  assert.ok(real, "the demo private inventory has at least one renderable row")
+
+  // Happy path — a well-formed id for an existing renderable row resolves. Proven directly
+  // against the local lookup, whose `syntheticVisible` flag is a plain sync parameter (unlike
+  // resolveSavedJob's own async admin-toggle check below).
+  const visible = getPrivateJobByIdLocal(real.id, true)
+  assert.ok(visible, "the local lookup resolves a well-formed, existing id when synthetic rows are visible")
+  assert.equal(visible!.title, real.title)
+  assert.ok(visible!.company)
+
+  // resolveSavedJob() additionally gates on the real, async admin toggle (syntheticVisibility.ts,
+  // "Hide synthetic job inventory by default in production" — fail-closed when admin_settings is
+  // unseeded/unavailable). Offline here (no Supabase configured), that toggle is OFF, and every
+  // row in this local demo inventory is SYNTHETIC placeholder content (see jobInventory.ts) — so
+  // resolveSavedJob correctly returns null for it, same as a genuinely missing job. This is the
+  // intended production-safety behavior, not a bug: synthetic/demo rows are never candidate-facing
+  // unless an admin explicitly turns them on.
+  assert.equal((real as { provenance?: string }).provenance, "SYNTHETIC", "the local private inventory is demo-only in this environment")
+  assert.equal(await resolveSavedJob(real.id, "private"), null, "a synthetic demo row is hidden by the fail-closed toggle, same as a missing job")
+
   for (const bad of [undefined, null, "", "  ", "undefined", "null", "../etc/passwd", "a/b", 42, {}]) {
     assert.equal(await resolveSavedJob(bad, "private"), null, String(bad))
   }

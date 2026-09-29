@@ -233,7 +233,10 @@ test("dead-end genuine-class record (no employer delivery, no genuine external U
   assert.equal(isRenderableJob(good({ employer_id: undefined }), "private"), false, "an 'employer' job that no employer owns receives nobody's application")
   assert.ok(checkJobRecord(good({ employer_id: undefined }), "private").reasons.includes("no-application-route"))
   assert.equal(filterRenderable([goodWfh(), noRoute, placeholderRoute, exampleRoute] as never[], "wfh").length, 1)
-  assert.equal(filterActionable([goodWfh(), noRoute, placeholderRoute] as never[], "wfh").length, 1)
+  // goodWfh() itself is AGGREGATED with a real URL (evidence-backed → renderable, informational),
+  // but under the "informational, no-apply listings" policy that's never a genuine apply route —
+  // only an owning employer is. So none of these three (including goodWfh()) are actionable.
+  assert.equal(filterActionable([goodWfh(), noRoute, placeholderRoute] as never[], "wfh").length, 0)
 })
 test("a record WITH a genuine route stays renderable: employer-owned, or a real external apply URL (no employer needed)", () => {
   assert.equal(isRenderableJob(good(), "private"), true)
@@ -417,12 +420,17 @@ test("the DB list path filters BEFORE counting (in-memory pool) — no raw SQL c
   const svc = read("src/lib/services/jobService.ts")
   assert.match(svc, /filterRenderable\(/)
   assert.doesNotMatch(svc, /count:\s*["']exact["']/, "an SQL count cannot know which rows the gate drops")
-  assert.match(svc, /total:\s*pool\.length/)
-  assert.match(svc, /totalPages:\s*Math\.ceil\(pool\.length \/ limit\)/)
-  assert.match(svc, /counts:\s*countByStatus\(pool\)/)
+  // `pool` (the gated DB rows) is merged with the live-external feed into `combined`, which is
+  // what total/totalPages/counts are derived from — still in-memory, still post-filter, never a
+  // raw SQL count.
+  assert.match(svc, /const pool = sortByStatus\(/)
+  assert.match(svc, /const combined = \[\.\.\.liveExternal, \.\.\.pool\.filter\(/)
+  assert.match(svc, /total:\s*combined\.length/)
+  assert.match(svc, /totalPages:\s*Math\.ceil\(combined\.length \/ limit\)/)
+  assert.match(svc, /counts:\s*countByStatus\(combined\)/)
   // WFH / abroad DB paths filter too.
-  assert.match(read("src/lib/services/wfhJobService.ts"), /filterRenderable\(data as unknown as WfhJob\[\], "wfh"\)/)
-  assert.match(read("src/lib/services/abroadJobService.ts"), /filterRenderable\(data as unknown as AbroadJob\[\], "abroad"\)/)
+  assert.match(read("src/lib/services/wfhJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as WfhJob\[\], "wfh"\)/)
+  assert.match(read("src/lib/services/abroadJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as AbroadJob\[\], "abroad"\)/)
 })
 
 test("API count / stats never use a raw `status = active` row count", () => {
