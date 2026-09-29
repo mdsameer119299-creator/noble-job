@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - strategy/internal-applications-admin-gate
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
