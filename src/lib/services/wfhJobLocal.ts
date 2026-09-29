@@ -10,6 +10,8 @@ import type { WfhJob } from "@/types/wfhJob"
 export interface WfhJobFilters {
   q?: string
   cat?: string
+  /** Employment-type keyword — forwarded to the live external feed only (mirrors JobFilter.type for private jobs); no local WFH row is filtered by it today. */
+  type?: string
   exp?: string
   sort?: string
   status?: JobStatus | "all"

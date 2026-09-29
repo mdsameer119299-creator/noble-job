@@ -49,6 +49,16 @@ export function isGenuineApplyRoute(route: ApplyRoute): boolean {
   return route === "employer" || route === "external"
 }
 
+/**
+ * Does this record qualify for JobPosting on this board? Under the current policy
+ * `applyRouteFor` never returns "external" for private / WFH / abroad (a sourced /
+ * aggregated listing is informational until its employer posts it on Noble Job), so
+ * the only genuine route left is an employer-delivered Noble Job application.
+ */
+export function isJobPostingRoute(board: ApplyBoard, rec: Classifiable, route: ApplyRoute = applyRouteFor(board, rec)): boolean {
+  return route === "employer"
+}
+
 export const DIRECT_APPLY_FLOW = {
   completedOnPage: true,
   offSiteRedirect: false,

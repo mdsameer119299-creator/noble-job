@@ -68,7 +68,9 @@ test("job cards: a sample row's Apply CTA is withheld (canApply excludes samples
 })
 test("API guard: a direct POST for a synthetic job is rejected using id/source only (never the client URL)", () => {
   const src = read("src/app/api/applications/[[...params]]/route.ts")
-  assert.match(src, /classifyProvenance\(\{\s*id:\s*parsed\.data\.jobId,\s*source:\s*parsed\.data\.source\s*\}\)\s*===\s*["']SYNTHETIC["']/)
+  // The parsed request body may be aliased to a short local (e.g. `const d = parsed.data`)
+  // before the guard runs — assert on the guard's shape, not the alias's exact name.
+  assert.match(src, /classifyProvenance\(\{\s*id:\s*\w+(\.\w+)*\.jobId,\s*source:\s*\w+(\.\w+)*\.source\s*\}\)\s*===\s*["']SYNTHETIC["']/)
   assert.match(src, /status:\s*422/)
   // The guard's input must not include the client-supplied apply URL ("#" for many REAL jobs).
   assert.doesNotMatch(src, /classifyProvenance\(\{[^}]*(applyUrl|apply_url)/)
