@@ -163,6 +163,16 @@ const abroadJob = (over: Obj = {}): AbroadJob =>
     ...over,
   }) as unknown as AbroadJob
 
+/**
+ * Employer-delivered abroad posting (Apply → the owning employer through Noble Job).
+ * Policy (`applyRoute.ts`): a sourced / aggregated abroad listing is informational
+ * until its employer posts it on Noble Job, so only the "employer" route still
+ * qualifies for JobPosting on the abroad board — `abroadJob()`'s AGGREGATED default
+ * no longer does (see "aggregated abroad job → NO JobPosting" below).
+ */
+const abroadEmployerJob = (over: Obj = {}): AbroadJob =>
+  abroadJob({ provenance: "EMPLOYER", employer_id: "emp-1", source: "employer", ...over })
+
 const govtJob = (over: Obj = {}): GovtJob =>
   ({
     id: "ibps:clerk-2026",
@@ -294,11 +304,11 @@ test("WFH / abroad: genuine source date → JobPosting with that date; missing /
   const cw = contentFor(employerJob())
   const w = asObj(buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), cw))
   assert.equal(w.datePosted, POSTED)
-  const a = asObj(buildAbroadJobPosting(abroadJob(), cw))
+  const a = asObj(buildAbroadJobPosting(abroadEmployerJob(), cw))
   assert.equal(a.datePosted, POSTED)
   for (const source_posted_at of [undefined, null, "", "5 days ago", "not-a-date", "2099-01-01T00:00:00Z"]) {
     assert.equal(buildWfhJobPosting(wfhJob({ source_posted_at, applicant_country: "IN" }), cw), null, `wfh ${String(source_posted_at)}`)
-    assert.equal(buildAbroadJobPosting(abroadJob({ source_posted_at }), cw), null, `abroad ${String(source_posted_at)}`)
+    assert.equal(buildAbroadJobPosting(abroadEmployerJob({ source_posted_at }), cw), null, `abroad ${String(source_posted_at)}`)
   }
 })
 test("originalPostingDate: which stored field is the source date, per board", () => {
@@ -403,7 +413,7 @@ test("description never carries generated employer claims, benefits, responsibil
   const cases: Array<[string, unknown]> = [
     ["private", buildPrivateJobPosting(employerJob(), contentFor(employerJob(), { postedAt: POSTED }))],
     ["wfh", buildWfhJobPosting(wfhJob({ applicant_country: "IN" }), contentFor(employerJob(), { postedAt: POSTED }))],
-    ["abroad", buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED }))],
+    ["abroad", buildAbroadJobPosting(abroadEmployerJob(), contentFor(employerJob(), { postedAt: POSTED }))],
     ["govt", buildGovtJobPosting(govtJob(), govtHelpers)],
   ]
   for (const [name, p] of cases) {
@@ -481,10 +491,13 @@ test("employer job delivered through NobleJob → directApply true", () => {
   const j = employerJob()
   assert.equal(asObj(buildPrivateJobPosting(j, contentFor(j, { postedAt: POSTED }))).directApply, true)
 })
-test("aggregated abroad job (Apply → employer's own page) → directApply FALSE", () => {
-  const p = asObj(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })))
+test("aggregated abroad job → NO JobPosting (no longer an application route; informational until the employer posts it on Noble Job)", () => {
+  assert.equal(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })), null)
+})
+test("abroad employer-delivered job → JobPosting with directApply TRUE", () => {
+  const p = asObj(buildAbroadJobPosting(abroadEmployerJob(), contentFor(employerJob(), { postedAt: POSTED })))
   assert.equal(p["@type"], "JobPosting")
-  assert.equal(p.directApply, false)
+  assert.equal(p.directApply, true)
 })
 test("aggregated / curated PRIVATE jobs → NO JobPosting (their Apply form is not delivered to anyone)", () => {
   const a = aggregatedJob()
@@ -515,8 +528,8 @@ test("hiringOrganization.sameAs can NEVER be the apply URL", () => {
     datePosted: POSTED, addressCountry: "IN", applyUrl: url, organizationSameAs: url,
   }))
   assert.ok(!("sameAs" in asObj(p.hiringOrganization)))
-  const pa = asObj(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })))
-  assert.ok(!("sameAs" in asObj(pa.hiringOrganization)), "aggregated abroad builder never derives sameAs from applyUrl")
+  const pa = asObj(buildAbroadJobPosting(abroadEmployerJob(), contentFor(employerJob(), { postedAt: POSTED })))
+  assert.ok(!("sameAs" in asObj(pa.hiringOrganization)), "abroad builder never derives sameAs from applyUrl")
 })
 test("sameAs is only the employer/source website (government: origin of the official site)", () => {
   const p = asObj(buildGovtJobPosting(govtJob({ officialUrl: "https://www.ibps.in/deep/path/notice.pdf" }), govtHelpers))
@@ -647,7 +660,7 @@ test("WFH: no hard-coded applicant-country constant remains", () => {
 /* --------------------------------- abroad --------------------------------- */
 
 test("abroad: country resolved to ISO alpha-2 (UAE → AE)", () => {
-  const p = asObj(buildAbroadJobPosting(abroadJob(), contentFor(employerJob(), { postedAt: POSTED })))
+  const p = asObj(buildAbroadJobPosting(abroadEmployerJob(), contentFor(employerJob(), { postedAt: POSTED })))
   const addr = asObj(asObj(p.jobLocation).address)
   assert.equal(addr.addressCountry, "AE")
   assert.equal(addr.addressLocality, "Dubai")

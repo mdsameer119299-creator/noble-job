@@ -22,8 +22,6 @@ function mapApps(data: Record<string, unknown>[]): Application[] {
   }) as unknown as Application[]
 }
 
-// Internal-only metadata that must never be returned to a candidate (esp. the
-// original employer/source URL of imported jobs).
 const CANDIDATE_HIDDEN_NOTE_KEYS = ["sourceUrl", "source", "managedBy", "outreach"]
 
 function redactCandidateNotes(apps: Application[]): Application[] {
@@ -52,6 +50,11 @@ export async function getApplicationsByCandidate(candidateId: string): Promise<A
   return redactCandidateNotes(mapApps((data || []) as Record<string, unknown>[]))
 }
 
+/**
+ * Employer applications are deliberately restricted to admin-approved rows.
+ * Candidate resumes and application details remain inside Noble Job until an
+ * administrator explicitly approves release to this employer.
+ */
 export async function getApplicationsByEmployer(
   employerId: string,
   status?: string,
@@ -64,6 +67,7 @@ export async function getApplicationsByEmployer(
     .from("applications")
     .select("*, candidates(first_name,last_name,skills,resume_url)")
     .eq("employer_id", employerId)
+    .in("admin_review_status", ["approved", "shared"])
   if (status && status !== "all") q = q.eq("status", status)
   if (board && board !== "all") q = q.eq("board", board)
   q = q.order("applied_at", { ascending: false })
@@ -71,18 +75,16 @@ export async function getApplicationsByEmployer(
   return mapApps((data || []) as Record<string, unknown>[])
 }
 
-/**
- * Applications count per job, keyed by job id. Private-board applications
- * carry a real `job_id` FK; WFH/Abroad applications always have `job_id`
- * NULL (that FK only references `jobs` — see the applications POST route),
- * so their specific job is recovered from `notes.externalJobId` instead.
- */
 export async function getApplicationCountsByEmployer(employerId: string): Promise<Record<string, number>> {
   const counts: Record<string, number> = {}
   if (!isSupabaseConfigured()) return counts
   const sb = await createClient()
   if (!sb) return counts
-  const { data } = await sb.from("applications").select("job_id, notes").eq("employer_id", employerId)
+  const { data } = await sb
+    .from("applications")
+    .select("job_id, notes")
+    .eq("employer_id", employerId)
+    .in("admin_review_status", ["approved", "shared"])
   for (const row of (data || []) as { job_id?: string | null; notes?: string | null }[]) {
     let jobId = row.job_id || null
     if (!jobId && row.notes) {

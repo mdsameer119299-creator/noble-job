@@ -1,50 +1,36 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { getVisibleBoardCounts } from "@/lib/services/visibleCounts"
 
-/**
- * Public stats. TWO HONEST BUCKETS (see src/lib/jobs/provenance.ts):
- *  • `totalJobs` / `totalCompanies` are GENUINE counts (real DB rows). They are
- *    never padded with synthetic demo inventory or fabricated marketing targets.
- *  • `catalogJobs` is the full browsable catalog (includes demo showcase rows).
- *    It is explicitly a "roles to explore" figure — NOT a genuine-openings claim.
- */
+/** Public stats contain only counts backed by genuine, actionable data. */
 export async function GET() {
-  // Counted by the list pipeline (renderable only, synthetic switch honoured).
-  const catalogJobs = (await getVisibleBoardCounts()).total.all
-
   const empty = {
     totalJobs: 0,
-    catalogJobs,
+    catalogJobs: 0,
     totalCompanies: 0,
     totalPlaced: 0,
-    totalPartners: 1200,
-    totalRecruiters: 1500,
+    totalPartners: 0,
+    totalRecruiters: 0,
   }
 
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(empty)
-  }
+  if (!isSupabaseConfigured()) return NextResponse.json(empty)
 
   try {
     const sb = await createClient()
     if (!sb) throw new Error("skip")
     const { getGenuineJobCounts } = await import("@/lib/services/genuineCounts")
     const [genuine, employers, applications] = await Promise.all([
-      // Same predicate as the sitemap (genuine + open + renderable) — NOT a raw
-      // `status = active` row count, which includes samples and incomplete rows.
       getGenuineJobCounts(),
       sb.from("employers").select("id", { count: "exact", head: true }).eq("verified", true),
       sb.from("applications").select("id", { count: "exact", head: true }).eq("status", "hired"),
     ])
     return NextResponse.json({
       totalJobs: genuine.total,
-      catalogJobs,
+      catalogJobs: genuine.total,
       totalCompanies: employers.count || 0,
       totalPlaced: applications.count || 0,
-      totalPartners: 1200,
-      totalRecruiters: 1500,
+      totalPartners: employers.count || 0,
+      totalRecruiters: employers.count || 0,
     })
   } catch {
     return NextResponse.json(empty)

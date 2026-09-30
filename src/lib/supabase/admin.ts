@@ -10,7 +10,7 @@
  * NEVER expose SUPABASE_SERVICE_ROLE_KEY to the browser.
  */
 import { createClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/supabase"
+import type { ApplicationGateDatabase } from "@/types/applicationGateDatabase"
 
 // Fall back to valid-looking placeholders so importing this module never throws
 // when env vars are missing (e.g. local dev without a DB). Callers must guard
@@ -20,6 +20,6 @@ import type { Database } from "@/types/supabase"
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "https://placeholder.supabase.co"
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "placeholder-service-role-key"
 
-export const supabaseAdmin = createClient<Database>(url, serviceKey, {
+export const supabaseAdmin = createClient<ApplicationGateDatabase>(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })

@@ -5,14 +5,35 @@ import type { AbroadJob } from "@/types/abroadJob"
 /**
  * Live external inventory from Job Opportunities API's keyless public surface.
  *
- * The API exposes current, open employer-direct vacancies with real application
- * URLs. We deliberately keep the integration server-side and cache responses for
- * five minutes, matching the provider's public endpoint cache window.
+ * ─────────────────────────────────────────────────────────────────────────
+ * DISABLED (Phase 1A, strategy/internal-applications-admin-gate):
  *
- * Public API reference: https://api.jobopportunitiesapi.org/public/jobs
+ * `api.jobopportunitiesapi.org/public/jobs` returns HTTP 401 on every request
+ * we have made to it, and no API key/credential for it exists anywhere in this
+ * repository or its environment config. There is also no evidence this is a
+ * real, documented public API — nothing keyless was ever confirmed working.
+ * The previous implementation silently swallowed the failure (try/catch →
+ * `[]`) and presented itself as a live source while returning nothing, which
+ * is a dead integration pretending to work.
+ *
+ * We do NOT invent a credential and we do NOT delete this file: every function
+ * below keeps its exact exported signature so `jobService.ts`, `wfhJobService.ts`,
+ * `abroadJobService.ts` and `featuredJobs.ts` need no changes. `fetchRows()` and
+ * `fetchOne()` now short-circuit to an empty result WITHOUT making any network
+ * call, so this module can never contact an unverified host, and every caller
+ * behaves exactly as it already does when the source has nothing to offer.
+ *
+ * To re-enable this source: obtain a verified, working credential (or confirm
+ * a genuinely keyless working endpoint), remove the short-circuit below, and
+ * re-verify `hasUsableFields()` still matches the provider's real response
+ * shape before trusting it again.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Public API reference (unverified / currently returns 401): https://api.jobopportunitiesapi.org/public/jobs
  */
 const API_BASE = "https://api.jobopportunitiesapi.org/public/jobs"
 const LIST_LIMIT = 20
+const SOURCE_DISABLED = true
 
 interface LiveApiRow {
   id: string
@@ -108,6 +129,9 @@ function queryFor(board: LiveBoard, extra: { q?: string; location?: string; cate
 }
 
 async function fetchRows(board: LiveBoard, extra: { q?: string; location?: string; category?: string; type?: string } = {}): Promise<LiveApiRow[]> {
+  // See the module-level DISABLED note: no network call is made while this
+  // source has no verified credential / working endpoint.
+  if (SOURCE_DISABLED) return []
   try {
     const res = await fetch(`${API_BASE}?${queryFor(board, extra).toString()}`, {
       next: { revalidate: 300 },
@@ -231,6 +255,9 @@ export async function getLiveAbroadJobById(id: string): Promise<AbroadJob | null
 }
 
 async function fetchOne(id: string, board: LiveBoard): Promise<LiveApiRow | null> {
+  // See the module-level DISABLED note: no network call is made while this
+  // source has no verified credential / working endpoint.
+  if (SOURCE_DISABLED) return null
   try {
     const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
       next: { revalidate: 600 },
