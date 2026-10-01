@@ -84,6 +84,9 @@ export interface Classifiable {
    */
   application_deadline?: string | null
   applicationDeadline?: string | null
+  /** Government source publication date; never inferred from ingestion time. */
+  sourcePublishedAt?: string | null
+  source_published_at?: string | null
   applyUrl?: string | null
   apply_url?: string | null
   employer_id?: string | null
