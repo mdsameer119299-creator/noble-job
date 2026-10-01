@@ -62,6 +62,27 @@ export function isCurrentGovtNotification(
     sourcePublishedAt?: unknown
     source_published_at?: unknown
   },
+): boolean
+export function isCurrentGovtNotification(
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
+  now: Date,
+): boolean
+export function isCurrentGovtNotification(
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
   now: Date = new Date(),
 ): boolean {
   const recordType = typeof job.recordType === "string" ? job.recordType : undefined
@@ -114,12 +135,15 @@ export function deriveRecordType(input: { tab?: string | null; title?: string | 
 
 /** Stored type when valid, otherwise derived. */
 export function govtRecordTypeOf(job: {
-  recordType?: string | null
-  record_type?: string | null
-  tab?: string | null
-  title?: string | null
+  recordType?: unknown
+  record_type?: unknown
+  tab?: unknown
+  title?: unknown
 }): GovtRecordType {
-  const stored = job.recordType ?? job.record_type
+  const stored = typeof job.recordType === "string" ? job.recordType : typeof job.record_type === "string" ? job.record_type : undefined
   if (isGovtRecordType(stored)) return stored
-  return deriveRecordType({ tab: job.tab, title: job.title })
+  return deriveRecordType({
+    tab: typeof job.tab === "string" ? job.tab : undefined,
+    title: typeof job.title === "string" ? job.title : undefined,
+  })
 }
