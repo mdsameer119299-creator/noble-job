@@ -45,6 +45,27 @@ export function canEmitJobPosting(t: GovtRecordType): boolean {
   return t === "notification"
 }
 
+/**
+ * A current recruitment notification must have a real source publication date.
+ * This prevents legacy rows with TBA deadlines from being presented as current
+ * simply because they were imported again. One year is deliberately conservative:
+ * long-running recruitment cycles remain eligible, while old legacy records do not.
+ */
+const CURRENT_NOTIFICATION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000
+
+export function isCurrentGovtNotification(
+  job: { recordType?: string | null; record_type?: string | null; tab?: string | null; title?: string | null; sourcePublishedAt?: string | null; source_published_at?: string | null },
+  now: Date = new Date(),
+): boolean {
+  if (govtRecordTypeOf(job) !== "notification") return false
+  const raw = job.sourcePublishedAt ?? job.source_published_at
+  if (!raw) return false
+  const published = new Date(raw)
+  if (Number.isNaN(published.getTime())) return false
+  const age = now.getTime() - published.getTime()
+  return age >= 0 && age <= CURRENT_NOTIFICATION_MAX_AGE_MS
+}
+
 /** `tab` values whose rows are recruitment notifications (not informational). */
 const NOTIFICATION_TABS = new Set(["latest", "railway", "banking", "ssc", "upsc", "state", "psu"])
 
