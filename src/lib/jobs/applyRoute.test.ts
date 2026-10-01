@@ -65,7 +65,7 @@ const abroadJob = (over: Obj = {}) =>
 const govtJob = (over: Obj = {}) =>
   ({
     id: "ibps:clerk-2026", slug: "ibps-clerk-2026", title: "IBPS Clerk Recruitment 2026", org: "IBPS", post: "Clerk", vacancies: "6000",
-    vacanciesStated: "6000", ageRange: "20-28 years", tab: "banking", status: "active", lastDate: "30 Sep 2026",
+    vacanciesStated: "6000", ageRange: "20-28 years", tab: "banking", status: "active", lastDate: "30 Oct 2026",
     officialUrl: "https://www.ibps.in/careers/clerk-2026.pdf", applyUrl: "https://ibpsonline.ibps.in/apply", sourcePublishedAt: "2026-08-10T00:00:00.000Z",
     location: "All India", state: "", qualification: "Any Graduate", salary: "", ...over,
   }) as unknown as GovtJob
