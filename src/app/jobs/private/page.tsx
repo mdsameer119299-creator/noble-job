@@ -10,7 +10,7 @@ import { AiMatchingSidebar } from '@/components/jobs/AiMatchingSidebar'
 import { EmailAlertForm } from '@/components/jobs/EmailAlertForm'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
 
-export const revalidate = 3600
+export const dynamic = "force-dynamic"
 
 type SP = { searchParams: Promise<Record<string, string | string[] | undefined>> }
 
