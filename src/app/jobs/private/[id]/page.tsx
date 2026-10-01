@@ -17,6 +17,8 @@ import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
 
+export const dynamic = "force-dynamic"
+
 interface Props { params: Promise<{ id: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
