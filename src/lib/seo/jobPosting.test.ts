@@ -185,7 +185,7 @@ const govtJob = (over: Obj = {}): GovtJob =>
     ageRange: "20-28 years",
     tab: "banking",
     status: "active",
-    lastDate: "30 Sep 2026",
+    lastDate: "30 Oct 2026",
     officialUrl: "https://www.ibps.in/careers/clerk-2026.pdf",
     applyUrl: "https://ibpsonline.ibps.in/apply",
     sourcePublishedAt: "2026-08-10T00:00:00.000Z",
@@ -688,7 +688,7 @@ test("govt recruitment notification with a valid date → JobPosting", () => {
   const p = asObj(buildGovtJobPosting(govtJob(), govtHelpers))
   assert.equal(p["@type"], "JobPosting")
   assert.equal(p.datePosted, "2026-08-10T00:00:00.000Z")
-  assert.equal(p.validThrough, "2026-09-30T18:29:59.000Z")
+  assert.equal(p.validThrough, "2026-10-30T18:29:59.000Z")
 })
 test("govt description is built from STORED fields only — never the generated overview", () => {
   const p = asObj(buildGovtJobPosting(govtJob(), govtHelpers))
