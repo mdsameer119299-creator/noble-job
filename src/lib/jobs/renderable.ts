@@ -39,6 +39,7 @@ import {
   type Provenance,
 } from "./provenance"
 import { applyRouteFor, isGenuineApplyRoute } from "./applyRoute"
+import { govtRecordTypeOf, isCurrentGovtNotification } from "./govt/recordType"
 import { plainTextOf } from "../seo/jobPostingDescription"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
@@ -237,7 +238,8 @@ export function isActionableJob(rec: JobLike | null | undefined, board: Renderab
   if (!rec || !isRenderableJob(rec, board)) return false
   const c = board === "govt" ? { ...rec, board: "govt" } : rec
   if (!(isGenuine(c) && isOpen(c, now))) return false
-  return board === "govt" || isGenuineApplyRoute(applyRouteFor(board, rec))
+  if (board === "govt") return govtRecordTypeOf(rec) === "notification" && isCurrentGovtNotification(rec)
+  return isGenuineApplyRoute(applyRouteFor(board, rec))
 }
 
 /** Keep only actionable records (order preserved). */
