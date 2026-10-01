@@ -698,7 +698,7 @@ test("govt description is built from STORED fields only — never the generated 
   assert.ok(d.includes("<li>Post: Clerk</li>"))
   assert.ok(d.includes("<li>Vacancies: 6000</li>"))
   assert.ok(d.includes("<li>Qualification: Any Graduate</li>"))
-  assert.ok(d.includes("<li>Last date to apply: 30 Sep 2026</li>"))
+  assert.ok(d.includes("<li>Last date to apply: 30 Oct 2026</li>"))
 })
 test("govt: a synthesized display vacancy count is never cited (only vacanciesStated is)", () => {
   const d = String(asObj(buildGovtJobPosting(govtJob({ vacancies: "12,345", vacanciesStated: undefined }), govtHelpers)).description)
@@ -713,8 +713,8 @@ test("govt: a synthesized display vacancy count is never cited (only vacanciesSt
 test("govt: too few stored facts for a complete description → NO JobPosting", () => {
   const bare = { vacanciesStated: undefined, qualification: "", salary: "-", lastDate: "TBA", ageRange: "-", fee: "-", location: "All India", state: "" }
   assert.equal(buildGovtJobPosting(govtJob(bare), govtHelpers), null)
-  assert.equal(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026" }), govtHelpers), null, "two facts are not enough")
-  assert.notEqual(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026", vacanciesStated: "6000" }), govtHelpers), null)
+  assert.equal(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Oct 2026" }), govtHelpers), null, "two facts are not enough")
+  assert.notEqual(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Oct 2026", vacanciesStated: "6000" }), govtHelpers), null)
   assert.equal(buildGovtFactsDescription({ org: "", post: "Clerk", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "organisation is required")
   assert.equal(buildGovtFactsDescription({ org: "IBPS", post: "", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "post is required")
 })
