@@ -247,6 +247,28 @@ export function filterActionable<T extends JobLike>(list: readonly T[] | null | 
   return (list ?? []).filter(j => isActionableJob(j, board))
 }
 
+/**
+ * Renderable, genuine and currently open — WITHOUT requiring an application
+ * route. This is deliberately looser than `isActionableJob`: it is for surfaces
+ * (the homepage "Latest Jobs" grid) that may honestly display a genuine
+ * sourced/aggregated/curated listing — informational, no on-site Apply — side by
+ * side with a genuine employer-owned opening. It must never admit a SYNTHETIC or
+ * UNCLASSIFIED row (that is what `isGenuine` already guards against), so a demo
+ * listing or an unverifiable claim still never appears. Government rows keep
+ * their own stricter `isActionableJob` gate (current-notification freshness) —
+ * this predicate is for private / WFH / abroad only.
+ */
+export function isListableJob(rec: JobLike | null | undefined, board: RenderableBoard, now: Date = new Date()): boolean {
+  if (board === "govt") return isActionableJob(rec, board, now)
+  if (!rec || !isRenderableJob(rec, board)) return false
+  return isGenuine(rec) && isOpen(rec, now)
+}
+
+/** Keep only listable records (order preserved) — see `isListableJob`. */
+export function filterListable<T extends JobLike>(list: readonly T[] | null | undefined, board: RenderableBoard): T[] {
+  return (list ?? []).filter(j => isListableJob(j, board))
+}
+
 /* ------------------------------------------------------------------ */
 /* Third-party live cards (Himalayas)                                  */
 /* ------------------------------------------------------------------ */

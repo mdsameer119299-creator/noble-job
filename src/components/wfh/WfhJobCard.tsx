@@ -1,11 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import type { WfhJob } from '@/types/wfhJob'
 import { WfhSkillTags } from './WfhSkillTags'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
-import { ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
-import { hasVerifiedTrust, isGenuine } from '@/lib/jobs/provenance'
-import { displayValue } from '@/lib/jobs/renderable'
+import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
+import { classifyProvenance, hasVerifiedTrust, isGenuine } from '@/lib/jobs/provenance'
+import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
+import { applyStateFor } from '@/lib/jobs/applyRoute'
+import { ApplicationModal } from '@/components/jobs/ApplicationModal'
 
 interface WfhJobCardProps {
   job: WfhJob
@@ -15,8 +18,26 @@ interface WfhJobCardProps {
 export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
   const isArchived = job.jobStatus === 'ARCHIVED_JOB'
   const genuine = isGenuine(job)
+  // Same gate as the Private board's JobCard: only a currently-open, genuine,
+  // EMPLOYER-OWNED job (never a sample, never an aggregated/sourced listing)
+  // may show "Apply Now" directly on the card. Everything else keeps the
+  // existing "View Details" control, which still opens the detail modal where
+  // the honest apply state (employer / external / sample / closed / listing)
+  // is shown via the same `applyStateFor` + `ApplyButton`.
+  const isSample = classifyProvenance(job) === 'SYNTHETIC'
+  const apply = applyStateFor('wfh', job, job.company)
+  const canApply = isActiveStatus(job.jobStatus) && !isSample && apply.kind === 'employer' && isActionableJob(job, 'wfh')
+  const [applyOpen, setApplyOpen] = useState(false)
+  const [applied, setApplied] = useState(false)
 
   return (
+    // ApplicationModal is portaled (renders into document.body) but a portal's
+    // click events still bubble through the REACT tree, not the DOM tree — so if
+    // the modal were a child of this onClick'd article, clicking inside it (a
+    // form field, its own close button) would also fire onClick(job) and pop the
+    // detail modal open on top of it. Rendered as a SIBLING in a fragment instead,
+    // so it is outside this article's event-bubbling path entirely.
+    <>
     <article className="wfh-job-card" onClick={() => onClick(job)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onClick(job) }}>
       <div className="wfh-job-card__head">
@@ -85,14 +106,37 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
                   hasVerifiedTrust(job) ? 'Verified' : '',
                 ].filter(Boolean).join(' · ')}
         </span>
-        <button
-          type="button"
-          className={`wfh-job-card__cta${isArchived ? ' wfh-job-card__cta--archived' : ''}`}
-          onClick={e => { e.stopPropagation(); onClick(job) }}
-        >
-          View Details
-        </button>
+        {canApply ? (
+          <button
+            type="button"
+            className="wfh-job-card__cta"
+            disabled={applied}
+            onClick={e => { e.stopPropagation(); setApplyOpen(true) }}
+          >
+            {applied ? 'Applied ✓' : 'Apply Now →'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`wfh-job-card__cta${isArchived ? ' wfh-job-card__cta--archived' : ''}`}
+            onClick={e => { e.stopPropagation(); onClick(job) }}
+          >
+            View Details
+          </button>
+        )}
       </div>
     </article>
+
+    <ApplicationModal
+      open={applyOpen}
+      onClose={() => setApplyOpen(false)}
+      jobId={job.id}
+      board="wfh"
+      title={job.title}
+      company={job.company}
+      salary={job.salary}
+      onApplied={() => setApplied(true)}
+    />
+    </>
   )
 }

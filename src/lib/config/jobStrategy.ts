@@ -59,9 +59,16 @@ export function nonGenuineListingLabel(j: Classifiable): string {
   return classifyProvenance(j) === "SYNTHETIC" ? SAMPLE_LISTING_LABEL : UNVERIFIED_LISTING_LABEL
 }
 
-/** A status counts as an "active opening" only when not archived. */
+/**
+ * A status counts as an "active opening" only when not archived. FAIL CLOSED: a
+ * `jobStatus` value outside the three known statuses (legacy data, a future
+ * migration, a stray string) is not treated as active — and, critically, must
+ * never throw. `JOB_STATUS_META[status]` on an unknown key is `undefined`;
+ * reading `.isActive` off that would crash the card's render.
+ */
 export function isActiveStatus(status?: JobStatus): boolean {
-  return status ? JOB_STATUS_META[status].isActive : true
+  if (!status) return true
+  return JOB_STATUS_META[status]?.isActive ?? false
 }
 
 /**
