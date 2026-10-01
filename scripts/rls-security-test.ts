@@ -308,6 +308,110 @@ async function main() {
       return { count: r.count }
     }))
 
+  // ===================== users.role / users.status privilege-escalation regression (2026-10-01) =====================
+  // Exploit originally reproduced by the production-readiness audit of commit
+  // 36cc9bb: the pre-fix `users_own` policy (FOR ALL, no WITH CHECK) let any
+  // authenticated candidate/employer directly UPDATE their own `role`/`status`
+  // to 'admin'/'active' — immediately satisfying is_admin() and fully
+  // defeating the admin-review gate this entire suite otherwise proves.
+  // Fixed by 20261001000001_fix_users_role_escalation.sql: `users_own` is
+  // replaced with a SELECT-only self-access policy, and
+  // freeze_moderation_columns() is extended to also protect users.role/status
+  // as defense in depth.
+
+  check("TEST 16: candidate cannot self-promote role to admin (the originally-reproduced exploit)", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`UPDATE public.users SET role = 'admin', status = 'active' WHERE id = ${AUTH_UID.candidateA}`
+      return { count: r.count }
+    }))
+
+  // Fresh, never-activated accounts (status defaults to 'pending' via
+  // handle_new_auth_user()) isolate a pure status-only mutation attempt,
+  // independent of TEST 16/18's role change on an already-active account.
+  const pendingCandidateUid = "00000000-0000-0000-0000-00000000c901"
+  const pendingEmployerUid = "00000000-0000-0000-0000-00000000e901"
+  await sql`
+    INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+      (${pendingCandidateUid}, 'pending-candidate@test.local', '{"role":"candidate","first_name":"Pending","last_name":"Cand"}'::jsonb),
+      (${pendingEmployerUid}, 'pending-employer@test.local', '{"role":"employer","company_name":"Pending Employer Co"}'::jsonb)
+    ON CONFLICT (id) DO NOTHING`
+
+  check("TEST 17: a never-activated candidate cannot self-activate status (pending -> active)", "DENY",
+    await probeUpdate("authenticated", pendingCandidateUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingCandidateUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 18: employer cannot self-promote role to admin", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.employerA, async (tx) => {
+      const r = await tx`UPDATE public.users SET role = 'admin', status = 'active' WHERE id = ${AUTH_UID.employerA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 19: a never-activated employer cannot self-activate status (pending -> active)", "DENY",
+    await probeUpdate("authenticated", pendingEmployerUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingEmployerUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 20: a forged attempt to self-suspend/re-mutate status on an already-active candidate is still denied (not a role-change special case)", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.candidateB, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'suspended' WHERE id = ${AUTH_UID.candidateB}`
+      return { count: r.count }
+    }))
+
+  // is_admin() must read false for an ordinary candidate both before and
+  // after every escalation attempt above (none of which persisted, since
+  // probeUpdate always rolls back — this re-confirms in a fresh probe).
+  await (async () => {
+    let isAdminValue: unknown
+    const { error } = await as("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`SELECT is_admin() AS v`
+      isAdminValue = r[0]?.v
+    })
+    check("TEST 21: is_admin() remains false for an ordinary candidate after escalation attempts", "DENY", {
+      allowed: Boolean(isAdminValue),
+      rows: isAdminValue ? 1 : 0,
+      error,
+    })
+  })()
+
+  check("TEST 22: candidate CAN still update their own legitimate profile field (candidates.first_name) — the fix does not break candidate profile editing", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`UPDATE public.candidates SET first_name = 'Updated' WHERE id = ${candidateA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 23: employer CAN still update their own legitimate profile field (employers.company_name) — the fix does not break employer profile editing", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.employerA, async (tx) => {
+      const r = await tx`UPDATE public.employers SET company_name = 'Updated Co' WHERE id = ${employerA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 24: a genuine admin CAN legitimately change another user's role/status (activating the pending employer)", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.admin, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingEmployerUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 25: service_role CAN still perform required backend updates to users.status (mirrors the real OTP email-verification flow)", "ALLOW",
+    await probeUpdate("service_role", pendingCandidateUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active', email_verified = true WHERE id = ${pendingCandidateUid}`
+      return { count: r.count }
+    }))
+
+  // Candidate-visibility RLS (the recursion-fixed path) must still work after
+  // this change: an employer with a genuine approved/shared application can
+  // still read the candidate's profile directly from `candidates` — and the
+  // mere fact every query in this script, including this one and the plain
+  // `candidates` reads threaded through probeSelect elsewhere, executed
+  // without a Postgres "infinite recursion detected in policy" error is
+  // itself the proof that no recursion was reintroduced by this migration
+  // (it touches only `users`, which no candidate/application policy queries).
+  check("TEST 26: employer can still read an approved candidate's profile directly (candidate-visibility RLS / recursion fix unaffected)", "ALLOW",
+    await probeSelect("authenticated", AUTH_UID.employerA, (tx) =>
+      tx`SELECT * FROM public.candidates WHERE id = ${candidateA}`))
+
   console.log(`\nRLS security tests: ${passed} passed, ${failed} failed\n`)
   await sql.end()
   if (failed > 0) process.exit(1)
