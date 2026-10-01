@@ -69,6 +69,8 @@ export interface Classifiable {
   source?: string | null
   board?: string | null
   jobStatus?: string | null
+  recordType?: string | null
+  record_type?: string | null
   /** snake_case alias from raw Supabase rows. */
   job_status?: string | null
   /**
