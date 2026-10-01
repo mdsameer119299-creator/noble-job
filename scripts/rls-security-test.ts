@@ -308,6 +308,245 @@ async function main() {
       return { count: r.count }
     }))
 
+  // ===================== users.role / users.status privilege-escalation regression (2026-10-01) =====================
+  // Exploit originally reproduced by the production-readiness audit of commit
+  // 36cc9bb: the pre-fix `users_own` policy (FOR ALL, no WITH CHECK) let any
+  // authenticated candidate/employer directly UPDATE their own `role`/`status`
+  // to 'admin'/'active' — immediately satisfying is_admin() and fully
+  // defeating the admin-review gate this entire suite otherwise proves.
+  // Fixed by 20261001000001_fix_users_role_escalation.sql: `users_own` is
+  // replaced with a SELECT-only self-access policy, and
+  // freeze_moderation_columns() is extended to also protect users.role/status
+  // as defense in depth.
+
+  check("TEST 16: candidate cannot self-promote role to admin (the originally-reproduced exploit)", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`UPDATE public.users SET role = 'admin', status = 'active' WHERE id = ${AUTH_UID.candidateA}`
+      return { count: r.count }
+    }))
+
+  // Fresh, never-activated accounts (status defaults to 'pending' via
+  // handle_new_auth_user()) isolate a pure status-only mutation attempt,
+  // independent of TEST 16/18's role change on an already-active account.
+  const pendingCandidateUid = "00000000-0000-0000-0000-00000000c901"
+  const pendingEmployerUid = "00000000-0000-0000-0000-00000000e901"
+  await sql`
+    INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+      (${pendingCandidateUid}, 'pending-candidate@test.local', '{"role":"candidate","first_name":"Pending","last_name":"Cand"}'::jsonb),
+      (${pendingEmployerUid}, 'pending-employer@test.local', '{"role":"employer","company_name":"Pending Employer Co"}'::jsonb)
+    ON CONFLICT (id) DO NOTHING`
+
+  check("TEST 17: a never-activated candidate cannot self-activate status (pending -> active)", "DENY",
+    await probeUpdate("authenticated", pendingCandidateUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingCandidateUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 18: employer cannot self-promote role to admin", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.employerA, async (tx) => {
+      const r = await tx`UPDATE public.users SET role = 'admin', status = 'active' WHERE id = ${AUTH_UID.employerA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 19: a never-activated employer cannot self-activate status (pending -> active)", "DENY",
+    await probeUpdate("authenticated", pendingEmployerUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingEmployerUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 20: a forged attempt to self-suspend/re-mutate status on an already-active candidate is still denied (not a role-change special case)", "DENY",
+    await probeUpdate("authenticated", AUTH_UID.candidateB, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'suspended' WHERE id = ${AUTH_UID.candidateB}`
+      return { count: r.count }
+    }))
+
+  // is_admin() must read false for an ordinary candidate both before and
+  // after every escalation attempt above (none of which persisted, since
+  // probeUpdate always rolls back — this re-confirms in a fresh probe).
+  await (async () => {
+    let isAdminValue: unknown
+    const { error } = await as("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`SELECT is_admin() AS v`
+      isAdminValue = r[0]?.v
+    })
+    check("TEST 21: is_admin() remains false for an ordinary candidate after escalation attempts", "DENY", {
+      allowed: Boolean(isAdminValue),
+      rows: isAdminValue ? 1 : 0,
+      error,
+    })
+  })()
+
+  check("TEST 22: candidate CAN still update their own legitimate profile field (candidates.first_name) — the fix does not break candidate profile editing", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.candidateA, async (tx) => {
+      const r = await tx`UPDATE public.candidates SET first_name = 'Updated' WHERE id = ${candidateA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 23: employer CAN still update their own legitimate profile field (employers.company_name) — the fix does not break employer profile editing", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.employerA, async (tx) => {
+      const r = await tx`UPDATE public.employers SET company_name = 'Updated Co' WHERE id = ${employerA}`
+      return { count: r.count }
+    }))
+
+  check("TEST 24: a genuine admin CAN legitimately change another user's role/status (activating the pending employer)", "ALLOW",
+    await probeUpdate("authenticated", AUTH_UID.admin, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active' WHERE id = ${pendingEmployerUid}`
+      return { count: r.count }
+    }))
+
+  check("TEST 25: service_role CAN still perform required backend updates to users.status (mirrors the real OTP email-verification flow)", "ALLOW",
+    await probeUpdate("service_role", pendingCandidateUid, async (tx) => {
+      const r = await tx`UPDATE public.users SET status = 'active', email_verified = true WHERE id = ${pendingCandidateUid}`
+      return { count: r.count }
+    }))
+
+  // Candidate-visibility RLS (the recursion-fixed path) must still work after
+  // this change: an employer with a genuine approved/shared application can
+  // still read the candidate's profile directly from `candidates` — and the
+  // mere fact every query in this script, including this one and the plain
+  // `candidates` reads threaded through probeSelect elsewhere, executed
+  // without a Postgres "infinite recursion detected in policy" error is
+  // itself the proof that no recursion was reintroduced by this migration
+  // (it touches only `users`, which no candidate/application policy queries).
+  check("TEST 26: employer can still read an approved candidate's profile directly (candidate-visibility RLS / recursion fix unaffected)", "ALLOW",
+    await probeSelect("authenticated", AUTH_UID.employerA, (tx) =>
+      tx`SELECT * FROM public.candidates WHERE id = ${candidateA}`))
+
+  // ===================== TEST 27: defense-in-depth trigger, isolated from the SELECT-only RLS layer (2026-10-01) =====================
+  // TEST 16/18 already prove the exploit is denied TODAY. But today it is
+  // denied by the PRIMARY layer alone (users_select_own grants no UPDATE at
+  // all to `authenticated`, so RLS filters the row out before any trigger
+  // ever fires). That leaves an open question: does freeze_moderation_columns()
+  // actually work as independent defense-in-depth, or would it be a no-op if
+  // some future migration ever re-opened a self-service UPDATE policy on
+  // `users`? This test isolates exactly that: it temporarily grants
+  // `authenticated` an UPDATE-capable policy on their own `users` row INSIDE
+  // A SINGLE TRANSACTION THAT ALWAYS ROLLS BACK, then attempts the same two
+  // escalations through that hypothetical policy. Only the trigger stands
+  // between the attempt and success here.
+  //
+  // Nothing here touches supabase/migrations/*.sql, the permanent schema, or
+  // survives past this one transaction: the temporary policy is created (as
+  // the unrestricted table-owner connection, before switching into the
+  // `authenticated` role) and dropped automatically the instant the
+  // transaction aborts -- the exact same rollback-always pattern the `as()`
+  // helper above uses for every other probe in this file. This never runs
+  // anywhere but TEST_DATABASE_URL (the disposable local Postgres instance).
+  await (async () => {
+    // Role-escalation target: an already-active candidate (role genuinely
+    // changes candidate -> admin). Status-escalation target: the SAME
+    // never-activated candidate fixture TEST 17 uses (status genuinely
+    // changes pending -> active). Using a row whose current value already
+    // equals the target value would make the UPDATE a harmless no-op --
+    // freeze_moderation_columns() only raises when `to_jsonb(NEW) -> col
+    // IS DISTINCT FROM to_jsonb(OLD) -> col`, i.e. the value actually
+    // changes -- so each attempt below is a genuine value change.
+    const roleTestUid = AUTH_UID.candidateA
+    const statusTestUid = pendingCandidateUid
+    let preRole: string | undefined, postRole: string | undefined
+    let preStatus: string | undefined, postStatus: string | undefined
+    let roleAttemptRows = 0, roleAttemptError: string | undefined
+    let statusAttemptRows = 0, statusAttemptError: string | undefined
+    let isAdminAfter: unknown
+
+    try {
+      await sql.begin(async (tx) => {
+        const beforeRole = await tx`SELECT role FROM public.users WHERE id = ${roleTestUid}`
+        preRole = beforeRole[0]?.role
+        const beforeStatus = await tx`SELECT status FROM public.users WHERE id = ${statusTestUid}`
+        preStatus = beforeStatus[0]?.status
+
+        // Step 3: temporarily grant self-UPDATE -- created as the table
+        // owner, before any role switch, so it has privilege to do so.
+        await tx.unsafe(`
+          CREATE POLICY temp_test_users_update_own ON public.users
+            FOR UPDATE TO authenticated
+            USING (auth.uid() = id)
+            WITH CHECK (auth.uid() = id)
+        `)
+
+        // Step 5-6: role escalation as the candidate. The temp policy above
+        // WOULD permit this at the RLS layer (same row, WITH CHECK only
+        // checks `id`) -- only the trigger can still stop it. Each attempt
+        // runs inside its own SAVEPOINT: a Postgres error aborts the
+        // enclosing transaction for every later statement until rolled
+        // back, so without a savepoint one rejected UPDATE would poison
+        // the is_admin() check and the final readback, not just itself.
+        try {
+          const r = await tx.savepoint(async (sp) => {
+            await sp.unsafe(`SET LOCAL ROLE authenticated`)
+            await sp.unsafe(`SET LOCAL request.jwt.claim.role = 'authenticated'`)
+            await sp.unsafe(`SET LOCAL request.jwt.claim.sub = '${roleTestUid}'`)
+            return await sp`UPDATE public.users SET role = 'admin' WHERE id = ${roleTestUid}`
+          })
+          roleAttemptRows = r.count
+        } catch (e: any) {
+          roleAttemptError = String(e?.message ?? e)
+        }
+
+        // Step 7-8: status escalation, attempted independently as the
+        // never-activated candidate (pending -> active is a real change),
+        // also in its own savepoint.
+        try {
+          const r = await tx.savepoint(async (sp) => {
+            await sp.unsafe(`SET LOCAL ROLE authenticated`)
+            await sp.unsafe(`SET LOCAL request.jwt.claim.role = 'authenticated'`)
+            await sp.unsafe(`SET LOCAL request.jwt.claim.sub = '${statusTestUid}'`)
+            return await sp`UPDATE public.users SET status = 'active' WHERE id = ${statusTestUid}`
+          })
+          statusAttemptRows = r.count
+        } catch (e: any) {
+          statusAttemptError = String(e?.message ?? e)
+        }
+
+        // Step 10: is_admin() must still read false for the role-escalation
+        // attacker (still impersonated from the outer transaction's own
+        // SET LOCAL, which the per-attempt SAVEPOINTs above do not affect
+        // since each SET LOCAL ROLE was issued inside, and scoped to, its
+        // own now-rolled-back-or-finished savepoint -- so re-assert the
+        // role explicitly here before checking).
+        await tx.unsafe(`SET LOCAL ROLE authenticated`)
+        await tx.unsafe(`SET LOCAL request.jwt.claim.role = 'authenticated'`)
+        await tx.unsafe(`SET LOCAL request.jwt.claim.sub = '${roleTestUid}'`)
+        const adminCheck = await tx`SELECT is_admin() AS v`
+        isAdminAfter = adminCheck[0]?.v
+
+        // Step 9: re-read as the table owner (RESET ROLE -> not subject to
+        // RLS), proving neither attempted write actually landed.
+        await tx.unsafe(`RESET ROLE`)
+        const afterRole = await tx`SELECT role FROM public.users WHERE id = ${roleTestUid}`
+        postRole = afterRole[0]?.role
+        const afterStatus = await tx`SELECT status FROM public.users WHERE id = ${statusTestUid}`
+        postStatus = afterStatus[0]?.status
+
+        // Step 11: unconditional rollback -- undoes the temporary policy and
+        // the (expected-to-have-failed) UPDATE attempts in one step.
+        throw { __rollback: true }
+      })
+    } catch (e: any) {
+      if (!e?.__rollback) throw e
+    }
+
+    const roleBlocked = roleAttemptRows === 0 || !!roleAttemptError
+    const statusBlocked = statusAttemptRows === 0 || !!statusAttemptError
+    const roleUnchanged = postRole === preRole
+    const statusUnchanged = postStatus === preStatus
+
+    check("TEST 27a: freeze_moderation_columns() alone blocks role escalation even with a temporary RLS UPDATE policy granting it", "DENY",
+      { allowed: !roleBlocked, rows: roleAttemptRows, error: roleAttemptError })
+    check("TEST 27b: freeze_moderation_columns() alone blocks status escalation even with a temporary RLS UPDATE policy granting it", "DENY",
+      { allowed: !statusBlocked, rows: statusAttemptRows, error: statusAttemptError })
+    check("TEST 27c: role/status are provably unchanged after both isolated-trigger escalation attempts", "ALLOW",
+      { allowed: roleUnchanged && statusUnchanged, rows: (roleUnchanged && statusUnchanged) ? 1 : 0 })
+    check("TEST 27d: is_admin() remains false for the attacker after both isolated-trigger escalation attempts", "DENY",
+      { allowed: Boolean(isAdminAfter), rows: isAdminAfter ? 1 : 0 })
+
+    console.log(`  [TEST 27 detail] role: pre=${preRole} post=${postRole} (uid ${roleTestUid}) | status: pre=${preStatus} post=${postStatus} (uid ${statusTestUid})`)
+    console.log(`  [TEST 27 detail] role-escalation attempt: ${roleAttemptError ? `REJECTED (${roleAttemptError})` : `rows=${roleAttemptRows}`}`)
+    console.log(`  [TEST 27 detail] status-escalation attempt: ${statusAttemptError ? `REJECTED (${statusAttemptError})` : `rows=${statusAttemptRows}`}`)
+    console.log(`  [TEST 27 detail] is_admin() after attempts: ${isAdminAfter}`)
+  })()
+
   console.log(`\nRLS security tests: ${passed} passed, ${failed} failed\n`)
   await sql.end()
   if (failed > 0) process.exit(1)

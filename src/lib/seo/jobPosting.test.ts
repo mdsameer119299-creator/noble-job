@@ -185,7 +185,7 @@ const govtJob = (over: Obj = {}): GovtJob =>
     ageRange: "20-28 years",
     tab: "banking",
     status: "active",
-    lastDate: "30 Sep 2026",
+    lastDate: "30 Oct 2026",
     officialUrl: "https://www.ibps.in/careers/clerk-2026.pdf",
     applyUrl: "https://ibpsonline.ibps.in/apply",
     sourcePublishedAt: "2026-08-10T00:00:00.000Z",
@@ -688,7 +688,7 @@ test("govt recruitment notification with a valid date → JobPosting", () => {
   const p = asObj(buildGovtJobPosting(govtJob(), govtHelpers))
   assert.equal(p["@type"], "JobPosting")
   assert.equal(p.datePosted, "2026-08-10T00:00:00.000Z")
-  assert.equal(p.validThrough, "2026-09-30T18:29:59.000Z")
+  assert.equal(p.validThrough, "2026-10-30T18:29:59.000Z")
 })
 test("govt description is built from STORED fields only — never the generated overview", () => {
   const p = asObj(buildGovtJobPosting(govtJob(), govtHelpers))
@@ -698,7 +698,7 @@ test("govt description is built from STORED fields only — never the generated 
   assert.ok(d.includes("<li>Post: Clerk</li>"))
   assert.ok(d.includes("<li>Vacancies: 6000</li>"))
   assert.ok(d.includes("<li>Qualification: Any Graduate</li>"))
-  assert.ok(d.includes("<li>Last date to apply: 30 Sep 2026</li>"))
+  assert.ok(d.includes("<li>Last date to apply: 30 Oct 2026</li>"))
 })
 test("govt: a synthesized display vacancy count is never cited (only vacanciesStated is)", () => {
   const d = String(asObj(buildGovtJobPosting(govtJob({ vacancies: "12,345", vacanciesStated: undefined }), govtHelpers)).description)
@@ -713,8 +713,8 @@ test("govt: a synthesized display vacancy count is never cited (only vacanciesSt
 test("govt: too few stored facts for a complete description → NO JobPosting", () => {
   const bare = { vacanciesStated: undefined, qualification: "", salary: "-", lastDate: "TBA", ageRange: "-", fee: "-", location: "All India", state: "" }
   assert.equal(buildGovtJobPosting(govtJob(bare), govtHelpers), null)
-  assert.equal(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026" }), govtHelpers), null, "two facts are not enough")
-  assert.notEqual(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Sep 2026", vacanciesStated: "6000" }), govtHelpers), null)
+  assert.equal(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Oct 2026" }), govtHelpers), null, "two facts are not enough")
+  assert.notEqual(buildGovtJobPosting(govtJob({ ...bare, qualification: "Any Graduate", lastDate: "30 Oct 2026", vacanciesStated: "6000" }), govtHelpers), null)
   assert.equal(buildGovtFactsDescription({ org: "", post: "Clerk", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "organisation is required")
   assert.equal(buildGovtFactsDescription({ org: "IBPS", post: "", vacanciesStated: "10", qualification: "Graduate", lastDate: "30 Sep 2026" }), null, "post is required")
 })
