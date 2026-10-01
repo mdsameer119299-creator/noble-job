@@ -54,11 +54,26 @@ export function canEmitJobPosting(t: GovtRecordType): boolean {
 const CURRENT_NOTIFICATION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000
 
 export function isCurrentGovtNotification(
-  job: { recordType?: string | null; record_type?: string | null; tab?: string | null; title?: string | null; sourcePublishedAt?: string | null; source_published_at?: string | null },
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
   now: Date = new Date(),
 ): boolean {
-  if (govtRecordTypeOf(job) !== "notification") return false
-  const raw = job.sourcePublishedAt ?? job.source_published_at
+  const recordType = typeof job.recordType === "string" ? job.recordType : undefined
+  const record_type = typeof job.record_type === "string" ? job.record_type : undefined
+  const tab = typeof job.tab === "string" ? job.tab : undefined
+  const title = typeof job.title === "string" ? job.title : undefined
+  if (govtRecordTypeOf({ recordType, record_type, tab, title }) !== "notification") return false
+  const raw = typeof job.sourcePublishedAt === "string"
+    ? job.sourcePublishedAt
+    : typeof job.source_published_at === "string"
+      ? job.source_published_at
+      : undefined
   if (!raw) return false
   const published = new Date(raw)
   if (Number.isNaN(published.getTime())) return false
