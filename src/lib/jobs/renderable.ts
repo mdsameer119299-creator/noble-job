@@ -39,7 +39,7 @@ import {
   type Provenance,
 } from "./provenance"
 import { applyRouteFor, isGenuineApplyRoute } from "./applyRoute"
-import { govtRecordTypeOf, isCurrentGovtNotification } from "./govt/recordType"
+import { govtRecordTypeOf, isCurrentGovtNotification } from "../govt/recordType"
 import { plainTextOf } from "../seo/jobPostingDescription"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
