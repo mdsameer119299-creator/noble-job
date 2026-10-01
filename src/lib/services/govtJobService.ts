@@ -108,9 +108,8 @@ export async function getGovtJobsFiltered(filters: GovtJobFilters = {}): Promise
     experiences: Array.from(new Set(pool.map(j => j.experience).filter(Boolean) as string[])).sort(),
   }
 
-  if (filters.category && ["railway", "banking", "ssc", "upsc", "state", "psu"].includes(filters.category)) {
-    list = list.filter(isCurrentGovtNotification)
-  }
+  // This endpoint is the recruitment-job surface; informational records have separate content surfaces.
+  list = list.filter(isCurrentGovtNotification)
 
   return {
     items: list.slice((page - 1) * limit, page * limit),
