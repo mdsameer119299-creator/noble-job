@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { preferLocalInventory } from "@/lib/supabase/useLocalInventory"
+import { isProductionEnvironment, preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
 import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import {
@@ -42,25 +42,26 @@ export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<Abr
   const liveExternal = await getLiveAbroadJobs({ q: filters.q, country: filters.country, category: filters.category })
 
   if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) return liveExternal
     return [...liveExternal, ...local.filter(j => !liveExternal.some(x => x.id === j.id))]
   }
 
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return [...liveExternal, ...local]
+    if (!sb) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
     let q = sb.from("abroad_jobs").select("*").eq("status", "active")
     if (filters.q) q = q.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
     if (filters.country) q = q.ilike("country", `%${filters.country}%`)
     if (filters.category) q = q.eq("category", filters.category)
     q = q.order("posted_at", { ascending: false })
     const { data, error } = await q
-    if (error) return [...liveExternal, ...local]
+    if (error) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
     const dbJobs = sortByStatus(
       applySyntheticVisibility(filterRenderable((data || []) as unknown as AbroadJob[], "abroad"), syntheticVisible),
     )
     return [...liveExternal, ...dbJobs.filter(j => !liveExternal.some(x => x.id === j.id))]
   } catch {
-    return [...liveExternal, ...local]
+    return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
   }
 }
 
@@ -68,10 +69,13 @@ export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
   if (!isValidJobId(id)) return null
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = renderableOrNull(getAbroadJobByIdLocal(id, syntheticVisible), "abroad")
-  if (preferLocalInventory() || !isSupabaseConfigured()) return (await getLiveAbroadJobById(id)) || local
+  if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) return await getLiveAbroadJobById(id)
+    return (await getLiveAbroadJobById(id)) || local
+  }
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return (await getLiveAbroadJobById(id)) || local
+    if (!sb) return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
     const { data } = await sb.from("abroad_jobs").select("*").eq("id", id).maybeSingle()
     if (data) {
       const mapped = renderableOrNull(
@@ -80,8 +84,8 @@ export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
       )
       if (mapped) return mapped
     }
-    return (await getLiveAbroadJobById(id)) || local
+    return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
   } catch {
-    return (await getLiveAbroadJobById(id)) || local
+    return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
   }
 }

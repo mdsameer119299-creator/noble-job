@@ -127,8 +127,13 @@ function toItem(j: FeaturedJobCard, badge?: string): LjItem {
 }
 
 export async function LatestJobsGrid() {
-  // NO EMPTY / FAKE JOBS: every item is a real, actionable record from the gated
-  // services. Nothing is hand-written, and no headline counters are invented.
+  // NO EMPTY / FAKE JOBS: every Private/WFH/Abroad item is a genuine, open record
+  // from the gated services (`getLatestJobCards` -> `isListableJob`) — an
+  // employer-owned opening OR a genuine sourced/informational listing, never a
+  // synthetic/demo row and never a fabricated count. Each item is just an honest
+  // link into the board (no per-item Apply claim here either way — see
+  // ApplyButton on the board's own listing/detail page for the real CTA).
+  // Government items keep their own, stricter current-notification gate below.
   const [privateCards, wfhCards, abroadCards, govtPool] = await Promise.all([
     getLatestJobCards('private', 4),
     getLatestJobCards('wfh', 4),
