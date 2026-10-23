@@ -42,6 +42,19 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return nextWithPathname(request)
   }
 
+  // Public, non-auth pages — every job listing/detail page, city/category page, and
+  // static page; i.e. everything Googlebot and anonymous visitors hit — never need to
+  // know who's signed in. Skip the Supabase auth.getUser() network round-trip for
+  // them entirely instead of discovering "not protected" only after making it: this
+  // previously ran on every single matched request regardless of path, adding a real
+  // round-trip to every anonymous page view and burning serverless compute for
+  // traffic that never touches auth. /auth* is kept in the checked path because it
+  // still needs to know the current user to redirect an already-logged-in visitor
+  // away. See the Oct 2026 SEO recovery audit (Vercel resource-usage findings).
+  const isAuthRoute = path === "/auth" || path.startsWith("/auth/")
+  if (!isProtectedDashboardPath(path) && !isAuthRoute) {
+    return nextWithPathname(request)
+  }
   const supabaseResponse = nextWithPathname(request)
 
   try {
