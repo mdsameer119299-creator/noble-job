@@ -82,6 +82,20 @@ const nextConfig: NextConfig = {
   // ── Redirects ────────────────────────────────────────────
   async redirects() {
     return [
+      // Canonical-host redirect: every canonical tag, robots.txt `Host` directive and
+      // NEXT_PUBLIC_APP_URL already point to https://www.noblejob.in, but nothing
+      // previously enforced that server-side — the apex domain served the full site
+      // directly. Verified live (Oct 2026 SEO recovery audit): Googlebot could reach
+      // and index BOTH hosts independently, with the sitemap itself returning a
+      // different URL count on each host — the GSC "duplicate without user-selected
+      // canonical" / two-sitemaps-read findings. This sends any apex-host request to
+      // the same path on www, permanently, before any other rule is evaluated.
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'noblejob.in' }],
+        destination: 'https://www.noblejob.in/:path*',
+        permanent: true,
+      },
       { source: '/jobs', destination: '/jobs/private', permanent: true },
       { source: '/employer', destination: '/employer/dashboard', permanent: false },
       { source: '/candidate', destination: '/candidate/dashboard', permanent: false },
