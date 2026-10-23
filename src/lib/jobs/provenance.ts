@@ -285,7 +285,7 @@ export function jobDetailHref(
   job: Classifiable & { id?: string | null },
 ): string | null {
   if (!job.id) return null
-  return isIndexable(job) ? `/jobs/${board}/${job.id}` : null
+  return isGenuine(job) ? `/jobs/${board}/${job.id}` : null
 }
 
 /**
