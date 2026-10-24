@@ -121,5 +121,28 @@ test("sanity — an OPEN recruitment's generated overview and FAQs are unchanged
   assert.ok(faqs.some(f => /last date to apply/i.test(f.q)))
 })
 
+test("REGRESSION — a RESULT record's generated Important Dates never includes 'Last Date to Apply' / 'Last Date for Fee Payment'", () => {
+  const { importantDates } = generateGovtArticle(resultJob)
+  assert.ok(!importantDates.some(d => /last date to apply|last date for fee payment/i.test(d.label)), JSON.stringify(importantDates))
+})
+
+test("REGRESSION — ADMIT CARD / ANSWER KEY Important Dates are also free of apply/fee deadlines", () => {
+  for (const job of [admitJob, answerJob]) {
+    const { importantDates } = generateGovtArticle(job)
+    assert.ok(!importantDates.some(d => /last date to apply|last date for fee payment/i.test(d.label)), JSON.stringify(importantDates))
+  }
+})
+
+test("REGRESSION — a RESULT record with no known exam date omits the 'Exam Date: To be announced' placeholder", () => {
+  const { importantDates } = generateGovtArticle(resultJob) // resultJob has no examDate
+  assert.ok(!importantDates.some(d => d.label === "Exam Date"), JSON.stringify(importantDates))
+})
+
+test("sanity — an OPEN recruitment's Important Dates still include 'Last Date to Apply' and a placeholder Exam Date", () => {
+  const { importantDates } = generateGovtArticle(openJob)
+  assert.ok(importantDates.some(d => d.label === "Last Date to Apply"))
+  assert.ok(importantDates.some(d => d.label === "Exam Date"))
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

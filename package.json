@@ -30,6 +30,7 @@
                       "verify:rbac": "node scripts/verify-rbac.mjs",
                       "verify:rls": "node scripts/verify-rls.mjs",
                       "verify:signup": "node scripts/verify-signup-e2e.mjs",
+                      "backfill:govt-lifecycle-copy": "tsx scripts/backfill-govt-lifecycle-copy.ts",
                       "db:apply": "node scripts/apply-supabase-migrations.mjs",
                       "db:apply:migration": "node scripts/apply-migration.mjs",
                       "verify:users": "node scripts/verify-users-table.mjs",

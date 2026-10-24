@@ -31,13 +31,26 @@ function feeBreakup(fee: string): { category: string; amount: string }[] {
   ]
 }
 
+/**
+ * A decided/closed stage (result / admit card / answer key) never gets an
+ * "Last Date to Apply" / "Last Date for Fee Payment" row — the application
+ * window for this record is already over, so those rows are only ever
+ * placeholders ("-"/"Refer Notification") that misstate the record's
+ * lifecycle stage. Likewise "Exam Date: To be announced" is only sensible
+ * for an open/upcoming record; a result/admit/answer record's exam has
+ * already happened (even if the exact date isn't on file), so we omit the
+ * placeholder there rather than imply it hasn't happened yet.
+ */
 function buildDates(job: Partial<GovtJob>): GovtImportantDate[] {
   const d: GovtImportantDate[] = []
-  if (job.startDate) d.push({ label: "Application Start Date", date: job.startDate })
-  d.push({ label: "Last Date to Apply", date: job.lastDate || "Refer Notification" })
-  d.push({ label: "Last Date for Fee Payment", date: job.lastDate || "Refer Notification" })
+  const postApp = isPostApplicationTab(job.tab)
+  if (!postApp) {
+    if (job.startDate) d.push({ label: "Application Start Date", date: job.startDate })
+    d.push({ label: "Last Date to Apply", date: job.lastDate || "Refer Notification" })
+    d.push({ label: "Last Date for Fee Payment", date: job.lastDate || "Refer Notification" })
+  }
   if (job.examDate) d.push({ label: "Exam Date", date: job.examDate })
-  else d.push({ label: "Exam Date", date: "To be announced" })
+  else if (!postApp) d.push({ label: "Exam Date", date: "To be announced" })
   return d
 }
 
