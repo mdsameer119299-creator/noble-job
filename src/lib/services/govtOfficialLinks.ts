@@ -132,6 +132,19 @@ function primaryForTab(tab: GovtJobTab | undefined, urls: ResolvedGovtLinks): Go
   return null
 }
 
+/**
+ * Tabs that represent a decided/closed stage of a recruitment — the written
+ * exam, selection or application window is already over by the time a
+ * result, admit card or answer key exists. A generic "Apply Online" link
+ * next to one of these is misleading (there is nothing left to apply for on
+ * THIS record), so it is omitted for these tabs. Mirrors
+ * isVacancyBearingJob() in govtVacancies.ts, which draws the same "is this an
+ * open recruitment" line for vacancy-count purposes.
+ */
+export function isPostApplicationTab(tab: GovtJobTab | undefined): boolean {
+  return tab === "results" || tab === "admit" || tab === "answer"
+}
+
 /** Standard link buttons for detail page, modal, and sidebars. */
 export function buildGovtJobLinkButtons(job: Partial<GovtJob>): GovtLinkButton[] {
   const urls = resolveGovtJobLinks(job)
@@ -149,7 +162,9 @@ export function buildGovtJobLinkButtons(job: Partial<GovtJob>): GovtLinkButton[]
   if (primary) add(primary)
 
   const rest: GovtLinkButton[] = [
-    { l: "Apply Online", href: urls.applyUrl },
+    // Omit the generic "Apply Online" link for a decided/closed stage
+    // (results / admit card / answer key) — see isPostApplicationTab above.
+    ...(isPostApplicationTab(tab) ? [] : [{ l: "Apply Online", href: urls.applyUrl }]),
     { l: "Download Notification PDF", href: urls.notificationPdf! },
     { l: "Official Website", href: urls.officialUrl },
     { l: "Download Admit Card", href: urls.admitUrl! },

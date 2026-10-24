@@ -9,7 +9,15 @@
  * so every newly-imported notification immediately has a complete SEO page.
  */
 import type { GovtJob, GovtImportantDate, GovtFaq } from "@/types/govtJob"
-import { resolveGovtJobLinks } from "@/lib/services/govtOfficialLinks"
+import { resolveGovtJobLinks, isPostApplicationTab } from "@/lib/services/govtOfficialLinks"
+
+/** Label for the primary action on this record's tab — matches govtOfficialLinks' primaryForTab. */
+function stageNoun(job: Partial<GovtJob>): "result" | "admit card" | "answer key" | null {
+  if (job.tab === "results") return "result"
+  if (job.tab === "admit") return "admit card"
+  if (job.tab === "answer") return "answer key"
+  return null
+}
 
 function feeBreakup(fee: string): { category: string; amount: string }[] {
   const amt = (fee || "").replace(/[^\d]/g, "")
@@ -33,7 +41,53 @@ function buildDates(job: Partial<GovtJob>): GovtImportantDate[] {
   return d
 }
 
+/**
+ * Steps for a decided/closed stage (result / admit card / answer key) — the
+ * application window for THIS record is already over, so these never tell
+ * the candidate to register, pay a fee, or apply before a date. Only
+ * "latest" / "upcoming" (open-recruitment) jobs get the full apply flow
+ * below; everything else gets stage-appropriate, non-actionable-as-apply
+ * steps instead.
+ */
+function buildPostApplicationSteps(job: Partial<GovtJob>): string[] {
+  const title = job.title || "this notification"
+  const { officialUrl, resultUrl, admitUrl, answerUrl } = resolveGovtJobLinks(job)
+  const org = job.org || "the recruiting body"
+
+  if (job.tab === "results") {
+    return [
+      `Visit the official result portal: ${resultUrl || officialUrl}`,
+      `On ${org}'s website, open the result / selection list for ${title}.`,
+      "Check your result using your roll number, registration number or name as asked on the portal.",
+      "Download and save the result PDF or scorecard for your records.",
+      "Refer to the official notification for next steps (document verification, counselling or further stages), if applicable.",
+    ]
+  }
+  if (job.tab === "admit") {
+    return [
+      `Visit the official admit card portal: ${admitUrl || officialUrl}`,
+      `On ${org}'s website, open the admit card section for ${title}.`,
+      "Log in with your registration number and date of birth (or as specified) to download your admit card.",
+      "Carry a printed copy of the admit card along with a valid photo ID to the exam centre.",
+      "Report at the exam centre at the reporting time shown on the admit card.",
+    ]
+  }
+  if (job.tab === "answer") {
+    return [
+      `Visit the official answer key portal: ${answerUrl || officialUrl}`,
+      `On ${org}'s website, open the answer key section for ${title}.`,
+      "Download the provisional or final answer key PDF for your exam set.",
+      "If objections are invited, raise them before the deadline stated in the official notification.",
+      "Refer to the official notification for the final answer key and result schedule.",
+    ]
+  }
+  // Informational-only tabs (syllabus, scholarships, etc.) — no apply flow.
+  return []
+}
+
 function buildHowToApply(job: Partial<GovtJob>): string[] {
+  if (isPostApplicationTab(job.tab)) return buildPostApplicationSteps(job)
+
   const title = job.title || "this recruitment"
   const { applyUrl, officialUrl } = resolveGovtJobLinks(job)
   const feeNote =
@@ -55,11 +109,37 @@ function buildHowToApply(job: Partial<GovtJob>): string[] {
 
 function buildFaqs(job: Partial<GovtJob>): GovtFaq[] {
   const title = job.title || "this recruitment"
-  const { applyUrl } = resolveGovtJobLinks(job)
+  const { applyUrl, resultUrl, admitUrl, answerUrl } = resolveGovtJobLinks(job)
+
+  // A decided/closed stage never gets "last date to apply" / "apply online"
+  // FAQs — those claim an open application window that no longer exists here.
+  const stage = stageNoun(job)
+  const leadFaqs: GovtFaq[] = stage
+    ? [
+        {
+          q: `Is ${title} still open for applications?`,
+          a: `No — this page covers the ${stage} stage, which comes after the application window for this notification has closed. Check the official source below for the current status.`,
+        },
+        {
+          q:
+            stage === "result"
+              ? `How can I check my result for ${title}?`
+              : stage === "admit card"
+              ? `How can I download my admit card for ${title}?`
+              : `How can I download the answer key for ${title}?`,
+          a: `Visit ${
+            stage === "result" ? resultUrl || applyUrl : stage === "admit card" ? admitUrl || applyUrl : answerUrl || applyUrl
+          } and follow the official ${stage} process. Follow the step-by-step section on this page.`,
+        },
+      ]
+    : [
+        { q: `What is the last date to apply for ${title}?`, a: `The last date to submit the online application for ${title} is ${job.lastDate || "mentioned in the official notification"}.` },
+        { q: `How can I apply online for ${title}?`, a: `Apply on the official portal at ${applyUrl} before the last date. Follow the step-by-step “How to Apply” section on this page.` },
+      ]
+
   return [
-    { q: `What is the last date to apply for ${title}?`, a: `The last date to submit the online application for ${title} is ${job.lastDate || "mentioned in the official notification"}.` },
-    { q: `How can I apply online for ${title}?`, a: `Apply on the official portal at ${applyUrl} before the last date. Follow the step-by-step “How to Apply” section on this page.` },
-    { q: `How many vacancies are available?`, a: `A total of ${job.vacancies || "multiple"} vacancies are notified by ${job.org || "the recruiting body"}.` },
+    ...leadFaqs,
+    { q: `How many vacancies ${stage ? "were" : "are"} ${stage ? "notified" : "available"}?`, a: `A total of ${job.vacancies || "multiple"} vacancies ${stage ? "were" : "are"} notified by ${job.org || "the recruiting body"}.` },
     { q: `What is the educational qualification required?`, a: `Candidates must possess ${job.qualification || "the qualification specified in the official notification"} from a recognised board/university.` },
     { q: `What is the application fee?`, a: `The application fee is ${job.fee && job.fee !== "0" ? `₹${job.fee.replace(/[^\d]/g, "")} for General/OBC candidates` : "nil / exempted"}. SC/ST/PwBD and female candidates are usually exempted.` },
     { q: `Is there an age limit?`, a: `Yes, the age limit is ${job.ageRange || "as specified in the notification"}. Age relaxation applies as per government rules.` },
@@ -93,11 +173,15 @@ export function generateGovtArticle(job: Partial<GovtJob>): GeneratedArticle {
   const post = job.post || "various posts"
   const qual = job.qualification || "the prescribed qualification"
 
-  const overview =
-    `${org} has released an official notification for ${title}. ` +
-    `A total of ${vac} vacancies are available for the post of ${post}. ` +
-    `Eligible and interested candidates can apply online before ${job.lastDate || "the last date"}. ` +
-    `Read the complete details on eligibility, age limit, application fee, selection process and important dates below before applying.`
+  const stage = stageNoun(job)
+  const overview = stage
+    ? `${org} has published the ${stage} for ${title}. ` +
+      `A total of ${vac} vacancies were notified for the post of ${post}. ` +
+      `Check the official source below for the current ${stage} status — this stage comes after applications for this notification have already closed.`
+    : `${org} has released an official notification for ${title}. ` +
+      `A total of ${vac} vacancies are available for the post of ${post}. ` +
+      `Eligible and interested candidates can apply online before ${job.lastDate || "the last date"}. ` +
+      `Read the complete details on eligibility, age limit, application fee, selection process and important dates below before applying.`
 
   const eligibility =
     `Candidates applying for ${title} must have passed ${qual} from a recognised board or university. ` +

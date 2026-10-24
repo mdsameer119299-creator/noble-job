@@ -1,14 +1,29 @@
 import type { GovtJob } from "@/types/govtJob"
-import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
+import { buildGovtJobLinkButtons, isPostApplicationTab } from "@/lib/services/govtOfficialLinks"
 import { getGovtHowToApplySteps } from "@/lib/services/govtArticle"
 import { GovtApplyLinkButton } from "./GovtApplyLinkButton"
 
-/** Renders step-by-step apply instructions with a prominent CTA. */
+/**
+ * Section heading per tab — never "How to Apply Online" for a decided/closed
+ * stage (result / admit card / answer key), where there is nothing left to
+ * apply for on this record.
+ */
+function sectionHeading(tab: GovtJob["tab"]): string {
+  if (tab === "results") return "Result"
+  if (tab === "admit") return "Admit Card"
+  if (tab === "answer") return "Answer Key"
+  return "How to Apply Online"
+}
+
+/** Renders step-by-step instructions with a prominent, tab-appropriate CTA. */
 export function GovtHowToApply({ job }: { job: GovtJob }) {
   const steps = getGovtHowToApplySteps(job)
-  const applyLink =
-    buildGovtJobLinkButtons(job).find(l => l.primary) ||
-    buildGovtJobLinkButtons(job).find(l => l.l === "Apply Online")
+  const links = buildGovtJobLinkButtons(job)
+  const applyLink = links.find(l => l.primary) || links.find(l => l.l === "Apply Online")
+  // Only the genuine "Apply Online" primary link opens the save-resume
+  // interceptor; Check Result / Admit Card / Answer Key navigate straight
+  // through — see GovtApplyLinkButton's own doc comment.
+  const intercept = !isPostApplicationTab(job.tab) && applyLink?.l === "Apply Online"
 
   if (!steps.length && !applyLink) return null
 
@@ -36,14 +51,14 @@ export function GovtHowToApply({ job }: { job: GovtJob }) {
           gap: 8,
         }}
       >
-        <span>📝</span> How to Apply Online
+        <span>📝</span> {sectionHeading(job.tab)}
       </h2>
 
       {applyLink && (
         <GovtApplyLinkButton
           href={applyLink.href}
           jobTitle={job.title}
-          intercept
+          intercept={intercept}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -59,7 +74,7 @@ export function GovtHowToApply({ job }: { job: GovtJob }) {
             marginBottom: 18,
           }}
         >
-          Apply Online on Official Portal →
+          {applyLink.l} on Official Portal →
         </GovtApplyLinkButton>
       )}
 
