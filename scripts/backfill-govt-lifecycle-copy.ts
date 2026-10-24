@@ -47,7 +47,7 @@ if (fs.existsSync(envPath)) {
 
 const apply = process.argv.includes("--apply")
 
-type Row = {
+export type BackfillRow = {
   id: string
   title: string | null
   overview: string | null
@@ -56,40 +56,35 @@ type Row = {
   article: string | null
 }
 
+export type BackfillDiff = { id: string; title: string | null; changed: string[] }
+export type BackfillUpdate = { id: string; patch: Record<string, unknown> }
+export type BackfillPlan = { diffs: BackfillDiff[]; updates: BackfillUpdate[] }
+
+/** The ONLY columns this tool is allowed to write. Never extend this list casually. */
+export const BACKFILL_WRITABLE_FIELDS = ["overview", "faqs", "important_dates", "article"] as const
+
 function jsonEq(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-async function main() {
-  const { isSupabaseAdminConfigured } = await import("@/lib/supabase/config")
-  const { supabaseAdmin } = await import("@/lib/supabase/admin")
-  const { mapRow } = await import("@/lib/services/govtRowMapper")
-  const { generateGovtArticle } = await import("@/lib/services/govtArticle")
-
-  if (!isSupabaseAdminConfigured()) {
-    console.error(
-      "[backfill] Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env.local",
-    )
-    process.exitCode = 1
-    return
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("govt_jobs")
-    .select("*")
-    .in("record_type", ["result", "admit_card", "answer_key"])
-
-  if (error) {
-    console.error("[backfill] query failed:", error.message)
-    process.exitCode = 1
-    return
-  }
-
-  const rows = (data ?? []) as Row[]
-  console.log(`[backfill] ${rows.length} result/admit_card/answer_key row(s) found`)
-
-  const diffs: { id: string; title: string | null; changed: string[] }[] = []
-  const updates: { id: string; patch: Record<string, unknown> }[] = []
+/**
+ * Pure diff/patch computation — no I/O, no Supabase. Given the rows as
+ * fetched (whatever extra columns they carry: vacancies, links, last_date,
+ * exam_date, record_type, …) and the real, unmodified `mapRow` +
+ * `generateGovtArticle`, returns ONLY the rows whose regenerated
+ * overview/faqs/important_dates/article differ from what's stored, each
+ * with a patch restricted to exactly those four keys. This is the exact
+ * function `main()` below calls for both the dry-run print and the
+ * `--apply` write, so testing it IS testing the live script's safeguards —
+ * not a reimplementation of them.
+ */
+export function computeBackfillPlan(
+  rows: BackfillRow[],
+  mapRow: (row: Record<string, unknown>) => Parameters<typeof import("@/lib/services/govtArticle").generateGovtArticle>[0],
+  generateGovtArticle: typeof import("@/lib/services/govtArticle").generateGovtArticle,
+): BackfillPlan {
+  const diffs: BackfillDiff[] = []
+  const updates: BackfillUpdate[] = []
 
   for (const row of rows) {
     const mapped = mapRow(row as never)
@@ -118,12 +113,50 @@ async function main() {
     if (changed.length) {
       diffs.push({ id: row.id, title: row.title, changed })
       updates.push({ id: row.id, patch })
-      console.log(`\n--- ${row.id} (${row.title}) ---`)
-      for (const field of changed) {
-        console.log(`  [${field}]`)
-        console.log(`    BEFORE: ${JSON.stringify((row as Record<string, unknown>)[field])}`)
-        console.log(`    AFTER:  ${JSON.stringify(patch[field])}`)
-      }
+    }
+  }
+
+  return { diffs, updates }
+}
+
+async function main() {
+  const { isSupabaseAdminConfigured } = await import("@/lib/supabase/config")
+  const { supabaseAdmin } = await import("@/lib/supabase/admin")
+  const { mapRow } = await import("@/lib/services/govtRowMapper")
+  const { generateGovtArticle } = await import("@/lib/services/govtArticle")
+
+  if (!isSupabaseAdminConfigured()) {
+    console.error(
+      "[backfill] Supabase not configured — set NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env.local",
+    )
+    process.exitCode = 1
+    return
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("govt_jobs")
+    .select("*")
+    .in("record_type", ["result", "admit_card", "answer_key"])
+
+  if (error) {
+    console.error("[backfill] query failed:", error.message)
+    process.exitCode = 1
+    return
+  }
+
+  const rows = (data ?? []) as BackfillRow[]
+  console.log(`[backfill] ${rows.length} result/admit_card/answer_key row(s) found`)
+
+  const { diffs, updates } = computeBackfillPlan(rows, mapRow, generateGovtArticle)
+  const rowById = new Map(rows.map(r => [r.id, r as Record<string, unknown>]))
+  for (const d of diffs) {
+    const row = rowById.get(d.id)!
+    const patch = updates.find(u => u.id === d.id)!.patch
+    console.log(`\n--- ${d.id} (${d.title}) ---`)
+    for (const field of d.changed) {
+      console.log(`  [${field}]`)
+      console.log(`    BEFORE: ${JSON.stringify(row[field])}`)
+      console.log(`    AFTER:  ${JSON.stringify(patch[field])}`)
     }
   }
 
@@ -152,7 +185,14 @@ async function main() {
   console.log(`[backfill] LIVE complete — updated ${okCount}/${updates.length} row(s)`)
 }
 
-main().catch(e => {
-  console.error(e)
-  process.exitCode = 1
-})
+// Only run as a CLI entrypoint (`npx tsx scripts/backfill-govt-lifecycle-copy.ts`
+// / `npm run backfill:govt-lifecycle-copy`) — never when another module
+// (e.g. the mock-DB test) imports `computeBackfillPlan` from this file. Without
+// this guard, importing this file for its pure function would also try to
+// open a Supabase connection as a side effect of module load.
+if (require.main === module) {
+  main().catch(e => {
+    console.error(e)
+    process.exitCode = 1
+  })
+}
