@@ -3,22 +3,24 @@
  * libs, no headless browser) — Hostinger-safe. Provides text extraction, a
  * strict recruitment classifier, and best-effort field extraction.
  */
+import { extractStatedPublishDate } from "./extractPublishedDate"
+
 const UA = "Mozilla/5.0 (compatible; NobleJobBot/1.0; +https://www.noblejob.in)"
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 /** Fetch a PDF and extract its text. Returns "" for scanned/image PDFs or errors. */
 export async function extractPdfText(url: string, timeoutMs = 18000): Promise<string> {
-  try {
-    const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(timeoutMs) })
-    if (!res.ok) return ""
-    const buf = Buffer.from(await res.arrayBuffer())
-    const mod = await import("pdf-parse/lib/pdf-parse.js")
-    const pdf = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string }>
-    const data = await pdf(buf)
-    return (data.text || "").replace(/\s+/g, " ").trim()
-  } catch {
-    return ""
-  }
+    try {
+          const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(timeoutMs) })
+          if (!res.ok) return ""
+          const buf = Buffer.from(await res.arrayBuffer())
+          const mod = await import("pdf-parse/lib/pdf-parse.js")
+          const pdf = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string }>
+          const data = await pdf(buf)
+          return (data.text || "").replace(/\s+/g, " ").trim()
+    } catch {
+          return ""
+    }
 }
 
 // Must contain a genuine recruitment-ADVERTISEMENT phrase (not merely a topic word),
@@ -32,16 +34,37 @@ const EXCLUDE_HEADER = /\b(result|merit list|answer key|corrigend\w*|press relea
 
 /** True only for genuine recruitment advertisements (text-based, classified). */
 export function isRecruitmentPdf(text: string): boolean {
-  if (!text || text.length < 200) return false // empty/scanned → reject
+    if (!text || text.length < 200) return false // empty/scanned → reject
   // Scan the header zone (title + preamble); letterheads can push the doc-type
   // declaration a few hundred chars down, so 900 covers the masthead block.
   if (EXCLUDE_HEADER.test(text.slice(0, 900))) return false // doc type = result/memo/notice/extension/etc.
   return INCLUDE.test(text)
 }
 
+// The organisation's own "No. .../20XX Dated: DD/MM/YYYY" reference line sits
+// in the letterhead/preamble — well before any "last date" / "closing date"
+// application-deadline clause, which only ever appears once the eligibility
+// and application instructions begin. Restricting the scan to this header
+// zone is defense-in-depth on top of extractStatedPublishDate's own deadline
+// guard (see its GUARD note): even if a source ever phrased a deadline with
+// the literal word "dated", it would almost never land this early in the doc.
+const PUBLISH_DATE_HEADER_CHARS = 1000
+
+/**
+   * Pull the advertisement's own source-stated issue/publication date from a
+   * recruitment PDF's extracted text — ONLY when it carries an explicit
+   * "Dated"/"दिनांक" marker in its header zone (see extractStatedPublishDate).
+   * No marker there, no date: never falls back to a closing date, advertisement
+   * number or the current fetch time.
+   */
+export function extractAdvertisementDate(text: string, now?: Date): string | undefined {
+    if (!text) return undefined
+    return extractStatedPublishDate(text.slice(0, PUBLISH_DATE_HEADER_CHARS), now)
+}
+
 function toDisplay(d: number, mo: number, y: number): string | undefined {
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return undefined
-  return `${String(d).padStart(2, "0")} ${MONTHS[mo - 1]} ${y}`
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return undefined
+    return `${String(d).padStart(2, "0")} ${MONTHS[mo - 1]} ${y}`
 }
 
 const monthIdx = (s: string) => MONTHS.findIndex(m => m.toLowerCase() === s.slice(0, 3).toLowerCase())
@@ -50,48 +73,48 @@ const monthIdx = (s: string) => MONTHS.findIndex(m => m.toLowerCase() === s.slic
 const LAST_DATE_LABEL = /(last date|closing date|last day|apply (?:on or )?before|online application(?:s)?(?: closes| last date)?|submission of (?:online )?application|receipt of (?:online )?application|last date for (?:receipt|submission|online))/i
 
 /**
- * Extract a closing date from advertisement text. Anchors on a closing-date
- * label, then reads the next ~90 chars for a numeric (DD/MM/YYYY) or spelled-out
- * ("15 July 2026" / "July 15, 2026") date. Anchoring avoids grabbing unrelated
- * dates (advertisement date, meeting date). Returns "DD Mon YYYY" or undefined.
- */
+   * Extract a closing date from advertisement text. Anchors on a closing-date
+   * label, then reads the next ~90 chars for a numeric (DD/MM/YYYY) or spelled-out
+   * ("15 July 2026" / "July 15, 2026") date. Anchoring avoids grabbing unrelated
+   * dates (advertisement date, meeting date). Returns "DD Mon YYYY" or undefined.
+   */
 function extractLastDate(text: string): string | undefined {
-  const lm = text.match(LAST_DATE_LABEL)
-  if (!lm || lm.index == null) return undefined
-  const win = text.slice(lm.index, lm.index + 90)
-  let m = win.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/)
-  if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return toDisplay(+m[1], +m[2], +y) }
-  m = win.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})[,\s]+(\d{4})/) // 15 July 2026
+    const lm = text.match(LAST_DATE_LABEL)
+    if (!lm || lm.index == null) return undefined
+    const win = text.slice(lm.index, lm.index + 90)
+    let m = win.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/)
+    if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return toDisplay(+m[1], +m[2], +y) }
+    m = win.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})[,\s]+(\d{4})/) // 15 July 2026
   if (m && monthIdx(m[2]) >= 0) return toDisplay(+m[1], monthIdx(m[2]) + 1, +m[3])
-  m = win.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?[,\s]+(\d{4})/) // July 15, 2026
+    m = win.match(/([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?[,\s]+(\d{4})/) // July 15, 2026
   if (m && monthIdx(m[1]) >= 0) return toDisplay(+m[2], monthIdx(m[1]) + 1, +m[3])
-  return undefined
+    return undefined
 }
 
 function clean(s?: string): string | undefined {
-  if (!s) return undefined
-  const t = s.replace(/\s+/g, " ").trim().replace(/[.,;:\-\s]+$/, "")
-  return t.length >= 3 && t.length <= 90 ? t : undefined
+    if (!s) return undefined
+    const t = s.replace(/\s+/g, " ").trim().replace(/[.,;:\-\s]+$/, "")
+    return t.length >= 3 && t.length <= 90 ? t : undefined
 }
 
 export interface RecruitmentFields {
-  advtNo?: string
-  vacancy?: string
-  lastDate?: string
-  post?: string
-  qualification?: string
-  ageRange?: string
+    advtNo?: string
+    vacancy?: string
+    lastDate?: string
+    post?: string
+    qualification?: string
+    ageRange?: string
 }
 
 /** Best-effort field extraction from advertisement text. Missing → undefined. */
 export function parseRecruitmentFields(text: string): RecruitmentFields {
-  // advt number must contain a digit (avoids capturing stray words like "and"/"to").
+    // advt number must contain a digit (avoids capturing stray words like "and"/"to").
   const advtRaw = (text.match(/advertisement\s*(?:no\.?|number|:)\s*((?:[A-Za-z]{1,5}[-\/. ]?)?\d{1,4}(?:[-\/][A-Za-z0-9]{1,6}){0,3})/i) || [])[1]
-  const advtNo = advtRaw && /\d/.test(advtRaw) ? clean(advtRaw) : undefined
-  const vacancy = (text.match(/(?:total\s+(?:no\.?\s*of\s+)?(?:vacanc\w*|posts?)|no\.?\s*of\s+(?:vacanc\w*|posts?))\s*[:\-]?\s*(\d{1,5})\b/i) || [])[1]
-  const lastDate = extractLastDate(text)
-  const post = clean((text.match(/(?:for the posts?\s+of|recruitment\s+(?:of|to the posts?\s+of)|post\s+of|name\s+of\s+(?:the\s+)?post)\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{3,55})/i) || [])[1])
-  const qualification = clean((text.match(/(?:educational\s+)?qualification[s]?\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{8,70})/i) || [])[1])
-  const age = text.match(/age\s*(?:limit)?[^0-9]{0,15}(\d{2})\s*(?:to|-|–|and)\s*(\d{2})\s*years/i)
-  return { advtNo, vacancy, lastDate, post, qualification, ageRange: age ? `${age[1]}-${age[2]} Years` : undefined }
+    const advtNo = advtRaw && /\d/.test(advtRaw) ? clean(advtRaw) : undefined
+    const vacancy = (text.match(/(?:total\s+(?:no\.?\s*of\s+)?(?:vacanc\w*|posts?)|no\.?\s*of\s+(?:vacanc\w*|posts?))\s*[:\-]?\s*(\d{1,5})\b/i) || [])[1]
+    const lastDate = extractLastDate(text)
+    const post = clean((text.match(/(?:for the posts?\s+of|recruitment\s+(?:of|to the posts?\s+of)|post\s+of|name\s+of\s+(?:the\s+)?post)\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{3,55})/i) || [])[1])
+    const qualification = clean((text.match(/(?:educational\s+)?qualification[s]?\s*[:\-]?\s*([A-Za-z][A-Za-z .,/&()'\-]{8,70})/i) || [])[1])
+    const age = text.match(/age\s*(?:limit)?[^0-9]{0,15}(\d{2})\s*(?:to|-|–|and)\s*(\d{2})\s*years/i)
+    return { advtNo, vacancy, lastDate, post, qualification, ageRange: age ? `${age[1]}-${age[2]} Years` : undefined }
 }
