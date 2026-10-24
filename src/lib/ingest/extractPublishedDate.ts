@@ -21,27 +21,47 @@
  * Indian government notices are written DD/MM/YYYY (never MM/DD); the parser
  * assumes that order throughout, matching every sample observed in production
  * (e.g. "31/12/2025", "16/03/2026" — unambiguous day-first dates).
+ *
+ * GUARD (added for issue #46, extending this extractor to free-running PDF
+ * body text where it matters far more than in a short title): the marker must
+ * be the WHOLE WORD "dated" — never the bare word "date", which is exactly
+ * the word used by "Last Date", "Closing Date", "Apply before date" and every
+ * other application-deadline label. A bare "date" alternative would silently
+ * turn "Last Date: 30/04/2026" into a fabricated publish date — precisely the
+ * substitution the ingestion policy forbids. The same applies to the Hindi
+ * "दिनांक" marker: "अंतिम दिनांक" ("last date") is excluded by a negative
+ * lookbehind, and the English marker additionally rejects a handful of other
+ * deadline-adjacent prefixes ("last", "closing", "extended", "revised", "on
+ * or before") a few words before "dated", in case a source ever phrases a
+ * deadline that way.
  */
 
 const DATE_MARKER =
-    /(?:dated|date)\s*[:\-]?\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})|दिनांक\s*[:\-]?\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/gi
+      /(?<!last\s{1,3})(?<!closing\s{1,3})(?<!extended\s{1,3})(?<!revised\s{1,3})(?<!before\s{1,3})\bdated\b\s*[:\-]?\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})|(?<!अंतिम\s{0,3})(?<!अन्तिम\s{0,3})दिनांक\s*[:\-]?\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/gi
 
 const MIN_YEAR = 2015
 
-/** Validate a DD/MM/YYYY triple and return a UTC-midnight ISO string, or undefined. */
-function toIso(dd: string, mm: string, yyyy: string, now: Date): string | undefined {
-    const day = Number(dd)
-    const month = Number(mm)
-    const year = Number(yyyy)
-    if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return undefined
-    if (day < 1 || day > 31 || month < 1 || month > 12) return undefined
-    if (year < MIN_YEAR || year > now.getUTCFullYear() + 1) return undefined
-    const d = new Date(Date.UTC(year, month - 1, day))
-    // Reject impossible calendar dates (e.g. 31/04) by checking the round-trip.
+/**
+     * Validate a DD/MM/YYYY triple and return a UTC-midnight ISO string, or
+     * undefined when the date is out of range, impossible on the calendar, or
+     * further in the future than a short clock-skew allowance. Exported so other
+     * adapters that read an already-structured (non-marker) date field — e.g.
+     * Employment News's own "ISSUED DATE" table column — can validate it with the
+     * exact same conservative rules instead of duplicating them.
+     */
+export function toIso(dd: string, mm: string, yyyy: string, now: Date = new Date()): string | undefined {
+      const day = Number(dd)
+      const month = Number(mm)
+      const year = Number(yyyy)
+      if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return undefined
+      if (day < 1 || day > 31 || month < 1 || month > 12) return undefined
+      if (year < MIN_YEAR || year > now.getUTCFullYear() + 1) return undefined
+      const d = new Date(Date.UTC(year, month - 1, day))
+      // Reject impossible calendar dates (e.g. 31/04) by checking the round-trip.
   if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return undefined
-    // Never a future-dated notice beyond a short clock-skew allowance.
+      // Never a future-dated notice beyond a short clock-skew allowance.
   if (d.getTime() > now.getTime() + 24 * 60 * 60 * 1000) return undefined
-    return d.toISOString()
+      return d.toISOString()
 }
 
 /**
@@ -52,15 +72,15 @@ function toIso(dd: string, mm: string, yyyy: string, now: Date): string | undefi
  * the date is often the last thing in a long notice title.
  */
 export function extractStatedPublishDate(text: string | undefined | null, now: Date = new Date()): string | undefined {
-    if (!text) return undefined
-    DATE_MARKER.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = DATE_MARKER.exec(text))) {
-          const [dd, mm, yyyy] = m[1] !== undefined ? [m[1], m[2], m[3]] : [m[4], m[5], m[6]]
-          const iso = toIso(dd, mm, yyyy, now)
-          if (iso) return iso
-          // Marker matched but the date itself was invalid (e.g. 31/04) — keep
-      // scanning in case the text has more than one dated marker.
-    }
-    return undefined
+      if (!text) return undefined
+      DATE_MARKER.lastIndex = 0
+      let m: RegExpExecArray | null
+      while ((m = DATE_MARKER.exec(text))) {
+              const [dd, mm, yyyy] = m[1] !== undefined ? [m[1], m[2], m[3]] : [m[4], m[5], m[6]]
+              const iso = toIso(dd, mm, yyyy, now)
+              if (iso) return iso
+              // Marker matched but the date itself was invalid (e.g. 31/04) — keep
+        // scanning in case the text has more than one dated marker.
+      }
+      return undefined
 }
