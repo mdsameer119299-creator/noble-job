@@ -7,6 +7,7 @@ import { getGovtJobsLocal, getGovtJobByIdLocal } from "@/lib/services/govtJobLoc
 import { getActiveGovtRows, getGovtJobRow, isServableGovtJob } from "@/lib/services/govtStatsSource"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
+import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
 
 /**
@@ -16,7 +17,11 @@ import type { GovtJob, GovtJobTab, GovtContentItem } from "@/types/govtJob"
  */
 export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): Promise<GovtJob[]> {
   const pool = await getActiveGovtRows()
-  return getGovtJobsLocal(tab, state, pool)
+  const list = getGovtJobsLocal(tab, state, pool)
+  if (["latest", "railway", "banking", "ssc", "upsc", "state", "psu"].includes(tab)) {
+    return list.filter(isCurrentGovtNotification)
+  }
+  return list
 }
 
 // Single-row fetch (indexed slug/id lookup) instead of loading the full active
@@ -102,6 +107,9 @@ export async function getGovtJobsFiltered(filters: GovtJobFilters = {}): Promise
     departments: Array.from(new Set(pool.map(j => j.department || j.org))).sort(),
     experiences: Array.from(new Set(pool.map(j => j.experience).filter(Boolean) as string[])).sort(),
   }
+
+  // This endpoint is the recruitment-job surface; informational records have separate content surfaces.
+  list = list.filter(isCurrentGovtNotification)
 
   return {
     items: list.slice((page - 1) * limit, page * limit),

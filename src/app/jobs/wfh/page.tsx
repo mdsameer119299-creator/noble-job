@@ -7,6 +7,8 @@ import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
 import '@/styles/wfh-jobs.css'
 
+export const dynamic = "force-dynamic"
+
 type SP = { searchParams: Promise<Record<string, string | string[] | undefined>> }
 
 // Page-1 metadata comes from layout.tsx; page>=2 and filter/keyword params → noindex,follow.

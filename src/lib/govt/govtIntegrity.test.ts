@@ -10,7 +10,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { canEmitJobPosting, deriveRecordType, govtRecordTypeOf, isGovtRecordType, GOVT_RECORD_TYPES } from "./recordType"
+import { canEmitJobPosting, deriveRecordType, govtRecordTypeOf, isGovtRecordType, isCurrentGovtNotification, GOVT_RECORD_TYPES } from "./recordType"
 import { resolveGovtPool, type GovtPoolSnapshot } from "../services/govtPoolResolver"
 import { planIngestWrites } from "../services/govtIngestPlan"
 import { govtLastKnownGoodMaxAgeMs, isGovtSeedFallbackAllowed } from "../config/govtSeedPolicy"
@@ -68,6 +68,13 @@ async function main() {
   })
   await test("ONLY a notification may emit JobPosting", () => {
     for (const t of GOVT_RECORD_TYPES) assert.equal(canEmitJobPosting(t), t === "notification", t)
+  })
+  await test("current government notifications require a recent source publication date", () => {
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: "2026-09-01T00:00:00.000Z" }, now), true)
+    assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: "2025-01-01T00:00:00.000Z" }, now), false)
+    assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: null }, now), false)
+    assert.equal(isCurrentGovtNotification({ recordType: "result", sourcePublishedAt: "2026-09-01T00:00:00.000Z" }, now), false)
   })
 
   /* -------------------------- stale-seed protection -------------------------- */

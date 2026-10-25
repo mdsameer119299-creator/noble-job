@@ -8,6 +8,7 @@
  * URL missing.
  */
 import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import type { SitemapJobBoard, SitemapJobRow } from "@/lib/seo/sitemapPolicy"
 
@@ -35,7 +36,7 @@ export const SITEMAP_ROWS_PER_BOARD = 2000
  * same switch the detail pages use.
  */
 export function detailPagesServeDatabase(): boolean {
-  return !useLocalInventoryOnly()
+  return !useLocalInventoryOnly() && isSupabaseConfigured()
 }
 
 /**

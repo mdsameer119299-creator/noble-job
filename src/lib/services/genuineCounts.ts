@@ -13,6 +13,7 @@
 import { readSitemapJobRows, SITEMAP_ROWS_PER_BOARD } from "@/lib/seo/sitemapJobs"
 import { jobRowsToSitemapEntries, type SitemapJobBoard } from "@/lib/seo/sitemapPolicy"
 import { filterActionable } from "@/lib/jobs/renderable"
+import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 
 const BOARDS: SitemapJobBoard[] = ["private", "wfh", "abroad"]
 
@@ -39,7 +40,7 @@ export async function getGenuineJobCounts(opts: { govt?: boolean } = {}): Promis
   try {
     if (opts.govt === false) throw new Error("govt not requested")
     const { getActiveGovtRows } = await import("@/lib/services/govtStatsSource")
-    govt = filterActionable(await getActiveGovtRows(), "govt").length
+    govt = filterActionable((await getActiveGovtRows()).filter(isCurrentGovtNotification), "govt").length
   } catch {
     govt = 0
   }

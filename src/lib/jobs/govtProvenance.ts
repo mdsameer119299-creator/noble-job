@@ -17,6 +17,8 @@ export function govtClassifiable(job: GovtJob): Classifiable {
     provenance: undefined,
     jobStatus: job.jobStatus,
     status: job.status,
+    recordType: job.recordType,
+    record_type: job.record_type,
     officialUrl: job.officialUrl,
     official_url: job.official_url,
     notificationUrl: job.notificationUrl,

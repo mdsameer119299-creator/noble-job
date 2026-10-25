@@ -45,6 +45,63 @@ export function canEmitJobPosting(t: GovtRecordType): boolean {
   return t === "notification"
 }
 
+/**
+ * A current recruitment notification must have a real source publication date.
+ * This prevents legacy rows with TBA deadlines from being presented as current
+ * simply because they were imported again. One year is deliberately conservative:
+ * long-running recruitment cycles remain eligible, while old legacy records do not.
+ */
+const CURRENT_NOTIFICATION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000
+
+export function isCurrentGovtNotification(
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
+): boolean
+export function isCurrentGovtNotification(
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
+  now: Date,
+): boolean
+export function isCurrentGovtNotification(
+  job: {
+    recordType?: unknown
+    record_type?: unknown
+    tab?: unknown
+    title?: unknown
+    sourcePublishedAt?: unknown
+    source_published_at?: unknown
+  },
+  now: Date = new Date(),
+): boolean {
+  const recordType = typeof job.recordType === "string" ? job.recordType : undefined
+  const record_type = typeof job.record_type === "string" ? job.record_type : undefined
+  const tab = typeof job.tab === "string" ? job.tab : undefined
+  const title = typeof job.title === "string" ? job.title : undefined
+  if (govtRecordTypeOf({ recordType, record_type, tab, title }) !== "notification") return false
+  const raw = typeof job.sourcePublishedAt === "string"
+    ? job.sourcePublishedAt
+    : typeof job.source_published_at === "string"
+      ? job.source_published_at
+      : undefined
+  if (!raw) return false
+  const published = new Date(raw)
+  if (Number.isNaN(published.getTime())) return false
+  const age = now.getTime() - published.getTime()
+  return age >= 0 && age <= CURRENT_NOTIFICATION_MAX_AGE_MS
+}
+
 /** `tab` values whose rows are recruitment notifications (not informational). */
 const NOTIFICATION_TABS = new Set(["latest", "railway", "banking", "ssc", "upsc", "state", "psu"])
 
@@ -78,12 +135,15 @@ export function deriveRecordType(input: { tab?: string | null; title?: string | 
 
 /** Stored type when valid, otherwise derived. */
 export function govtRecordTypeOf(job: {
-  recordType?: string | null
-  record_type?: string | null
-  tab?: string | null
-  title?: string | null
+  recordType?: unknown
+  record_type?: unknown
+  tab?: unknown
+  title?: unknown
 }): GovtRecordType {
-  const stored = job.recordType ?? job.record_type
+  const stored = typeof job.recordType === "string" ? job.recordType : typeof job.record_type === "string" ? job.record_type : undefined
   if (isGovtRecordType(stored)) return stored
-  return deriveRecordType({ tab: job.tab, title: job.title })
+  return deriveRecordType({
+    tab: typeof job.tab === "string" ? job.tab : undefined,
+    title: typeof job.title === "string" ? job.title : undefined,
+  })
 }

@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
+import { isProductionEnvironment, preferLocalInventory, shouldFallbackToLocal } from "@/lib/supabase/useLocalInventory"
 import { BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
 import { renderablePrivateInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus } from "@/lib/data/inventoryPagination"
@@ -62,6 +62,10 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     : await getLivePrivateJobs({ q, location, type: jType })
 
   if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) {
+      const start = (page - 1) * limit
+      return { jobs: liveExternal.slice(start, start + limit), total: liveExternal.length, page, totalPages: Math.ceil(liveExternal.length / limit), counts: countByStatus(liveExternal) }
+    }
     if (liveExternal.length) {
       const local = localResult()
       const combined = [...liveExternal, ...local.jobs.filter(j => !liveExternal.some(x => x.id === j.id))]
@@ -79,7 +83,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return localResult()
+    if (!sb) return isProductionEnvironment() ? { jobs: liveExternal, total: liveExternal.length, page, totalPages: Math.ceil(liveExternal.length / limit), counts: countByStatus(liveExternal) } : localResult()
 
     let query = sb.from("jobs").select("*").eq("status", "active")
 
@@ -108,7 +112,9 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
           counts: countByStatus(liveExternal),
         }
       }
-      return localResult()
+      return isProductionEnvironment()
+        ? { jobs: [], total: 0, page, totalPages: 0, counts: { all: 0, live: 0, verified: 0, archived: 0 } }
+        : localResult()
     }
 
     const pool = sortByStatus(
@@ -141,7 +147,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
         counts: countByStatus(liveExternal),
       }
     }
-    return localResult()
+    return isProductionEnvironment() ? { jobs: [], total: 0, page, totalPages: 0, counts: { all: 0, live: 0, verified: 0, archived: 0 } } : localResult()
   }
 }
 
@@ -149,10 +155,13 @@ export async function getJobById(id: string): Promise<Job | null> {
   if (!isValidJobId(id)) return null
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = renderableOrNull(getPrivateJobByIdLocal(id, syntheticVisible), "private")
-  if (preferLocalInventory() || !isSupabaseConfigured()) return (await getLivePrivateJobById(id)) || local
+  if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) return await getLivePrivateJobById(id)
+    return (await getLivePrivateJobById(id)) || local
+  }
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return (await getLivePrivateJobById(id)) || local
+    if (!sb) return isProductionEnvironment() ? await getLivePrivateJobById(id) : (await getLivePrivateJobById(id)) || local
     const { data, error } = await withTimeout(sb.from("jobs").select("*").eq("id", id).maybeSingle(), 8000)
     if (error) {
       console.error("[jobService:getJobById] live query returned an error:", error.message)
@@ -168,6 +177,6 @@ export async function getJobById(id: string): Promise<Job | null> {
     return (await getLivePrivateJobById(id)) || local
   } catch (err) {
     logQueryFallback("getJobById", err)
-    return (await getLivePrivateJobById(id)) || local
+    return isProductionEnvironment() ? await getLivePrivateJobById(id) : (await getLivePrivateJobById(id)) || local
   }
 }

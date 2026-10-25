@@ -16,6 +16,8 @@ import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderabl
 import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
 import { JobActionBar } from '@/components/jobs/JobActionBar'
 
+export const dynamic = "force-dynamic"
+
 interface Props { params: Promise<{ id: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

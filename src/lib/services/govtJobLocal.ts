@@ -5,6 +5,7 @@
 import { GOVT_JOBS } from "@/lib/data/govtData"
 import { sumGovtVacancies } from "@/lib/data/govtVacancies"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import type { GovtJob, GovtJobTab } from "@/types/govtJob"
 
 const SECTOR_MATCHERS: Partial<Record<GovtJobTab, (j: GovtJob) => boolean>> = {
@@ -35,6 +36,9 @@ export function getGovtJobsLocal(tab: GovtJobTab = "latest", state?: string, poo
   }
   if (state && state !== "All India") {
     list = list.filter(j => j.state === state || j.location === state)
+  }
+  if (["latest", "railway", "banking", "ssc", "upsc", "state", "psu"].includes(tab)) {
+    list = list.filter(isCurrentGovtNotification)
   }
   // Remove jobs whose application window has closed based on lastDate.
   // status === "expired" catches DB-flagged jobs; isGovtJobExpired catches

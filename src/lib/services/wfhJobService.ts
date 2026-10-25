@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from "@/lib/supabase/config"
-import { preferLocalInventory } from "@/lib/supabase/useLocalInventory"
+import { isProductionEnvironment, preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
 import { filterRenderable, isValidJobId, renderableOrNull } from "@/lib/jobs/renderable"
 import {
@@ -53,19 +53,20 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
   const liveExternal = await getLiveWfhJobs({ q: filters.q, type: filters.type })
 
   if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) return liveExternal
     return [...liveExternal, ...local.filter(j => !liveExternal.some(x => x.id === j.id))]
   }
 
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return [...liveExternal, ...local]
+    if (!sb) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
     let q = sb.from("wfh_jobs").select("*").eq("status", "active")
     if (filters.q) q = q.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%,description.ilike.%${filters.q}%`)
     if (filters.cat && filters.cat !== "all") q = q.eq("cat", filters.cat)
     if (filters.sort === "latest") q = q.order("posted_at", { ascending: false })
     else if (filters.sort === "applicants") q = q.order("applicants", { ascending: false })
     const { data, error } = await q
-    if (error) return [...liveExternal, ...local]
+    if (error) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
 
     let dbJobs = sortByStatus(
       applySyntheticVisibility(filterRenderable((data || []) as unknown as WfhJob[], "wfh"), syntheticVisible),
@@ -75,7 +76,7 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
     }
     return [...liveExternal, ...dbJobs.filter(j => !liveExternal.some(x => x.id === j.id))]
   } catch {
-    return [...liveExternal, ...local]
+    return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
   }
 }
 
@@ -83,10 +84,13 @@ export async function getWfhJobById(id: string): Promise<WfhJob | null> {
   if (!isValidJobId(id)) return null
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = renderableOrNull(getWfhJobByIdLocal(id, syntheticVisible), "wfh")
-  if (preferLocalInventory() || !isSupabaseConfigured()) return (await getLiveWfhJobById(id)) || local
+  if (preferLocalInventory() || !isSupabaseConfigured()) {
+    if (isProductionEnvironment()) return await getLiveWfhJobById(id)
+    return (await getLiveWfhJobById(id)) || local
+  }
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return (await getLiveWfhJobById(id)) || local
+    if (!sb) return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
     const { data } = await sb.from("wfh_jobs").select("*").eq("id", id).maybeSingle()
     if (data) {
       const mapped = renderableOrNull(
@@ -95,8 +99,8 @@ export async function getWfhJobById(id: string): Promise<WfhJob | null> {
       )
       if (mapped) return mapped
     }
-    return (await getLiveWfhJobById(id)) || local
+    return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
   } catch {
-    return (await getLiveWfhJobById(id)) || local
+    return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
   }
 }

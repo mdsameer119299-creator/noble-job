@@ -6,6 +6,7 @@ import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
+import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 
 export interface GovtHubStatItem {
   key: string
@@ -15,7 +16,7 @@ export interface GovtHubStatItem {
 }
 
 export async function getGovtHubStats(opts?: { slug?: string }): Promise<GovtHubStatItem[]> {
-  const all = await getActiveGovtRows()
+  const all = (await getActiveGovtRows()).filter(isCurrentGovtNotification)
   const jobs = opts?.slug ? all.filter(j => jobMatchesCategorySlug(j, opts.slug!)) : all
   // Vacancies: real, parseable counts on recruitment tabs only (latest/upcoming).
   const vacancies = sumRealVacancies(jobs.filter(isVacancyBearingJob))
