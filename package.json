@@ -71,6 +71,7 @@
                       "test:himalayas-wfh": "tsx src/lib/services/himalayasWfhIngest.test.ts",
                       "test:himalayas-private": "tsx src/lib/services/himalayasService.test.ts",
                       "test:card-apply-gating": "tsx src/lib/jobs/cardApplyGating.test.ts",
+                      "test:location-pill": "tsx src/components/jobs/TruncatedLocationPill.test.ts",
                       "test:extract-published-date": "tsx src/lib/ingest/extractPublishedDate.test.ts",
                       "test:pdf-dates": "tsx src/lib/ingest/pdf.test.ts",
                       "test:employment-news-dates": "tsx src/lib/ingest/adapters/employmentNews.test.ts",

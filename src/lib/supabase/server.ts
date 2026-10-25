@@ -16,7 +16,20 @@ export async function createClient(): Promise<ServerSupabaseClient | null> {
   if (!isSupabaseConfigured()) {
     return null
   }
-  const cookieStore = await cookies()
+  let cookieStore: Awaited<ReturnType<typeof cookies>>
+  try {
+    cookieStore = await cookies()
+  } catch {
+    // cookies() throws when called outside a request scope — e.g. while a
+    // route/metadata file (such as /sitemap.xml, which sets `revalidate` and
+    // is pre-rendered at build time) is being statically generated. There is
+    // no real HTTP request to read a session from in that case, so this
+    // mirrors the "not configured" branch above: callers already treat a
+    // null client as "no session available" and fall back to their
+    // cookie-less/local path (see jobService.ts's getJobs/getJobById) instead
+    // of the build failing with DYNAMIC_SERVER_USAGE.
+    return null
+  }
   return createServerClient<ApplicationGateDatabase>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

@@ -7,6 +7,7 @@ import{classifyProvenance,isGenuine}from'@/lib/jobs/provenance'
 import{isActionableJob,displayValue}from'@/lib/jobs/renderable'
 import{applyStateFor}from'@/lib/jobs/applyRoute'
 import{ApplicationModal}from'@/components/jobs/ApplicationModal'
+import{TruncatedLocationPill}from'@/components/jobs/TruncatedLocationPill'
 interface AbroadJobCardProps{job:AbroadJob;onClick:(j:AbroadJob)=>void}
 export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
   const isArchived=job.jobStatus==='ARCHIVED_JOB'
@@ -20,6 +21,8 @@ export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
   const canApply=isActiveStatus(job.jobStatus)&&!isSample&&apply.kind==='employer'&&isActionableJob(job,'abroad')
   const[applyOpen,setApplyOpen]=useState(false)
   const[applied,setApplied]=useState(false)
+  const countryValue=displayValue(job.country)
+  const locationValue=displayValue(job.location)
   return(
     <>
     <div onClick={()=>onClick(job)} style={{background:'#fff',borderRadius:14,border:'1.5px solid #e2e8f0',padding:'16px 18px',cursor:'pointer',transition:'all .2s',boxShadow:'0 2px 10px rgba(3,105,161,.06)'}} className="hover:shadow-card-hover hover:-translate-y-0.5">
@@ -37,7 +40,12 @@ export function AbroadJobCard({job,onClick}:AbroadJobCardProps){
         </div>
       </div>
       <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:10}}>
-        {[{i:'🌍',v:displayValue(job.country)},{i:'📍',v:displayValue(job.location)},{i:'💰',v:displayValue(job.salary)},{i:'📊',v:displayValue(job.experience)}].filter(t=>t.v).map((t,i)=>(
+        {/* Country/location get a truncating/expandable pill — same overflow fix as
+            JobCard (see TruncatedLocationPill's doc comment): a long "/" or ","
+            joined list of countries no longer stretches the card. */}
+        {countryValue && <TruncatedLocationPill icon="🌍" value={countryValue} background="#e0f2fe" color="#0369a1" />}
+        {locationValue && <TruncatedLocationPill icon="📍" value={locationValue} background="#e0f2fe" color="#0369a1" />}
+        {[{i:'💰',v:displayValue(job.salary)},{i:'📊',v:displayValue(job.experience)}].filter(t=>t.v).map((t,i)=>(
           <span key={i} style={{background:'#e0f2fe',color:'#0369a1',padding:'4px 10px',borderRadius:18,fontSize:12,fontWeight:600}}>{t.i} {t.v}</span>
         ))}
       </div>

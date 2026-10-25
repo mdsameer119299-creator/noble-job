@@ -10,6 +10,7 @@ import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
 import { applyStateFor } from '@/lib/jobs/applyRoute'
+import { TruncatedLocationPill } from './TruncatedLocationPill'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
 
@@ -35,6 +36,7 @@ export function JobCard({ job, onSave }: JobCardProps) {
   const similarHref = `/jobs/private${job.cat ? `?category=${encodeURIComponent(job.cat)}` : ''}`
   const [applyOpen, setApplyOpen] = useState(false)
   const [applied, setApplied] = useState(false)
+  const locationValue = displayValue(job.location)
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', padding: '18px 20px', transition: 'all .2s', boxShadow: '0 2px 12px rgba(24,71,212,.06)' }}
       className="hover:shadow-card-hover hover:-translate-y-0.5">
@@ -70,8 +72,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {/* Location gets its own truncating/expandable pill: a Himalayas live job's
+            location can be a long "/"-joined list of eligible countries (see
+            TruncatedLocationPill's doc comment) that would otherwise overflow the
+            card as one unbroken pill. */}
+        {locationValue && <TruncatedLocationPill icon="📍" value={locationValue} />}
         {[
-          { icon: '📍', label: displayValue(job.location) },
           { icon: '💼', label: displayValue(job.type || job.job_type) },
           { icon: '📊', label: displayValue(job.exp) },
           { icon: '💰', label: displayValue(job.salary || formatSalary((job as any).salary_min, (job as any).salary_max)) },

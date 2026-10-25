@@ -163,11 +163,15 @@ export function AiEmployerTeaser() {
                 boxShadow: '0 20px 60px rgba(0,0,0,.2)',
                 position: 'relative', zIndex: 2,
               }}>
-                {/* Card header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                {/* Card header. The names/scores below are a static illustration of how
+                    the feature presents a match, not a live query against real candidate
+                    data — labelled as such so this never reads as a genuine result set
+                    (see: no fabricated jobs/counts/records, applies to candidate data too). */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <span style={{ fontFamily: '"Playfair Display", serif', fontSize: 17, fontWeight: 800, color: '#0d1f4e', letterSpacing: '-.01em' }}>Top Matched Candidates</span>
                   <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}>AI Match Score</span>
                 </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, marginBottom: 14 }}>Example preview — illustrative, not a live search result</div>
 
                 {/* Candidate rows */}
                 {[
