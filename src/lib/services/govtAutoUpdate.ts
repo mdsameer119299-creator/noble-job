@@ -17,7 +17,7 @@ import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { slugify, deriveStateSlugFromText } from "@/lib/config/govtTaxonomy"
 import { deriveRecordType } from "@/lib/govt/recordType"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
-import { planIngestWrites, type ExistingGovtRow } from "@/lib/services/govtIngestPlan"
+import { planIngestWrites, type ExistingGovtRow, type IngestPlan, type PlanEntry } from "@/lib/services/govtIngestPlan"
 import { parseRealDate } from "@/lib/seo/jobPostingRules"
 import { ADAPTERS, enabledAdapters } from "@/lib/ingest/registry"
 import type { SourceAdapter, RawNotification } from "@/lib/ingest/types"
@@ -111,7 +111,7 @@ export function normalise(raw: RawNotification, adapter: SourceAdapter): Persist
   }
 }
 
-interface PersistResult { published: number; inserted: number; updated: number; unchanged: number; error?: string }
+interface PersistResult { published: number; inserted: number; updated: number; unchanged: number; datesBackfilled?: number; error?: string }
 
 /** Rows of `govt_jobs` we need to compare against, fetched in id chunks. */
 async function loadExistingRows(ids: string[]): Promise<ExistingGovtRow[]> {
@@ -143,9 +143,36 @@ async function loadExistingRows(ids: string[]): Promise<ExistingGovtRow[]> {
  * only where it is still NULL — it is never overwritten and never stamped "now".
  * If the record-integrity columns do not exist yet (migration not applied) the
  * write is retried without them, so ingestion keeps working either side of it.
+ *
+ * IMPORTANT: this backfill pass runs over BOTH `plan.writes` and
+ * `plan.unchanged` — not writes alone. `contentHash()` never includes
+ * `publishedAt`, so a row ingested before source-dated extraction existed
+ * (title/org/post/vacancies/lastDate/officialUrl/notificationPdf all
+ * unchanged since) hashes identically on a later run and is classified
+ * "unchanged" by `planIngestWrites`, skipping the upsert entirely. Without
+ * also covering `plan.unchanged` here, such a row's `source_published_at`
+ * would never be set no matter how many times ingestion re-runs — confirmed
+ * (2026-10-25): every one of the 133 currently-active notification rows
+ * already has a non-null `content_hash` from pre-date-extraction ingestion,
+ * so this is not a hypothetical edge case, it is the default case for the
+ * very first run after this code ships.
  */
+type PlannedEntry = PersistEntry & PlanEntry
+
+/**
+ * Pure (no I/O): which entries from this run's `IngestPlan` are candidates
+ * for a `source_published_at` backfill — both written AND unchanged rows,
+ * each only if it actually carries a `sourcePublishedAt`. Exported so the
+ * "unchanged rows must still be considered" fix has direct, no-mock test
+ * coverage (persist()'s actual Supabase calls are intentionally untested —
+ * see the file header — so this is the testable seam for that bug).
+ */
+export function datesNeedingBackfill<E extends PlannedEntry>(plan: IngestPlan<E>): E[] {
+    return [...plan.writes.map(w => w.entry), ...plan.unchanged].filter(e => !!e.sourcePublishedAt)
+}
+
 async function persist(entries: PersistEntry[]): Promise<PersistResult> {
-    const none: PersistResult = { published: 0, inserted: 0, updated: 0, unchanged: 0 }
+    const none: PersistResult = { published: 0, inserted: 0, updated: 0, unchanged: 0, datesBackfilled: 0 }
     if (!isSupabaseAdminConfigured() || entries.length === 0) return none
     try {
           const { supabaseAdmin } = await import("@/lib/supabase/admin")
@@ -154,7 +181,29 @@ async function persist(entries: PersistEntry[]): Promise<PersistResult> {
                   entries.map(e => ({ ...e, id: e.job.id })),
                   existing,
                 )
-          if (!plan.writes.length) return { ...none, unchanged: plan.unchanged.length }
+
+      // Backfill source_published_at for every candidate this run saw —
+      // written or not — never overwriting an existing value. See the doc
+      // comment above; candidate selection itself is the pure, directly
+      // tested `datesNeedingBackfill`.
+      const backfillDates = async (): Promise<number> => {
+              let n = 0
+              for (const entry of datesNeedingBackfill(plan)) {
+                        const { error: dateErr } = await supabaseAdmin
+                          .from("govt_jobs")
+                          .update({ source_published_at: entry.sourcePublishedAt } as never)
+                          .eq("id", entry.job.id)
+                          .is("source_published_at", null)
+                        if (dateErr) { if (!isMissingColumnError(dateErr)) console.warn(`[govtAutoUpdate] source_published_at skipped for ${entry.job.id}: ${dateErr.message}`) }
+                        else n++
+              }
+              return n
+      }
+
+      if (!plan.writes.length) {
+              const datesBackfilled = await backfillDates()
+              return { ...none, unchanged: plan.unchanged.length, datesBackfilled }
+      }
 
       const rows = plan.writes.map(({ entry: { job: j, sourceId, hash }, contentChangedAt, recordType }) => ({
               id: j.id, slug: j.slug, title: j.title, org: j.org, short: j.short, post: j.post,
@@ -182,19 +231,11 @@ async function persist(entries: PersistEntry[]): Promise<PersistResult> {
                   return { ...none, unchanged: plan.unchanged.length, error: error.message }
           }
 
-      // Real source publication dates — set only where still NULL, never overwritten.
-      for (const { entry } of plan.writes) {
-              if (!entry.sourcePublishedAt) continue
-              const { error: dateErr } = await supabaseAdmin
-                .from("govt_jobs")
-                .update({ source_published_at: entry.sourcePublishedAt } as never)
-                .eq("id", entry.job.id)
-                .is("source_published_at", null)
-              if (dateErr && !isMissingColumnError(dateErr)) console.warn(`[govtAutoUpdate] source_published_at skipped for ${entry.job.id}: ${dateErr.message}`)
-      }
+      // Real source publication dates — covers written AND unchanged rows (see doc comment above).
+      const datesBackfilled = await backfillDates()
 
       const inserted = plan.writes.filter(w => w.isNew).length
-          return { published: plan.writes.length, inserted, updated: plan.writes.length - inserted, unchanged: plan.unchanged.length }
+          return { published: plan.writes.length, inserted, updated: plan.writes.length - inserted, unchanged: plan.unchanged.length, datesBackfilled }
     } catch (e) {
           const msg = (e as Error).message
           console.error(`[govtAutoUpdate] persist threw: ${msg}`)
