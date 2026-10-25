@@ -181,5 +181,58 @@ test("datesNeedingBackfill() excludes unchanged AND written rows that have no da
     assert.equal(datesNeedingBackfill(plan).length, 0, "neither entry has a date; none should be a backfill candidate")
 })
 
+/* ── 2026-10-25 (item 1 follow-up): additional edge cases for datesNeedingBackfill() ── */
+
+test("datesNeedingBackfill() combines unchanged-with-date AND written-with-date candidates from the SAME run, ignoring a dateless unchanged row alongside them", () => {
+    // "stale" = unchanged-since-before-date-extraction, now backfill-eligible (the core bug).
+    const staleWithoutDate = normalise(raw({ externalId: "stale", publishedAt: undefined }), adapter("mppsc"))
+    const staleWithDate = normalise(raw({ externalId: "stale", publishedAt: "2026-09-01T00:00:00.000Z" }), adapter("mppsc"))
+    // "fresh" = brand-new row this run, also carries a date.
+    const fresh = normalise(raw({ externalId: "fresh", publishedAt: "2026-09-15T00:00:00.000Z" }), adapter("hpsc"))
+    // "noise" = unchanged, but genuinely never had a date (e.g. ibps/uppsc) — must not appear.
+    const noise = normalise(raw({ externalId: "noise", publishedAt: undefined }), adapter("uppsc"))
+
+    const existing: ExistingGovtRow[] = [
+          { id: staleWithDate.job.id, content_hash: staleWithoutDate.hash },
+          { id: noise.job.id, content_hash: noise.hash },
+        ]
+    const plan = planIngestWrites(
+          [
+                  { ...staleWithDate, id: staleWithDate.job.id },
+                  { ...fresh, id: fresh.job.id },
+                  { ...noise, id: noise.job.id },
+                ],
+          existing,
+        )
+    assert.equal(plan.unchanged.length, 2, "both stale and noise are unchanged; fresh is a write")
+    assert.equal(plan.writes.length, 1)
+
+    const candidates = datesNeedingBackfill(plan)
+    const ids = candidates.map(c => c.job.id).sort()
+    assert.deepEqual(ids, [fresh.job.id, staleWithDate.job.id].sort(), `expected exactly the two dated rows (one unchanged, one written), got: ${JSON.stringify(ids)}`)
+})
+
+test("datesNeedingBackfill() covers an UPDATED (changed, not brand-new) row — not just a fresh insert", () => {
+    const before = normalise(raw({ externalId: "upd", title: "Old Title", publishedAt: undefined }), adapter("mppsc"))
+    const after = normalise(raw({ externalId: "upd", title: "New Title (vacancy count revised)", publishedAt: "2026-09-20T00:00:00.000Z" }), adapter("mppsc"))
+    assert.notEqual(before.hash, after.hash, "the title change must actually change the hash, or this isn't testing the update path")
+
+    const existing: ExistingGovtRow[] = [{ id: after.job.id, content_hash: before.hash }]
+    const plan = planIngestWrites([{ ...after, id: after.job.id }], existing)
+    assert.equal(plan.writes.length, 1)
+    assert.equal(plan.writes[0].isNew, false, "this must be classified as an update, not an insert, to exercise the distinct path")
+
+    const candidates = datesNeedingBackfill(plan)
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].sourcePublishedAt, "2026-09-20T00:00:00.000Z")
+})
+
+test("datesNeedingBackfill() treats an empty-string sourcePublishedAt as absent (defensive — normalise()/parseRealDate() should never produce one, but the filter itself must not be fooled by falsy-but-truthy-looking values)", () => {
+    const entry = normalise(raw({ externalId: "defensive", publishedAt: "2026-09-01T00:00:00.000Z" }), adapter("mppsc"))
+    const corrupted = { ...entry, id: entry.job.id, sourcePublishedAt: "" }
+    const plan = { writes: [], unchanged: [corrupted] }
+    assert.equal(datesNeedingBackfill(plan).length, 0, "an empty-string sourcePublishedAt must not be treated as a real date")
+})
+
 console.log(`\ningest-run status tests: ${passed} passed, ${failed} failed`)
 if (failed > 0) process.exitCode = 1

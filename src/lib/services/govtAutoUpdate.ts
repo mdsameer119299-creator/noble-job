@@ -228,7 +228,15 @@ async function persist(entries: PersistEntry[]): Promise<PersistResult> {
           }
           if (error) {
                   console.error(`[govtAutoUpdate] persist upsert failed: ${error.message}`)
-                  return { ...none, unchanged: plan.unchanged.length, error: error.message }
+                  // The upsert itself failed, but `plan.unchanged` rows never touched that
+                  // upsert — their date backfill is independent and must not be skipped just
+                  // because the write side of this run errored. (Any plan.writes candidates
+                  // this also offers to backfillDates() are harmless here too: the per-row
+                  // `.is("source_published_at", null)` guard means a row whose own upsert
+                  // never landed either matches zero rows — a no-op — or, if it already
+                  // existed with content now stale, still only has its date column touched.)
+                  const datesBackfilled = await backfillDates()
+                  return { ...none, unchanged: plan.unchanged.length, datesBackfilled, error: error.message }
           }
 
       // Real source publication dates — covers written AND unchanged rows (see doc comment above).
