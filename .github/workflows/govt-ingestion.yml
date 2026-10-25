@@ -58,6 +58,7 @@ jobs:
           fi
 
       - name: Run ingestion
+        id: ingest
         run: npx tsx scripts/run-ingestion.ts
 
       - name: Slack failure notification (optional)
@@ -90,4 +91,42 @@ jobs:
                 owner: context.repo.owner, repo: context.repo.repo,
                 title, body, labels: ["ingestion-failure"],
               });
+            }
+
+      # Fires independently of the step above: a run can be an overall success
+      # (jobs still written/unchanged) while one specific adapter has been
+      # failing for 3+ consecutive attempted runs — that case never satisfies
+      # `failure()`, since the script only exits non-zero on a SYSTEMIC
+      # failure (see run-ingestion.ts). `always()` so it still runs even when
+      # the step above DID fire. Each adapter gets its own identifiable issue
+      # (title includes the adapter id; dedup matches on id, not just the
+      # shared label), so unrelated adapters never get merged into one thread.
+      - name: Open/append persistent-adapter-failure issue
+        if: always() && steps.ingest.outputs.persistent_failures != ''
+        uses: actions/github-script@v7
+        env:
+          PERSISTENT_FAILURES: ${{ steps.ingest.outputs.persistent_failures }}
+        with:
+          script: |
+            const ids = (process.env.PERSISTENT_FAILURES || "").split(",").filter(Boolean);
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            for (const id of ids) {
+              const title = `🔴 Govt ingestion: adapter "${id}" failing 3+ consecutive runs`;
+              const body = `Adapter \`${id}\` has failed on 3 or more consecutive ATTEMPTED ingestion runs (budget-skipped runs don't count toward or against this) as of run [#${context.runId}](${runUrl}), ${new Date().toISOString()}.\n\nCheck the \`ingest_runs\` table (or this run's step summary) for the adapter's recorded error.`;
+              const existing = await github.rest.issues.listForRepo({
+                owner: context.repo.owner, repo: context.repo.repo,
+                state: "open", labels: "adapter-persistent-failure",
+              });
+              const already = existing.data.find(i => i.title.includes(`"${id}"`));
+              if (already) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: already.number, body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title, body, labels: ["ingestion-failure", "adapter-persistent-failure"],
+                });
+              }
             }

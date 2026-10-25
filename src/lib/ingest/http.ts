@@ -22,6 +22,22 @@ export const BROWSER_UA =
 
 const DEFAULT_TIMEOUT = 20000
 
+/**
+ * Decides whether a `fetch()` failure is the specific class of quirk the
+ * legacy/curl fallback below exists for (malformed headers undici's llhttp
+ * parser rejects, or an incomplete/legacy TLS chain) rather than, say, a
+ * plain HTTP error status or a genuine network/DNS failure. A PLAIN "HTTP
+ * 403"-shaped message deliberately does NOT match — a non-2xx status is not
+ * a parser/TLS quirk, and retrying it via curl would just mask (or
+ * pointlessly repeat) a real rejection from the origin server.
+ *
+ * Extracted as its own pure, exported function (2026-10-25) purely so it can
+ * be unit-tested directly, without mocking the network — no behavior change.
+ */
+export function isHeaderOrTlsQuirk(message: string | null | undefined): boolean {
+  return /Invalid header token|HTTP\/1\.1 protocol|header|parse|certificate|TLS|SSL|ERR_SSL|self-signed|unable to verify/i.test(message || "")
+}
+
 /** Legacy-client fetch: tolerates malformed headers + incomplete TLS chains. */
 function legacyGet(url: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -103,8 +119,7 @@ export async function fetchHtml(url: string, timeoutMs = DEFAULT_TIMEOUT): Promi
     return await res.text()
   } catch (e) {
     const msg = (e as Error & { cause?: { code?: string; message?: string } }).cause?.message || (e as Error).message
-    const quirk = /Invalid header token|HTTP\/1\.1 protocol|header|parse|certificate|TLS|SSL|ERR_SSL|self-signed|unable to verify/i.test(msg || "")
-    if (quirk) {
+    if (isHeaderOrTlsQuirk(msg)) {
       try {
         return await legacyGet(url, timeoutMs)
       } catch {

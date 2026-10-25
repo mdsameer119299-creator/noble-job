@@ -15,7 +15,11 @@
  * here or anywhere else in this suite).
  */
 import assert from "node:assert/strict"
-import { computeIngestRunStatus, normalise, datesNeedingBackfill, hasAdapterBudgetRemaining, runGovtAutoUpdate, type AutoUpdateResult } from "./govtAutoUpdate"
+import {
+    computeIngestRunStatus, normalise, datesNeedingBackfill, hasAdapterBudgetRemaining, runGovtAutoUpdate,
+    parseIngestRunError, adapterOutcomeInRun, adapterFailureStreak, persistentlyFailingAdapters, newlyPersistentFailures,
+    type AutoUpdateResult, type ParsedIngestRunError,
+} from "./govtAutoUpdate"
 import { planIngestWrites, type ExistingGovtRow } from "./govtIngestPlan"
 import { ADAPTERS } from "../ingest/registry"
 import type { RawNotification, SourceAdapter } from "../ingest/types"
@@ -440,6 +444,118 @@ test("datesNeedingBackfill() treats an empty-string sourcePublishedAt as absent 
     const corrupted = { ...entry, id: entry.job.id, sourcePublishedAt: "" }
     const plan = { writes: [], unchanged: [corrupted] }
     assert.equal(datesNeedingBackfill(plan).length, 0, "an empty-string sourcePublishedAt must not be treated as a real date")
+})
+
+/* ── 2026-10-25: per-adapter persistent-failure alerting ──
+ * parseIngestRunError / adapterOutcomeInRun / adapterFailureStreak /
+ * persistentlyFailingAdapters / newlyPersistentFailures — all pure, built on
+ * the EXACT `ingest_runs.error` text format computeIngestRunStatus() already
+ * produces, no schema change. `run()` below builds an already-parsed
+ * ParsedIngestRunError fixture (most-recent-first arrays are what every
+ * function here takes); the round-trip test ties that fixture shape back to
+ * the real string format via computeIngestRunStatus() itself. */
+
+const run = (failed: string[], skipped: string[] = []): ParsedIngestRunError => ({ failed, skipped })
+
+test("parseIngestRunError: ROUND-TRIP against the exact string computeIngestRunStatus() produces (mixed failed + skipped)", () => {
+    const { error } = computeIngestRunStatus({
+          failedSources: ["mppsc", "hpsc"],
+          skippedSources: ["tnpsc"],
+          totalPublished: 3,
+          sources: [src({ id: "mppsc", error: "fetch failed" }), src({ id: "hpsc", error: "fetch failed" }), src({ id: "ok", published: 3 })],
+    })
+    assert.equal(error, "failed: mppsc, hpsc; skipped (budget): tnpsc", "pins the exact separator/order this parser depends on")
+    assert.deepEqual(parseIngestRunError(error), { failed: ["mppsc", "hpsc"], skipped: ["tnpsc"] })
+})
+
+test("parseIngestRunError: failed-only (no skipped clause)", () => {
+    assert.deepEqual(parseIngestRunError("failed: a, b, c"), { failed: ["a", "b", "c"], skipped: [] })
+})
+
+test("parseIngestRunError: skipped-only (no failed clause)", () => {
+    assert.deepEqual(parseIngestRunError("skipped (budget): x, y"), { failed: [], skipped: ["x", "y"] })
+})
+
+test("parseIngestRunError: null/undefined/empty (a 'success' row) → both lists empty", () => {
+    assert.deepEqual(parseIngestRunError(null), { failed: [], skipped: [] })
+    assert.deepEqual(parseIngestRunError(undefined), { failed: [], skipped: [] })
+    assert.deepEqual(parseIngestRunError(""), { failed: [], skipped: [] })
+})
+
+test("parseIngestRunError: unparseable garbage fails closed to empty lists, never throws", () => {
+    assert.deepEqual(parseIngestRunError("something unexpected"), { failed: [], skipped: [] })
+})
+
+test("adapterOutcomeInRun: failed / skipped / succeeded classify correctly and never overlap", () => {
+    const r = run(["a"], ["b"])
+    assert.equal(adapterOutcomeInRun("a", r), "failed")
+    assert.equal(adapterOutcomeInRun("b", r), "skipped")
+    assert.equal(adapterOutcomeInRun("c", r), "succeeded")
+})
+
+test("REQUIRED: three consecutive confirmed failures → a persistent-failure streak of 3", () => {
+    const runs = [run(["a"]), run(["a"]), run(["a"])]
+    assert.equal(adapterFailureStreak("a", runs), 3)
+    assert.deepEqual(persistentlyFailingAdapters(runs, 3), ["a"])
+})
+
+test("REQUIRED: a confirmed-successful run resets the streak (and stops the scan — older failures no longer count)", () => {
+    // Most-recent-first: failed, then (one run back) succeeded, then two older failures
+    // that must NOT be reached because the success in between resets/stops the scan.
+    const runs = [run(["a"]), run([]), run(["a"]), run(["a"])]
+    assert.equal(adapterFailureStreak("a", runs), 1, "only the single most-recent failure counts; the success behind it resets the streak")
+    assert.deepEqual(persistentlyFailingAdapters(runs, 3), [], "streak of 1 never reaches threshold 3")
+})
+
+test("REQUIRED: a budget skip is never counted as a failure", () => {
+    const runs = [run([], ["a"]), run([], ["a"]), run([], ["a"])]
+    assert.equal(adapterFailureStreak("a", runs), 0, "three skips, zero failures, must never read as a streak of 3")
+})
+
+test("REQUIRED: an adapter not attempted (skipped) in a run does not extend its streak — but doesn't break it either", () => {
+    // Most-recent-first: fail, skip, fail, fail — the skip is excluded from the
+    // count (doesn't add to the streak) yet doesn't reset it (it's not a confirmed
+    // success), so scanning continues past it to the two older failures.
+    const runs = [run(["a"]), run([], ["a"]), run(["a"]), run(["a"])]
+    assert.equal(adapterFailureStreak("a", runs), 3, "the skip must be transparent to the count: 3 real failures, not 1 (reset) and not 4 (counted)")
+})
+
+test("REQUIRED: insufficient history fails closed — never reports a streak longer than the data actually supplied", () => {
+    assert.equal(adapterFailureStreak("a", []), 0, "no history at all")
+    assert.equal(adapterFailureStreak("a", [run(["a"]), run(["a"])]), 2, "only 2 runs of history — streak cannot exceed 2")
+    assert.deepEqual(persistentlyFailingAdapters([run(["a"]), run(["a"])], 3), [], "2 < threshold 3 → not reported, even though both available runs failed")
+    assert.deepEqual(persistentlyFailingAdapters([], 3), [])
+})
+
+test("REQUIRED: only adapters that actually meet the threshold are reported — a co-failing adapter below threshold is excluded", () => {
+    // "a" fails in all 3 runs (streak 3). "b" fails only in the current run (streak 1).
+    const runs = [run(["a", "b"]), run(["a"]), run(["a"])]
+    assert.deepEqual(persistentlyFailingAdapters(runs, 3), ["a"], "b must not be reported — its streak is only 1")
+})
+
+test("REQUIRED: a continuing outage triggers newlyPersistentFailures exactly ONCE — not on every subsequent run", () => {
+    // Most-recent-first. "a" fails for 3 straight runs, then (further back) a
+    // confirmed success — i.e. this is the run where the streak JUST reached 3.
+    const justCrossed = [run(["a"]), run(["a"]), run(["a"]), run([])]
+    assert.deepEqual(newlyPersistentFailures(justCrossed, 3), ["a"], "must fire the first time the streak reaches the threshold")
+
+    // One run later: the outage continues (one more failure prepended). The
+    // streak is now 4, but it crossed the threshold on the PREVIOUS run, so this
+    // run must NOT re-report it.
+    const continuingOutage = [run(["a"]), ...justCrossed]
+    assert.deepEqual(persistentlyFailingAdapters(continuingOutage, 3), ["a"], "still persistently failing")
+    assert.deepEqual(newlyPersistentFailures(continuingOutage, 3), [], "must NOT alert again — this is the same ongoing outage, already alerted on the previous run")
+})
+
+test("newlyPersistentFailures: a long-running outage with generous history (6 runs) alerts 0 times once already past the threshold", () => {
+    const runs = Array.from({ length: 6 }, () => run(["a"]))
+    assert.deepEqual(persistentlyFailingAdapters(runs, 3), ["a"])
+    assert.deepEqual(newlyPersistentFailures(runs, 3), [], "6 runs of an unbroken outage — this was already alertable several runs ago, not new")
+})
+
+test("newlyPersistentFailures: a brand-new failure (streak 1) never alerts — only a streak that actually reaches the threshold does", () => {
+    const runs = [run(["a"]), run([]), run([])]
+    assert.deepEqual(newlyPersistentFailures(runs, 3), [])
 })
 
 void (async () => {
