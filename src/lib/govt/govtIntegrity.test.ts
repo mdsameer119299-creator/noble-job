@@ -216,6 +216,62 @@ async function main() {
     assert.match(src, /totalPublished \+ \(r\.totalUnchanged \?\? 0\) === 0/)
   })
 
+  /* ---------------- isCurrentGovtNotification(...) call-site safety ---------------- */
+  /*
+   * 2026-10-25: found while fixing the misleading hub/category/state teaser-count
+   * bug (PR #48 validation). `Array.prototype.filter(callback)` invokes
+   * `callback(element, index, array)` — THREE arguments. `isCurrentGovtNotification`'s
+   * second parameter is `now: Date`, defaulted to `new Date()`. Passed directly as
+   * `.filter(isCurrentGovtNotification)`, the array's numeric `index` silently fills
+   * that `now` slot (0, 1, 2, ... — none of them `undefined`, so the default never
+   * applies), and `now.getTime()` throws `TypeError: now.getTime is not a function`
+   * the moment any element reaches that line — i.e. the moment a row is a genuine
+   * notification with a real, truthy `sourcePublishedAt`.
+   *
+   * This was invisible in production only because `source_published_at` has been
+   * 0% populated across every active row so far: every row hits the earlier
+   * `if (!raw) return false` guard before ever touching `now`. The datesNeedingBackfill()
+   * fix (this same validation cycle) makes real dates start landing on real rows —
+   * at which point every one of these call sites (govtHubStats.ts, govtJobService.ts
+   * x2, govtJobLocal.ts, genuineCounts.ts, govtNavStats.ts) would have started
+   * throwing on the government hub, every state/category/qualification page, and
+   * the sitemap, turning "empty listings" into 500s. All were fixed to
+   * `.filter(j => isCurrentGovtNotification(j))`.
+   */
+  await test("REGRESSION — reproduces the exact crash: Array.filter(isCurrentGovtNotification) throws once a row has a real date (confirms WHY the bare form is unsafe)", () => {
+    const rows = [{ recordType: "notification", tab: "latest", title: "A", sourcePublishedAt: "2026-10-01T00:00:00.000Z" }]
+    assert.throws(
+      () => rows.filter(isCurrentGovtNotification),
+      /now\.getTime is not a function/,
+      "Array.filter passes (element, index, array); `index` fills isCurrentGovtNotification's `now` parameter",
+    )
+    // The safe form — wrapping in an arrow that passes only the element — must not throw.
+    assert.doesNotThrow(() => rows.filter(j => isCurrentGovtNotification(j)))
+  })
+
+  await test("REGRESSION — no production source file passes isCurrentGovtNotification directly as a bare .filter() callback", () => {
+    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs")
+    const unsafe = /\.filter\(isCurrentGovtNotification\)/
+    const offenders: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(root, dir))) {
+        const rel = join(dir, entry)
+        if (statSync(join(root, rel)).isDirectory()) { walk(rel); continue }
+        if (!/\.(ts|tsx)$/.test(entry) || /\.test\.ts$/.test(entry)) continue
+        const lines = read(rel).split("\n")
+        lines.forEach((line, i) => {
+          const trimmed = line.trim()
+          if (unsafe.test(line) && !trimmed.startsWith("//") && !trimmed.startsWith("*")) {
+            offenders.push(`${rel}:${i + 1}`)
+          }
+        })
+      }
+    }
+    walk("src/lib")
+    walk("src/components")
+    assert.deepEqual(offenders, [], `found the unsafe bare-callback pattern (not in a comment) at: ${offenders.join(", ")}`)
+  })
+
   /* --------------------------------- migration --------------------------------- */
   await test("migration adds only the minimum columns, additive + idempotent, source date NOT backfilled", () => {
     const sql = read("supabase/migrations/20260727000001_govt_jobs_record_integrity.sql")

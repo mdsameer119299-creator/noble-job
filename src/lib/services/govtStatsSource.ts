@@ -20,10 +20,10 @@ import { GOVT_LIST_COLUMNS, GOVT_DETAIL_COLUMNS, withGovtIntegrityColumns } from
 import { govtKeyLookups } from "@/lib/config/govtKey"
 import { govtLastKnownGoodMaxAgeMs, isGovtSeedFallbackAllowed } from "@/lib/config/govtSeedPolicy"
 import { GOVT_JOBS, enrichGovtJob } from "@/lib/data/govtData"
-import { applyGovtVacancies, parseVacancyCount } from "@/lib/data/govtVacancies"
-import { isCurrentGovtNotification, isGovtRecordType, govtRecordTypeOf } from "@/lib/govt/recordType"
+import { isCurrentGovtNotification, govtRecordTypeOf } from "@/lib/govt/recordType"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import { resolveGovtPool, type GovtPoolSnapshot, type GovtPoolResult } from "@/lib/services/govtPoolResolver"
+import { mapRow } from "@/lib/services/govtRowMapper"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
 import { isRenderableJob } from "@/lib/jobs/renderable"
 import type { GovtJob } from "@/types/govtJob"
@@ -65,26 +65,6 @@ function adminConfigured(): boolean {
   return !!url && !!key && url.startsWith("http") && !url.includes("placeholder") && !key.includes("placeholder")
 }
 
-/** Snake→camel + vacancy normalisation, mirroring govtJobService.mapGovtRow. */
-function mapRow(row: Record<string, unknown>): GovtJob {
-  const r = row as unknown as GovtJob & { last_date?: string; age_range?: string }
-  return applyGovtVacancies({
-    ...r,
-    // Captured BEFORE applyGovtVacancies can synthesize a display count.
-    vacanciesStated: parseVacancyCount(r.vacancies) !== null ? String(r.vacancies).trim() : undefined,
-    lastDate: r.lastDate ?? r.last_date,
-    last_date: r.last_date ?? r.lastDate,
-    ageRange: r.ageRange ?? r.age_range,
-    age_range: r.age_range ?? r.ageRange,
-    // Record-integrity columns (absent on an unmigrated database → undefined).
-    recordType: isGovtRecordType(r.record_type) ? r.record_type : undefined,
-    sourcePublishedAt: r.source_published_at ?? undefined,
-    contentChangedAt: r.content_changed_at ?? undefined,
-    verifiedAt: r.verified_at ?? undefined,
-    verifiedBy: r.verified_by ?? undefined,
-  }) as GovtJob
-}
-
 /**
  * The actual Supabase POOL read — STRICT: it throws on any failure (or when the
  * admin client is unconfigured) so a failure is never cached and never silently
@@ -109,8 +89,12 @@ async function loadActiveGovtRows(): Promise<GovtJob[]> {
   let res = await runList(withGovtIntegrityColumns(GOVT_LIST_COLUMNS))
   if (res.error && isMissingColumnError(res.error)) res = await runList(GOVT_LIST_COLUMNS)
   if (res.error) throw new Error(res.error.message)
+  // synthesizeVacancies:false — these are REAL DB-backed rows (adapter-ingested
+  // or curated seed), never the in-memory demo/fallback dataset. A missing
+  // source vacancy count must surface as "Not Specified", not a fabricated
+  // keyword-profile number — see enrichGovtJob's doc comment.
   const rows = (res.data ?? []).map(r =>
-    enrichGovtJob(mapRow(r as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }),
+    enrichGovtJob(mapRow(r as unknown as Record<string, unknown>) as GovtJob & { last_date: string; age_range: string }, { synthesizeVacancies: false }),
   )
   return rows.filter(isServableGovtJob)
 }
@@ -156,7 +140,9 @@ async function loadGovtJobRow(slugOrId: string): Promise<GovtJob | null> {
     }
   }
   if (!row) return null
-  const job = enrichGovtJob(mapRow(row) as GovtJob & { last_date: string; age_range: string })
+  // synthesizeVacancies:false — same reasoning as loadActiveGovtRows above: this
+  // is a single real DB row, never the demo/fallback dataset.
+  const job = enrichGovtJob(mapRow(row) as GovtJob & { last_date: string; age_range: string }, { synthesizeVacancies: false })
   return isServableGovtJob(job) ? job : null
 }
 

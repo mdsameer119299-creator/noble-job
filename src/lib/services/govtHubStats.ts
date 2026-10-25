@@ -16,7 +16,10 @@ export interface GovtHubStatItem {
 }
 
 export async function getGovtHubStats(opts?: { slug?: string }): Promise<GovtHubStatItem[]> {
-  const all = (await getActiveGovtRows()).filter(isCurrentGovtNotification)
+  // NOT `.filter(isCurrentGovtNotification)` directly — see govtJobLocal.ts's doc
+  // comment (Array.filter's (element, index, array) collides with the predicate's
+  // second `now` parameter and throws `now.getTime is not a function`).
+  const all = (await getActiveGovtRows()).filter(j => isCurrentGovtNotification(j))
   const jobs = opts?.slug ? all.filter(j => jobMatchesCategorySlug(j, opts.slug!)) : all
   // Vacancies: real, parseable counts on recruitment tabs only (latest/upcoming).
   const vacancies = sumRealVacancies(jobs.filter(isVacancyBearingJob))

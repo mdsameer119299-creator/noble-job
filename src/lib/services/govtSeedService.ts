@@ -93,7 +93,10 @@ export async function seedCuratedGovtJobs(opts: { dryRun?: boolean } = {}): Prom
       if (expired) skippedExpired.push(j.id)
       return !expired
     })
-    .map(j => enrichGovtJob(j))
+    // synthesizeVacancies:false — this seeds the CURATED REAL set; a future
+    // entry with no parseable vacancy count must store "Not Specified", never
+    // a fabricated keyword-profile number (see enrichGovtJob's doc comment).
+    .map(j => enrichGovtJob(j, { synthesizeVacancies: false }))
 
   // Guardrail 4 (post): enrichment must not move an id out of the allow-list.
   const postOffenders = enriched.filter(j => !ALLOW_LIST.has(j.id))

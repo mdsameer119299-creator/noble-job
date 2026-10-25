@@ -704,7 +704,7 @@ test("govt: a synthesized display vacancy count is never cited (only vacanciesSt
   const d = String(asObj(buildGovtJobPosting(govtJob({ vacancies: "12,345", vacanciesStated: undefined }), govtHelpers)).description)
   assert.ok(!d.includes("Vacancies"), "no stored count → no vacancies line")
   assert.ok(!d.includes("12,345"))
-  const src = readFileSync(join(process.cwd(), "src/lib/services/govtStatsSource.ts"), "utf8")
+  const src = readFileSync(join(process.cwd(), "src/lib/services/govtRowMapper.ts"), "utf8")
   const stated = src.indexOf("vacanciesStated:")
   const applied = src.indexOf("applyGovtVacancies({")
   assert.ok(stated > applied && stated - applied < 400, "vacanciesStated is captured from the raw row inside the same mapRow call")

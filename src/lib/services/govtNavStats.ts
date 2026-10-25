@@ -4,7 +4,7 @@
 import { GOVT_JOBS, GOVT_CONTENT } from "@/lib/data/govtData"
 import { sumGovtVacancies, sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
-import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
+import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import {
   GOVT_TOP_CATEGORIES,
   INDIAN_STATES,
@@ -133,22 +133,61 @@ function contentTabFor(contentType: string): GovtJob["tab"] | null {
   return null
 }
 
-/** Build all browse-grid stats from a given (already-active) rows array. */
+/**
+ * Build all browse-grid stats from a given (already-active) rows array.
+ *
+ * These are teaser counts shown on hub/category/state/qualification cards
+ * (`GovtNavGrids`) — the numbers must never promise more than what the real,
+ * strictly-gated listing underneath them (`getGovtJobs()` / `getGovtJobsFiltered()`
+ * in govtJobService.ts) will actually show, or the card is just lying to the
+ * candidate who clicks through.
+ *
+ * 2026-10-25: confirmed live that this was happening — e.g. a category card
+ * read "132+ notices" and a state card read "31 national government jobs
+ * available" while the strictly-gated listing page for that exact category/
+ * state correctly showed zero results. Root cause: this function filtered
+ * job-type rows by `isActiveGovtJob` only (status=active, last_date not
+ * passed), never by the 365-day source-publication-date freshness gate
+ * (`isCurrentGovtNotification`) that `getGovtJobsFiltered()` applies as its
+ * final step. The two code paths had silently diverged.
+ *
+ * Fix: job-type categories, state stats, qualification stats and the
+ * national pool now read from `activeNotifications` — the SAME
+ * active-AND-current-notification inventory the real listings use — so a
+ * teaser count and the listing it links to can never disagree. Content
+ * categories (results / admit cards / answer keys) are deliberately
+ * EXCLUDED from that extra gate: they are informational records, not
+ * notifications, so `isCurrentGovtNotification` would always reject them
+ * (it requires `govtRecordTypeOf(...) === "notification"`), and
+ * `getGovtJobs()` itself never applies the freshness gate to those tabs
+ * either — gating them here would just zero out a count that is supposed to
+ * be non-zero.
+ */
 export function computeNavStats(rows: GovtJob[]) {
   const active = rows.filter(isActiveGovtJob)
+  // NOT `.filter(isCurrentGovtNotification)` directly — Array.filter calls its
+  // predicate with (element, index, array), and `index` collides with
+  // isCurrentGovtNotification's second (`now: Date`) parameter, throwing
+  // `now.getTime is not a function` the moment any element reaches that line
+  // (confirmed live while adding this very filter — see govtJobLocal.ts's doc
+  // comment for the other production call sites bearing the same latent bug,
+  // invisible only because source_published_at has been 0% populated so far).
+  const activeNotifications = active.filter(j => isCurrentGovtNotification(j))
   const categories: Record<string, GovtNavStat> = {}
   const states: Record<string, StateNavStat> = {}
   const qualifications: Record<string, GovtNavStat> = {}
 
   for (const c of GOVT_TOP_CATEGORIES) {
     if (c.contentType !== "jobs") {
+      // Not notification-type listings — read from the unfiltered active pool
+      // (see doc comment above).
       const tab = contentTabFor(c.contentType)
       const n = tab ? active.filter(j => j.tab === tab).length : 0
       categories[c.slug] = { notifications: n, vacancies: 0 }
       continue
     }
-    let jobs = active.filter(j => jobMatchesCategory(j, c))
-    if (jobs.length === 0 && c.scope === "latest") jobs = active.filter(j => j.tab === "latest")
+    let jobs = activeNotifications.filter(j => jobMatchesCategory(j, c))
+    if (jobs.length === 0 && c.scope === "latest") jobs = activeNotifications.filter(j => j.tab === "latest")
     categories[c.slug] = realStatsFromRows(jobs)
   }
   // Per-state cards show real, separated counts: the state's OWN recruitments,
@@ -156,10 +195,11 @@ export function computeNavStats(rows: GovtJob[]) {
   // opportunity total. A state with no state-specific jobs correctly shows
   // "0 state" while still surfacing national opportunities — national jobs are
   // never relabelled as that state's own (which previously made Karnataka read
-  // 38/271747 while its detail page truthfully showed 0/0).
-  const national = realStatsFromRows(active.filter(isNationalGovtJob))
+  // 38/271747 while its detail page truthfully showed 0/0). All three pools
+  // below come from `activeNotifications`, so they agree with the listing.
+  const national = realStatsFromRows(activeNotifications.filter(isNationalGovtJob))
   for (const s of INDIAN_STATES) {
-    const own = realStatsFromRows(active.filter(j => j.stateSlug === s.slug))
+    const own = realStatsFromRows(activeNotifications.filter(j => j.stateSlug === s.slug))
     states[s.slug] = {
       ...own,
       national,
@@ -170,12 +210,23 @@ export function computeNavStats(rows: GovtJob[]) {
     }
   }
   for (const q of GOVT_QUALIFICATIONS) {
-    qualifications[q.slug] = realStatsFromRows(active.filter(j => jobMatchesQualification(j, q.slug)))
+    qualifications[q.slug] = realStatsFromRows(activeNotifications.filter(j => jobMatchesQualification(j, q.slug)))
   }
   return { categories, states, qualifications, national }
 }
 
-/** Async, database-backed browse-grid stats for the hub (local fallback). */
+/**
+ * Async, database-backed browse-grid stats for the hub (local fallback).
+ *
+ * `getActiveGovtRows` is loaded dynamically, not as a top-level import: its
+ * module (govtStatsSource.ts) calls React's `cache()` at module-evaluation
+ * time, which crashes outside the Next.js/RSC runtime. `computeNavStats`
+ * itself is a plain, dependency-free function of `GovtJob[]` — keeping this
+ * the only place that touches govtStatsSource lets it be unit-tested
+ * directly (see govtNavStats.test.ts) the same way the rest of this file's
+ * pure helpers are.
+ */
 export async function getGovtNavStats() {
+  const { getActiveGovtRows } = await import("@/lib/services/govtStatsSource")
   return computeNavStats(await getActiveGovtRows())
 }
