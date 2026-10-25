@@ -126,38 +126,53 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // City x category pages — only combos that clear the GENUINE-job threshold (the
   // same function the pages themselves use, so sitemap and page cannot disagree).
-  const cityCategoryRoutes: SitemapEntry[] = (
-    await Promise.all(
-      CITY_LANDINGS.map(async city => {
-        const slugs = await getQualifyingCategorySlugsForCity(city)
-        return slugs.map(categorySlug => ({
-          url: `${base}/${city.slug}/${categorySlug}`,
-          changeFrequency: "weekly" as const,
-          priority: 0.6,
-        }))
-      }),
-    )
-  ).flat()
+  // Wrapped in readOrThrow: the ~304 qualifying checks each query Supabase, which
+  // is unavailable during `next build` and can timeout on Vercel's 60 s export limit.
+  const cityCategoryRoutes: SitemapEntry[] = await readOrThrow(
+    async () => (
+      await Promise.all(
+        CITY_LANDINGS.map(async city => {
+          const slugs = await getQualifyingCategorySlugsForCity(city)
+          return slugs.map(categorySlug => ({
+            url: `${base}/${city.slug}/${categorySlug}`,
+            changeFrequency: "weekly" as const,
+            priority: 0.6,
+          }))
+        }),
+      )
+    ).flat(),
+    [],
+    "city×category pages",
+  )
 
   // Tail-city hubs and tail-city x category pages — same genuine-only gate.
-  const qualifyingTailCitySlugs = await getQualifyingTailCitySlugs()
+  // Same build-time guard: ~1,064 qualifying checks would timeout during export.
+  const qualifyingTailCitySlugs = await readOrThrow(
+    () => getQualifyingTailCitySlugs(),
+    [] as string[],
+    "tail-city qualifying slugs",
+  )
   const tailCityRoutes: SitemapEntry[] = qualifyingTailCitySlugs.map(slug => ({
     url: `${base}/jobs-in/${slug}`,
     changeFrequency: "daily" as const,
     priority: 0.75,
   }))
-  const tailCityCategoryRoutes: SitemapEntry[] = (
-    await Promise.all(
-      TAIL_CITIES.map(async city => {
-        const slugs = await getQualifyingCategorySlugsForTailCity(city)
-        return slugs.map(categorySlug => ({
-          url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
-          changeFrequency: "weekly" as const,
-          priority: 0.55,
-        }))
-      }),
-    )
-  ).flat()
+  const tailCityCategoryRoutes: SitemapEntry[] = await readOrThrow(
+    async () => (
+      await Promise.all(
+        TAIL_CITIES.map(async city => {
+          const slugs = await getQualifyingCategorySlugsForTailCity(city)
+          return slugs.map(categorySlug => ({
+            url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
+            changeFrequency: "weekly" as const,
+            priority: 0.55,
+          }))
+        }),
+      )
+    ).flat(),
+    [],
+    "tail-city×category pages",
+  )
 
   // Guides — the article's own published / modified dates.
   const articleDates = ARTICLE_SLUGS.map(slug => {
@@ -175,57 +190,66 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   // ── Govt taxonomy — only URLs that actually have content (no soft 404) ──
-  const categoryRows = await Promise.all(
-    GOVT_TOP_CATEGORIES.map(async c => {
-      if (c.contentType === "jobs") {
-        const r = await getGovtJobsFiltered({ category: c.slug, page: 1, limit: 100000 })
-        return { slug: c.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
-      }
-      const r = await getGovtContent(c.contentType as Parameters<typeof getGovtContent>[0], { page: 1 })
-      return { slug: c.slug, total: r.total, at: undefined as Date | undefined }
-    }),
-  )
-  const govtCategoryRoutes: SitemapEntry[] = categoryRows
-    .filter(c => c.total > 0)
-    .map(c => ({
-      url: `${base}/jobs/govt/category/${c.slug}`,
-      lastModified: c.at,
-      changeFrequency: "daily" as const,
-      priority: 0.85,
-    }))
+  // Each section calls getGovtJobsFiltered (DB-backed); wrapped in readOrThrow so
+  // the build doesn't fail when the database is unavailable. ISR regenerates within
+  // revalidate seconds.
+  const govtCategoryRoutes: SitemapEntry[] = await readOrThrow(async () => {
+    const categoryRows = await Promise.all(
+      GOVT_TOP_CATEGORIES.map(async c => {
+        if (c.contentType === "jobs") {
+          const r = await getGovtJobsFiltered({ category: c.slug, page: 1, limit: 100000 })
+          return { slug: c.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
+        }
+        const r = await getGovtContent(c.contentType as Parameters<typeof getGovtContent>[0], { page: 1 })
+        return { slug: c.slug, total: r.total, at: undefined as Date | undefined }
+      }),
+    )
+    return categoryRows
+      .filter(c => c.total > 0)
+      .map(c => ({
+        url: `${base}/jobs/govt/category/${c.slug}`,
+        lastModified: c.at,
+        changeFrequency: "daily" as const,
+        priority: 0.85,
+      }))
+  }, [] as SitemapEntry[], "govt category pages")
 
   // State pages: listed only when the state has its own openings. A state with
   // none falls back to the national pool and is served noindex, so it must not
   // be submitted.
-  const stateRows = await Promise.all(
-    INDIAN_STATES.map(async s => {
-      const r = await getGovtJobsFiltered({ state: s.slug, page: 1, limit: 100000 })
-      return { slug: s.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
-    }),
-  )
-  const govtStateRoutes: SitemapEntry[] = stateRows
-    .filter(s => s.total >= GOVT_STATE_MIN_JOBS)
-    .map(s => ({
-      url: `${base}/jobs/govt/state/${s.slug}`,
-      lastModified: s.at,
-      changeFrequency: "daily" as const,
-      priority: 0.8,
-    }))
+  const govtStateRoutes: SitemapEntry[] = await readOrThrow(async () => {
+    const stateRows = await Promise.all(
+      INDIAN_STATES.map(async s => {
+        const r = await getGovtJobsFiltered({ state: s.slug, page: 1, limit: 100000 })
+        return { slug: s.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
+      }),
+    )
+    return stateRows
+      .filter(s => s.total >= GOVT_STATE_MIN_JOBS)
+      .map(s => ({
+        url: `${base}/jobs/govt/state/${s.slug}`,
+        lastModified: s.at,
+        changeFrequency: "daily" as const,
+        priority: 0.8,
+      }))
+  }, [] as SitemapEntry[], "govt state pages")
 
-  const qualRows = await Promise.all(
-    GOVT_QUALIFICATIONS.map(async q => {
-      const r = await getGovtJobsFiltered({ qualification: q.slug, page: 1, limit: 100000 })
-      return { slug: q.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
-    }),
-  )
-  const govtQualRoutes: SitemapEntry[] = qualRows
-    .filter(q => q.total > 0)
-    .map(q => ({
-      url: `${base}/jobs/govt/qualification/${q.slug}`,
-      lastModified: q.at,
-      changeFrequency: "weekly" as const,
-      priority: 0.75,
-    }))
+  const govtQualRoutes: SitemapEntry[] = await readOrThrow(async () => {
+    const qualRows = await Promise.all(
+      GOVT_QUALIFICATIONS.map(async q => {
+        const r = await getGovtJobsFiltered({ qualification: q.slug, page: 1, limit: 100000 })
+        return { slug: q.slug, total: r.total, at: latestDate(r.items.map(j => govtChangedAt(j, now))) }
+      }),
+    )
+    return qualRows
+      .filter(q => q.total > 0)
+      .map(q => ({
+        url: `${base}/jobs/govt/qualification/${q.slug}`,
+        lastModified: q.at,
+        changeFrequency: "weekly" as const,
+        priority: 0.75,
+      }))
+  }, [] as SitemapEntry[], "govt qualification pages")
 
   // ── Govt detail pages — active rows that pass the fail-closed OFFICIAL gate. ──
   const govtJobRoutes: SitemapEntry[] = govtIndexable.map(j => ({
