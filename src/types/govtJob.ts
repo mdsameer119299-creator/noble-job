@@ -107,6 +107,8 @@ export interface GovtJob {
   /** When an editor/source check last confirmed the record against the official source. */
   verifiedAt?:         string
   verifiedBy?:         string
+  /** When the row was first inserted into the database (Supabase default). */
+  created_at?:     string
   /** Legacy snake_case aliases (fallback SQL / seed data). */
   age_range?:      string
   last_date?:      string
