@@ -29,7 +29,20 @@ export interface PersistEntry { job: GovtJob; sourceId: string; hash: string; re
 export interface AutoUpdateResult {
     ranAt: string
     autoPublish: boolean
-    sourcesChecked: number
+    /**
+     * ADAPTERS.length — the FULL registered adapter count (includes adapters
+     * shipped with `enabled: false`, e.g. registered-but-host-unverified PSC
+     * portals and disabled stubs). This is NOT the number of adapters the
+     * loop below actually iterates (that's enabledAdapters().length, or the
+     * injected override's length under test — currently 14 vs 52 registered
+     * in this repo). This gap predates the elapsed-time budget guard and is
+     * NOT something that guard resolves: `sourcesChecked` is left exactly as
+     * it was, unaffected by which adapters were actually attempted, skipped,
+     * or injected for a test. Flagged here rather than silently changed,
+     * since fixing it is a separate decision (e.g. "does sourcesChecked mean
+     * coverage-potential or actually-polled?") this patch does not make.
+     */
+  sourcesChecked: number
     failedSources: string[]
     /**
      * Adapter ids never attempted this run because the elapsed-time budget
@@ -420,7 +433,16 @@ async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, du
 }
 
 /** Run one ingestion pass across all enabled adapters, then expire stale jobs. */
-export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
+/**
+ * `overrides.adapters` is for tests only — it lets a test exercise the real
+ * orchestration loop (boundary check, skip-fill, report building) with fake,
+ * instant/controllable-delay adapters instead of the real registry, so no
+ * network/DB call is ever made. No production call site passes it; both
+ * /api/cron/govt-jobs and scripts/run-ingestion.ts call this with no
+ * arguments and are unaffected. Omitting it preserves every existing
+ * behavior exactly, including `sourcesChecked` (see its doc comment).
+ */
+export async function runGovtAutoUpdate(overrides?: { adapters?: SourceAdapter[] }): Promise<AutoUpdateResult> {
     const startedAt = Date.now()
     const seen = new Set<string>()
     const report: AutoUpdateResult["sources"] = []
@@ -428,7 +450,7 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
         const skippedSources: string[] = []
             let totalPublished = 0, totalInserted = 0, totalUpdated = 0, totalUnchanged = 0
 
-  const adapters = enabledAdapters()
+  const adapters = overrides?.adapters ?? enabledAdapters()
     const adapterBudgetMs = adapterPhaseBudgetMs()
 
   for (let i = 0; i < adapters.length; i++) {
