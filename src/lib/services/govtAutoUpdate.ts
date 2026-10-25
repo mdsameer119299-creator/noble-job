@@ -29,8 +29,30 @@ export interface PersistEntry { job: GovtJob; sourceId: string; hash: string; re
 export interface AutoUpdateResult {
     ranAt: string
     autoPublish: boolean
-    sourcesChecked: number
+    /**
+     * ADAPTERS.length — the FULL registered adapter count (includes adapters
+     * shipped with `enabled: false`, e.g. registered-but-host-unverified PSC
+     * portals and disabled stubs). This is NOT the number of adapters the
+     * loop below actually iterates (that's enabledAdapters().length, or the
+     * injected override's length under test — currently 14 vs 52 registered
+     * in this repo). This gap predates the elapsed-time budget guard and is
+     * NOT something that guard resolves: `sourcesChecked` is left exactly as
+     * it was, unaffected by which adapters were actually attempted, skipped,
+     * or injected for a test. Flagged here rather than silently changed,
+     * since fixing it is a separate decision (e.g. "does sourcesChecked mean
+     * coverage-potential or actually-polled?") this patch does not make.
+     */
+  sourcesChecked: number
     failedSources: string[]
+    /**
+     * Adapter ids never attempted this run because the elapsed-time budget
+     * (see ADAPTER_BUDGET_MS below) was exhausted before their turn. Distinct
+     * from `failedSources` (attempted, `.fetch()` threw) and from a write
+     * failure (attempted, fetch succeeded, persist() rejected — surfaced only
+     * via `sources[].error`, never added here). Optional so existing callers/
+     * tests built before this field existed keep compiling unchanged.
+     */
+  skippedSources?: string[]
     sources: { id: string; label: string; fetched: number; published: number; unchanged?: number; skipped: number; error?: string }[]
     /** Rows actually written this run (new + changed). Unchanged rows are not rewritten. */
   totalPublished: number
@@ -40,6 +62,56 @@ export interface AutoUpdateResult {
   totalUnchanged?: number
     /** Number of jobs flipped to status=expired by this run. */
   totalExpired: number
+}
+
+/**
+ * Elapsed-time budget for the adapter-fetch phase of runGovtAutoUpdate().
+ *
+ * This is a BOUNDARY check, not a hard timeout: it stops the loop from
+ * STARTING a new adapter once the budget is spent, but it cannot interrupt
+ * an adapter already in flight (SourceAdapter.fetch() takes no deadline/
+ * AbortSignal). A single already-started adapter can still overrun the
+ * budget by its own worst case (see each adapter's own fetch timeout).
+ * Promise.race() is deliberately NOT used here — it would stop this function
+ * from waiting on a slow adapter, but would not cancel that adapter's
+ * underlying fetch()/persist() call, which could then write to govt_jobs
+ * after this function has already moved on to (or finished) later adapters.
+ *
+ * GOVT_INGEST_BUDGET_MS lets an operator raise the total budget (e.g. once
+ * the execution environment's real duration ceiling is confirmed) without a
+ * code change. The built-in default is deliberately conservative — safely
+ * under Vercel's Hobby-tier 60s ceiling — since this codebase has no
+ * confirmed plan tier to assume a larger one from.
+ */
+const DEFAULT_TOTAL_BUDGET_MS = 55_000
+/**
+ * Reserved for work that runs AFTER the adapter loop: expireStaleJobs() (one
+ * select + conditional bulk update), recordIngestRun() (one insert), and
+ * response serialization. Estimated with margin, not measured.
+ */
+const FIXED_OVERHEAD_RESERVE_MS = 8_000
+
+function resolveTotalBudgetMs(): number {
+    const configured = Number(process.env.GOVT_INGEST_BUDGET_MS)
+    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOTAL_BUDGET_MS
+}
+
+/** Exported for testing (pure function, no I/O). */
+export function adapterPhaseBudgetMs(): number {
+    return Math.max(0, resolveTotalBudgetMs() - FIXED_OVERHEAD_RESERVE_MS)
+}
+
+/**
+ * The exact boundary predicate the adapter loop uses before starting each
+ * adapter: true only while elapsed time is strictly under budget. Extracted
+ * so the loop's stop/continue decision is independently testable without
+ * mocking Supabase or timing a real loop — see govtAutoUpdate.test.ts.
+ * `elapsedMs` is measured ONCE per adapter, at that adapter's turn to start;
+ * it says nothing about how long that adapter itself then takes to run (see
+ * the doc comment on adapterPhaseBudgetMs for why that's a real limitation).
+ */
+export function hasAdapterBudgetRemaining(elapsedMs: number, budgetMs: number): boolean {
+    return elapsedMs < budgetMs
 }
 
 /** Stable content fingerprint for change-detection / duplicate protection. */
@@ -294,21 +366,39 @@ export interface IngestRunStatus { status: "success" | "partial" | "error"; erro
  * empty). That gap meant a run where NOTHING was published could still be
  * recorded as `status: "success"`. Folding in `sources[].error` — populated
  * for write failures too as of the govtAutoUpdate.ts persist()/
- * expireStaleJobs() error-surfacing fix — closes it. Exported for testing
- * (pure function, no I/O).
+ * expireStaleJobs() error-surfacing fix — closes it.
+ *
+ * `skippedSources` (optional — omitted by existing callers built before this
+ * field existed, which must keep working identically) covers adapters never
+ * ATTEMPTED this run because the elapsed-time budget ran out first. A run
+ * with any skipped adapters must never read as `"success"` — it was
+ * incomplete even if everything it DID attempt succeeded — so it is folded
+ * into the same non-success branch as a genuine failure, but reported in its
+ * own clause (`"skipped (budget): ..."`) rather than merged into
+ * `allFailedIds`, so a reader (or a future per-adapter alert) can tell "this
+ * adapter is broken" apart from "this adapter was never tried." A skipped id
+ * is also excluded from `writeFailedIds` even if it happens to carry an
+ * `error` string (its skip placeholder), so it is never double-counted as a
+ * write failure. Exported for testing (pure function, no I/O).
  */
 export function computeIngestRunStatus(
-    result: Pick<AutoUpdateResult, "failedSources" | "sources" | "totalPublished"> & { totalUnchanged?: number },
+    result: Pick<AutoUpdateResult, "failedSources" | "sources" | "totalPublished">
+      & { totalUnchanged?: number; skippedSources?: string[] },
   ): IngestRunStatus {
+    const skippedIds = result.skippedSources ?? []
     const writeFailedIds = result.sources
-      .filter(s => s.error && !result.failedSources.includes(s.id))
+      .filter(s => s.error && !result.failedSources.includes(s.id) && !skippedIds.includes(s.id))
       .map(s => s.id)
     const allFailedIds = [...result.failedSources, ...writeFailedIds]
-    if (!allFailedIds.length) return { status: "success", error: null }
+    if (!allFailedIds.length && !skippedIds.length) return { status: "success", error: null }
     // Rows whose content_hash was unchanged are skipped (not written) — they are
   // still successfully processed, so they count as progress, not as "nothing".
   const progressed = result.totalPublished + (result.totalUnchanged ?? 0)
-    return { status: progressed ? "partial" : "error", error: `failed: ${allFailedIds.join(", ")}` }
+    const parts = [
+          allFailedIds.length ? `failed: ${allFailedIds.join(", ")}` : null,
+          skippedIds.length ? `skipped (budget): ${skippedIds.join(", ")}` : null,
+    ].filter((p): p is string => p !== null)
+    return { status: progressed ? "partial" : "error", error: parts.join("; ") }
 }
 
 /**
@@ -343,14 +433,41 @@ async function recordIngestRun(result: AutoUpdateResult, startedAtMs: number, du
 }
 
 /** Run one ingestion pass across all enabled adapters, then expire stale jobs. */
-export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
+/**
+ * `overrides.adapters` is for tests only — it lets a test exercise the real
+ * orchestration loop (boundary check, skip-fill, report building) with fake,
+ * instant/controllable-delay adapters instead of the real registry, so no
+ * network/DB call is ever made. No production call site passes it; both
+ * /api/cron/govt-jobs and scripts/run-ingestion.ts call this with no
+ * arguments and are unaffected. Omitting it preserves every existing
+ * behavior exactly, including `sourcesChecked` (see its doc comment).
+ */
+export async function runGovtAutoUpdate(overrides?: { adapters?: SourceAdapter[] }): Promise<AutoUpdateResult> {
     const startedAt = Date.now()
     const seen = new Set<string>()
     const report: AutoUpdateResult["sources"] = []
         const failedSources: string[] = []
+        const skippedSources: string[] = []
             let totalPublished = 0, totalInserted = 0, totalUpdated = 0, totalUnchanged = 0
 
-  for (const adapter of enabledAdapters()) {
+  const adapters = overrides?.adapters ?? enabledAdapters()
+    const adapterBudgetMs = adapterPhaseBudgetMs()
+
+  for (let i = 0; i < adapters.length; i++) {
+        // Boundary check only: stops a NEW adapter from starting once the
+        // budget is spent. It cannot interrupt the adapter this iteration is
+        // about to call — see adapterPhaseBudgetMs()'s doc comment.
+        if (!hasAdapterBudgetRemaining(Date.now() - startedAt, adapterBudgetMs)) {
+                for (const remaining of adapters.slice(i)) {
+                          skippedSources.push(remaining.id)
+                          report.push({
+                                      id: remaining.id, label: remaining.label, fetched: 0, published: 0, skipped: 0,
+                                      error: `skipped: time budget exceeded (${Date.now() - startedAt}ms elapsed, ${adapterBudgetMs}ms budget)`,
+                          })
+                }
+                break
+        }
+        const adapter = adapters[i]
         let fetched = 0, skipped = 0
         try {
                 const raws = (await adapter.fetch()).slice(0, SCHEDULER_CONFIG.maxPerSourcePerRun)
@@ -382,6 +499,7 @@ export async function runGovtAutoUpdate(): Promise<AutoUpdateResult> {
           autoPublish: SCHEDULER_CONFIG.autoPublish,
           sourcesChecked: ADAPTERS.length,
           failedSources,
+          skippedSources,
           sources: report,
           totalPublished,
           totalInserted,

@@ -15,8 +15,9 @@
  * here or anywhere else in this suite).
  */
 import assert from "node:assert/strict"
-import { computeIngestRunStatus, normalise, datesNeedingBackfill, type AutoUpdateResult } from "./govtAutoUpdate"
+import { computeIngestRunStatus, normalise, datesNeedingBackfill, hasAdapterBudgetRemaining, runGovtAutoUpdate, type AutoUpdateResult } from "./govtAutoUpdate"
 import { planIngestWrites, type ExistingGovtRow } from "./govtIngestPlan"
+import { ADAPTERS } from "../ingest/registry"
 import type { RawNotification, SourceAdapter } from "../ingest/types"
 
 const adapter = (id: string): SourceAdapter => ({ id, label: id, kind: "html", enabled: true, fetch: async () => [] })
@@ -29,6 +30,18 @@ let failed = 0
 function test(name: string, fn: () => void) {
     try { fn(); passed++; console.log(`  PASS  ${name}`) }
     catch (err) { failed++; console.error(`  FAIL  ${name}\n        ${(err as Error).message.split("\n")[0]}`) }
+}
+
+// Async counterpart, used only by the single integration test below that
+// exercises the real runGovtAutoUpdate() orchestration (awaits a Promise,
+// unlike every other test() in this file). Collected and awaited before the
+// final summary line so pass/fail counts stay accurate regardless of timing.
+const pendingAsync: Promise<void>[] = []
+function testAsync(name: string, fn: () => Promise<void>) {
+    pendingAsync.push(
+          fn().then(() => { passed++; console.log(`  PASS  ${name}`) })
+                .catch(err => { failed++; console.error(`  FAIL  ${name}\n        ${(err as Error).message.split("\n")[0]}`) }),
+    )
 }
 
 type Source = AutoUpdateResult["sources"][number]
@@ -101,6 +114,201 @@ test("empty run (no adapters at all) → success", () => {
     const r = computeIngestRunStatus({ failedSources: [], totalPublished: 0, sources: [] })
     assert.deepEqual(r, { status: "success", error: null })
 })
+
+/* ── elapsed-time budget guard: skippedSources accounting (2026-10-25) ── */
+
+test("backward compatibility — existing callers that omit skippedSources entirely are unaffected", () => {
+    // Mirrors src/lib/govt/govtIntegrity.test.ts's "healthy"/"dead" calls, which
+    // predate this field and must keep compiling and behaving identically.
+    const r = computeIngestRunStatus({
+          failedSources: ["a"],
+          sources: [src({ id: "a", error: "x" })],
+          totalPublished: 0,
+          totalUnchanged: 40,
+    })
+    assert.equal(r.status, "partial")
+    assert.equal(r.error, "failed: a")
+})
+
+test("skipped-only (budget), otherwise progressed → partial, NEVER success", () => {
+    const r = computeIngestRunStatus({
+          failedSources: [],
+          skippedSources: ["jnu", "aai"],
+          totalPublished: 10,
+          sources: [
+                  src({ id: "ok", published: 10 }),
+                  src({ id: "jnu", error: "skipped: time budget exceeded (47000ms elapsed, 47000ms budget)" }),
+                  src({ id: "aai", error: "skipped: time budget exceeded (47000ms elapsed, 47000ms budget)" }),
+                ],
+    })
+    assert.equal(r.status, "partial")
+    assert.equal(r.error, "skipped (budget): jnu, aai")
+})
+
+test("skipped AND failed in the same run → both clauses present, separated, neither list double-counts the other", () => {
+    const r = computeIngestRunStatus({
+          failedSources: ["ibps"],
+          skippedSources: ["jnu"],
+          totalPublished: 3,
+          sources: [
+                  src({ id: "ok", published: 3 }),
+                  src({ id: "ibps", error: "timeout" }),
+                  src({ id: "jnu", error: "skipped: time budget exceeded (50000ms elapsed, 47000ms budget)" }),
+                ],
+    })
+    assert.equal(r.status, "partial")
+    assert.equal(r.error, "failed: ibps; skipped (budget): jnu")
+})
+
+test("a skipped adapter's placeholder error must never be counted as a WRITE failure", () => {
+    // Without the skippedIds exclusion in computeIngestRunStatus, this source's
+    // `error` string (set by the budget guard, not by persist()) would land in
+    // writeFailedIds and be double-reported inside the "failed: " clause too.
+    const r = computeIngestRunStatus({
+          failedSources: [],
+          skippedSources: ["gpsc"],
+          totalPublished: 1,
+          sources: [src({ id: "ok", published: 1 }), src({ id: "gpsc", error: "skipped: time budget exceeded (47000ms elapsed, 47000ms budget)" })],
+    })
+    assert.equal(r.error, "skipped (budget): gpsc")
+    assert.doesNotMatch(r.error!, /failed:/)
+})
+
+test("CONFIRMED DECISION — skipped-only AND zero progress → error, not success", () => {
+    // Budget exhausted before anything ran at all (e.g. misconfigured budget).
+    // Treated like the existing all-writes-failed regression test: zero
+    // progress must never read as success, regardless of cause.
+    const r = computeIngestRunStatus({ failedSources: [], skippedSources: ["a", "b"], totalPublished: 0, sources: [] })
+    assert.equal(r.status, "error")
+    assert.equal(r.error, "skipped (budget): a, b")
+})
+
+test("existing write-failure-only regression (no skips involved) is unchanged", () => {
+    const r = computeIngestRunStatus({
+          failedSources: [],
+          totalPublished: 0,
+          sources: [
+                  src({ id: "mppsc", fetched: 30, error: "persist upsert failed: restricted" }),
+                  src({ id: "uksssc", fetched: 14, error: "persist upsert failed: restricted" }),
+                ],
+    })
+    assert.equal(r.status, "error")
+    assert.match(r.error!, /mppsc/)
+    assert.match(r.error!, /uksssc/)
+    assert.doesNotMatch(r.error!, /skipped/)
+})
+
+/* ── hasAdapterBudgetRemaining: the loop's exact stop/continue boundary ── */
+
+test("all adapters fast → elapsed stays well under budget throughout, every check passes", () => {
+    const budget = 47_000
+    let elapsed = 0
+    for (let i = 0; i < 14; i++) {
+          assert.ok(hasAdapterBudgetRemaining(elapsed, budget), `adapter ${i} should have budget`)
+          elapsed += 500 // each adapter takes ~500ms in this scenario
+    }
+    assert.ok(elapsed < budget, "sanity: 14 fast adapters never approach the budget")
+})
+
+test("budget exhausted partway → later adapters correctly denied, earlier ones correctly allowed", () => {
+    const budget = 100
+    // Simulates 10 adapters at 11ms each: elapsed at the START of adapter i is 11*i.
+    const allowed = Array.from({ length: 10 }, (_, i) => hasAdapterBudgetRemaining(11 * i, budget))
+    // 11*0..11*9 = 0,11,...,99 all < 100 → every check in THIS sequence still
+    // passes (pins the real arithmetic rather than assuming a round split).
+    assert.deepEqual(allowed, Array(10).fill(true))
+    // One adapter further (11*10=110) correctly fails.
+    assert.equal(hasAdapterBudgetRemaining(110, budget), false)
+})
+
+test("a slow adapter already in flight is NOT retroactively stopped — pins the documented limitation", () => {
+    const budget = 100
+    // Adapter 0 starts at elapsed=0 (allowed — budget is fresh).
+    assert.equal(hasAdapterBudgetRemaining(0, budget), true)
+    // Adapter 0 turns out to take 300ms (its own worst-case timeout, e.g. jnu's
+    // PDF-feed chain) — far more than the entire budget. The boundary check has
+    // no way to have prevented this; it only runs BETWEEN adapters.
+    const elapsedAfterAdapter0 = 300
+    // Adapter 1's check, now evaluated at elapsed=300, correctly denies it —
+    // demonstrating the guard still recovers control for every adapter AFTER
+    // the slow one, even though it could not bound the slow one itself.
+    assert.equal(hasAdapterBudgetRemaining(elapsedAfterAdapter0, budget), false)
+})
+
+test("exact boundary: elapsed === budget is NOT allowed (strict <, not <=)", () => {
+    assert.equal(hasAdapterBudgetRemaining(100, 100), false)
+    assert.equal(hasAdapterBudgetRemaining(99, 100), true)
+})
+
+testAsync(
+  "INTEGRATION — runGovtAutoUpdate() with injected adapters: every unattempted adapter lands in BOTH skippedSources and sources[], sourcesChecked is untouched, and the final computed status reflects the skip",
+  async () => {
+    // No Supabase env vars are set in this process (confirmed: persist(),
+    // expireStaleJobs(), and recordIngestRun() all guard on
+    // isSupabaseAdminConfigured() and no-op when it's false), so calling the
+    // REAL runGovtAutoUpdate() here makes zero network/DB calls — this
+    // exercises the actual orchestration loop and boundary check end-to-end,
+    // not just the pure helpers tested above.
+    const fast = (id: string): SourceAdapter => ({ id, label: id, kind: "html", enabled: true, fetch: async () => [] })
+    const slow = (id: string, ms: number): SourceAdapter => ({
+          id, label: id, kind: "html", enabled: true,
+          fetch: async () => { await new Promise<void>(r => setTimeout(r, ms)); return [] },
+    })
+    // Two 50ms adapters fit inside an 80ms adapter-phase budget (0<80, then
+    // ~50<80); the third check lands at ~100ms >= 80 and denies the rest.
+    // Margins are generous (30ms either side) to stay robust to scheduler
+    // jitter without relying on exact millisecond timing.
+    const testAdapters = [slow("slow-0", 50), slow("slow-1", 50), fast("fast-2"), fast("fast-3"), fast("fast-4")]
+
+    const prevBudget = process.env.GOVT_INGEST_BUDGET_MS
+    process.env.GOVT_INGEST_BUDGET_MS = String(8_000 + 80) // → adapterPhaseBudgetMs() ≈ 80ms
+    try {
+          const result = await runGovtAutoUpdate({ adapters: testAdapters })
+
+          assert.deepEqual(result.skippedSources, ["fast-2", "fast-3", "fast-4"], "exactly the three adapters past the budget boundary")
+          assert.equal(result.sources.length, testAdapters.length, "every injected adapter — attempted or skipped — must have exactly one sources[] entry")
+          for (const id of ["fast-2", "fast-3", "fast-4"]) {
+                    const entry = result.sources.find(s => s.id === id)
+                    assert.ok(entry, `${id} must have a sources[] report entry even though it was never attempted`)
+                    assert.match(entry!.error ?? "", /^skipped: time budget exceeded/)
+                    assert.equal(entry!.fetched, 0)
+          }
+          for (const id of ["slow-0", "slow-1"]) {
+                    const entry = result.sources.find(s => s.id === id)
+                    assert.ok(entry, `${id} must have a sources[] report entry`)
+                    assert.equal(entry!.error, undefined, `${id} ran to completion and should show no error`)
+          }
+          assert.deepEqual(result.failedSources, [], "nothing threw — only budget-skips occurred")
+
+          // sourcesChecked is NOT the injected test adapter count (5) and not
+          // enabledAdapters().length either — it is ADAPTERS.length, the full
+          // registry, completely unaffected by the override. This pins the
+          // pre-existing ADAPTERS.length-vs-enabledAdapters().length gap
+          // (currently 52 vs 14 in this repo) that the budget guard does not
+          // resolve — see the doc comment on AutoUpdateResult.sourcesChecked.
+          assert.equal(result.sourcesChecked, ADAPTERS.length)
+          assert.notEqual(result.sourcesChecked, testAdapters.length)
+
+          // persist() itself guards on isSupabaseAdminConfigured() and returns
+          // zero published/unchanged whenever Supabase isn't configured —
+          // true here regardless of what slow-0/slow-1 fetched, since that
+          // guard is what keeps this test I/O-free. So `progressed` is always
+          // 0 in this environment, and the correct, real outcome is "error"
+          // (not "partial") for any run with a failure or skip — the same
+          // zero-progress rule the pure tests above already pin directly.
+          // Demonstrating the "partial" branch needs genuine DB progress,
+          // which this integration test deliberately cannot and should not
+          // provide; that branch is covered by the pure computeIngestRunStatus()
+          // tests above using a directly-constructed result object instead.
+          const finalStatus = computeIngestRunStatus(result)
+          assert.equal(finalStatus.status, "error", "zero real progress (no DB configured) + a skip present → error, per the existing zero-progress rule")
+          assert.equal(finalStatus.error, "skipped (budget): fast-2, fast-3, fast-4")
+    } finally {
+          if (prevBudget === undefined) delete process.env.GOVT_INGEST_BUDGET_MS
+          else process.env.GOVT_INGEST_BUDGET_MS = prevBudget
+    }
+  },
+)
 
 /* ── issue #46: RawNotification.publishedAt -> PersistEntry.sourcePublishedAt ── */
 
@@ -234,5 +442,8 @@ test("datesNeedingBackfill() treats an empty-string sourcePublishedAt as absent 
     assert.equal(datesNeedingBackfill(plan).length, 0, "an empty-string sourcePublishedAt must not be treated as a real date")
 })
 
-console.log(`\ningest-run status tests: ${passed} passed, ${failed} failed`)
-if (failed > 0) process.exitCode = 1
+void (async () => {
+    await Promise.all(pendingAsync)
+    console.log(`\ningest-run status tests: ${passed} passed, ${failed} failed`)
+    if (failed > 0) process.exitCode = 1
+})()

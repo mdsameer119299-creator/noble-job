@@ -107,7 +107,12 @@ async function main() {
     `sourcesChecked=${r.sourcesChecked}  fetched=${totalFetched}  written=${r.totalPublished}` +
     `  inserted=${inserted}  updated=${updated}  unchanged=${unchanged}` +
     `  expired=${r.totalExpired}\n` +
-    `failedSources=[${r.failedSources.join(", ") || "none"}]`
+    `failedSources=[${r.failedSources.join(", ") || "none"}]\n` +
+    // skippedSources: adapters never attempted because the elapsed-time budget
+    // ran out first (see adapterPhaseBudgetMs() in govtAutoUpdate.ts) — distinct
+    // from failedSources. Printed unconditionally so a budget-truncated run
+    // never LOOKS clean in this summary just because nothing "failed".
+    `skippedSources=[${(r.skippedSources ?? []).join(", ") || "none"}]`
   console.log(head + "\n")
 
   console.log("Per-source:")
@@ -130,6 +135,7 @@ async function main() {
   summary(`- **Written (inserted+updated):** ${r.totalPublished}` + ` — 🆕 ${inserted} inserted, ♻️ ${updated} updated, ⏭️ ${unchanged} unchanged (not rewritten)`)
   summary(`- **Expired:** ${r.totalExpired}`)
   summary(`- **Failed adapters:** ${r.failedSources.length ? "⚠️ " + r.failedSources.join(", ") : "✅ none"}`)
+  summary(`- **Skipped adapters (time budget):** ${(r.skippedSources ?? []).length ? "⏱️ " + r.skippedSources!.join(", ") : "✅ none"}`)
   summary("")
   summary("| Source | Fetched | Published | Skipped | Status |")
   summary("|---|--:|--:|--:|---|")
