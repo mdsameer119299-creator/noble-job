@@ -38,6 +38,67 @@ function summary(md: string) {
   if (SUMMARY) fs.appendFileSync(SUMMARY, md + "\n")
 }
 
+const GH_OUTPUT = process.env.GITHUB_OUTPUT // set by GitHub Actions (the $GITHUB_OUTPUT file)
+function githubOutput(key: string, value: string) {
+  if (GH_OUTPUT) fs.appendFileSync(GH_OUTPUT, `${key}=${value}\n`)
+}
+
+/**
+ * Per-adapter persistent-failure alert (2026-10-25). Read-only against
+ * `ingest_runs` — this never writes to the DB, only SELECTs rows this run
+ * (and every prior run) already wrote via recordIngestRun(). Computes, using
+ * the exact same pure `newlyPersistentFailures()` used in
+ * govtAutoUpdate.test.ts, which adapters have JUST crossed a 3-consecutive-
+ * attempted-failure streak, and writes their ids to `$GITHUB_OUTPUT` as
+ * `persistent_failures` so the workflow's issue step (added separately, not
+ * in this run itself) can open/append a per-adapter GitHub issue.
+ *
+ * Always writes the output key, even when empty, so the workflow's
+ * `!= ''` condition is well-defined whether or not this function runs at
+ * all (e.g. locally, where GITHUB_OUTPUT is unset, it's a no-op either way).
+ *
+ * Best-effort: any failure here is logged, never thrown — exactly like
+ * recordIngestRun()'s own "never breaks a run" contract, and the output key
+ * is left unwritten (GitHub Actions then reads a missing output as empty,
+ * same as the explicit empty-string case — fails closed, never alerts on a
+ * read failure).
+ */
+async function reportPersistentFailureAlerts(): Promise<void> {
+  if (!GH_OUTPUT) return // local run — nothing to wire this into
+  const { url, key } = adminClient()
+  if (!url || !key) return
+  const STREAK_LENGTH = 3
+  // Needs >= STREAK_LENGTH rows of history BEYOND the current run to tell
+  // "just crossed the threshold" apart from "crossed it a while ago" — see
+  // newlyPersistentFailures()'s doc comment in govtAutoUpdate.ts. 10 is a
+  // generous, bounded margin for an occasional budget-skip in between.
+  const HISTORY_LOOKBACK = 10
+  try {
+    const { createClient } = await import("@supabase/supabase-js")
+    const { parseIngestRunError, newlyPersistentFailures } = await import("@/lib/services/govtAutoUpdate")
+    const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { data, error } = await db
+      .from("ingest_runs")
+      .select("error")
+      .eq("source_id", "all")
+      .order("started_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(HISTORY_LOOKBACK)
+    if (error) {
+      console.error(`[reportPersistentFailureAlerts] could not read ingest_runs history: ${error.message}`)
+      return
+    }
+    const runsMostRecentFirst = (data || []).map(row => parseIngestRunError((row as { error: string | null }).error))
+    const newlyPersistent = newlyPersistentFailures(runsMostRecentFirst, STREAK_LENGTH)
+    githubOutput("persistent_failures", newlyPersistent.join(","))
+    if (newlyPersistent.length) {
+      console.log(`\n⚠️  Newly persistent adapter failure(s) (>= ${STREAK_LENGTH} consecutive attempted runs): ${newlyPersistent.join(", ")}`)
+    }
+  } catch (e) {
+    console.error(`[reportPersistentFailureAlerts] threw: ${(e as Error).message}`)
+  }
+}
+
 function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -142,6 +203,12 @@ async function main() {
   for (const s of rows) {
     summary(`| ${s.id} | ${s.fetched} | ${s.published} | ${s.skipped} | ${s.error ? "⚠️ " + s.error.slice(0, 60) : "✅"} |`)
   }
+
+  // Per-adapter persistent-failure alert — runs regardless of this run's own
+  // outcome (including a systemic failure below), since the whole point is to
+  // alert on an adapter that keeps failing even while the OVERALL run reports
+  // fine (partial success). Read-only; never writes to the DB.
+  await reportPersistentFailureAlerts()
 
   // Systemic-failure detection → non-zero exit triggers GitHub failure alerts.
   // "Unchanged" rows are healthy (compare-before-write skipped them), so a steady-state

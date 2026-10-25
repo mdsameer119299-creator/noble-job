@@ -402,6 +402,125 @@ export function computeIngestRunStatus(
 }
 
 /**
+ * Per-adapter persistent-failure detection (2026-10-25 alerting work), built
+ * ENTIRELY on top of the `ingest_runs.error` text format `computeIngestRunStatus`
+ * already produces — no schema change. All functions below are pure (no I/O),
+ * exported for testing, and operate on already-queried rows (most-recent-first).
+ */
+export interface ParsedIngestRunError { failed: string[]; skipped: string[] }
+
+/**
+ * Parses one `ingest_runs.error` value back into the two id lists
+ * `computeIngestRunStatus` encoded into it: `"failed: a, b, c"` and/or
+ * `"skipped (budget): x, y"`, joined by `"; "` when both are present, in
+ * that exact order (never the reverse — see `computeIngestRunStatus` above).
+ * `null`/empty (a `"success"` row) parses to `{ failed: [], skipped: [] }`.
+ * Tolerant of only one clause being present, and FAILS CLOSED on anything
+ * that doesn't match this exact shape — an unparseable string is treated as
+ * "no failures/skips recorded", which is the safe direction: it can only
+ * cause a real streak to be under-counted (never invented), so it never
+ * produces a false alert.
+ */
+export function parseIngestRunError(error: string | null | undefined): ParsedIngestRunError {
+    if (!error) return { failed: [], skipped: [] }
+    const splitIds = (s: string) => s.split(",").map(x => x.trim()).filter(Boolean)
+    const failedMatch = error.match(/failed: ([^;]+)/)
+    const skippedMatch = error.match(/skipped \(budget\): ([^;]+)/)
+    return {
+          failed: failedMatch ? splitIds(failedMatch[1]) : [],
+          skipped: skippedMatch ? splitIds(skippedMatch[1]) : [],
+    }
+}
+
+export type AdapterRunOutcome = "failed" | "skipped" | "succeeded"
+
+/**
+ * One adapter's outcome in one already-parsed run. An id present in neither
+ * list was attempted and had no error — i.e. it succeeded — which holds
+ * without needing the full enabled-adapter roster, because `failed`/`skipped`
+ * between them already account for every adapter that did NOT cleanly
+ * succeed that run (see `computeIngestRunStatus`).
+ */
+export function adapterOutcomeInRun(adapterId: string, run: ParsedIngestRunError): AdapterRunOutcome {
+    if (run.failed.includes(adapterId)) return "failed"
+    if (run.skipped.includes(adapterId)) return "skipped"
+    return "succeeded"
+}
+
+/**
+ * Consecutive-failure streak for one adapter, scanning `runsMostRecentFirst`
+ * (index 0 = the newest run) backward in time.
+ *
+ *  - "failed"    → counts toward the streak, keep scanning further back.
+ *  - "succeeded" → a CONFIRMED success resets the streak and stops the scan
+ *                  immediately (required: "Reset a failure streak when an
+ *                  adapter is confirmed successful").
+ *  - "skipped"   → never attempted (budget skip). Required: "Never count a
+ *                  run where the adapter was not attempted as a failure" and
+ *                  "an adapter not attempted in a run [must] not extend its
+ *                  streak" — so a skip is excluded from the count entirely,
+ *                  but (being silent on the adapter's real health, not a
+ *                  confirmed success) it must not reset an in-progress streak
+ *                  either. It is simply skipped over, and the scan continues
+ *                  further back to the next ATTEMPTED run.
+ *
+ * Fails closed by construction: with fewer than `streakLength` genuinely
+ * failed+attempted runs behind the most recent one, or with ambiguous/
+ * unparseable history, the count can only come out LOW, never invented —
+ * it can never report a streak longer than the number of runs actually
+ * supplied, and an empty `runsMostRecentFirst` yields 0.
+ */
+export function adapterFailureStreak(adapterId: string, runsMostRecentFirst: ParsedIngestRunError[]): number {
+    let streak = 0
+    for (const run of runsMostRecentFirst) {
+          const outcome = adapterOutcomeInRun(adapterId, run)
+          if (outcome === "succeeded") break
+          if (outcome === "failed") streak += 1
+          // "skipped": neither counts nor breaks — keep scanning further back.
+    }
+    return streak
+}
+
+/**
+ * Adapter ids that are BOTH failing in the most recent run (`runsMostRecentFirst[0]`)
+ * AND have a current failure streak >= `streakLength`. Only adapters failing
+ * right now are considered — an adapter with a past streak that has since
+ * recovered (a confirmed success resets it, see `adapterFailureStreak`) is
+ * correctly excluded.
+ */
+export function persistentlyFailingAdapters(runsMostRecentFirst: ParsedIngestRunError[], streakLength = 3): string[] {
+    if (!runsMostRecentFirst.length) return []
+    const currentlyFailed = runsMostRecentFirst[0].failed
+    return currentlyFailed.filter(id => adapterFailureStreak(id, runsMostRecentFirst) >= streakLength)
+}
+
+/**
+ * The subset of `persistentlyFailingAdapters` that NEWLY crossed the
+ * threshold as of the most recent run — i.e. its streak as of the run
+ * BEFORE this one (`runsMostRecentFirst.slice(1)`) was still below
+ * `streakLength`. This is what should actually trigger an alert: a
+ * continuing outage keeps returning from `persistentlyFailingAdapters` every
+ * run, but only appears here once, on the run where it first reached the
+ * threshold — satisfying "avoids duplicate alerts on every scheduled run."
+ * IMPORTANT caller requirement: this needs AT LEAST `streakLength` rows of
+ * history BEYOND the current run (i.e. `streakLength * 2` rows total) to
+ * correctly tell "just crossed the threshold" apart from "crossed it a while
+ * ago and is still failing." With fewer rows than that, `adapterFailureStreak`
+ * over the shorter `slice(1)` can only undercount, which here means the
+ * "before" streak looks artificially LOW — the opposite of fail-closed for
+ * THIS function: it would OVER-report an old, already-alerted outage as
+ * newly-crossed on every subsequent run, i.e. duplicate alerts, which is
+ * exactly what this function exists to prevent. Callers must fetch generous
+ * history well above the `streakLength * 2` minimum (this patch's caller —
+ * scripts/run-ingestion.ts's reportPersistentFailureAlerts() — fetches 10
+ * rows against a default streakLength of 3, i.e. more than 3x the minimum).
+ */
+export function newlyPersistentFailures(runsMostRecentFirst: ParsedIngestRunError[], streakLength = 3): string[] {
+    const now = persistentlyFailingAdapters(runsMostRecentFirst, streakLength)
+    return now.filter(id => adapterFailureStreak(id, runsMostRecentFirst.slice(1)) < streakLength)
+}
+
+/**
  * Best-effort monitoring write — never breaks a run, but no longer fails
  * SILENTLY: a rejected insert (e.g. missing table / schema-cache miss) is logged
  * so the gap is visible in deploy logs instead of being swallowed.

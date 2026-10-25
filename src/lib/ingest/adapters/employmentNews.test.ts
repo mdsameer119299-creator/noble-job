@@ -90,5 +90,45 @@ test("rows missing org/post are still rejected (existing quality-control behavio
     assert.equal(rows.length, 0)
 })
 
+/* ── 2026-10-25: markup-drift compatibility (parser robustness, NOT a claim
+ * about what actually broke on the live site — no error text was available
+ * to confirm that; this only checks tolerance for small HTML shape changes a
+ * real redesign could plausibly introduce, and separately pins a REAL,
+ * confirmed limitation of the current positional-column parsing). ── */
+
+test("COMPATIBILITY: extra row/cell attributes (class, style) and nested <span>/<b> tags inside cells do not break extraction", () => {
+    const html =
+          `<table>` +
+          `<tr class="hdr"><td>ISSUED DATE</td><td>ORGANISATION</td><td>POST</td><td>METHOD OF APPOINTMENT</td><td>LAST DATE</td></tr>` +
+          `<tr class="row odd" style="background:#fff"><td>12/09/2026</td><td><b>DRDO</b></td><td><span>Scientist</span> B</td><td>Direct Recruitment</td><td>30/10/2026</td></tr>` +
+          `</table>`
+    const [n] = parseEmploymentNewsHtml(html, NOW)
+    assert.ok(n, "row still parsed despite extra attributes and nested tags")
+    assert.equal(n.org, "DRDO")
+    assert.equal(n.post, "Scientist B")
+    assert.equal(n.publishedAt, "2026-09-12T00:00:00.000Z")
+})
+
+test("COMPATIBILITY: extra whitespace/newlines between cells and tags do not break extraction", () => {
+    const html = `<table>\n  <tr>\n    <td> 12/09/2026 </td>\n    <td> DRDO </td>\n    <td> Scientist B </td>\n    <td> Direct Recruitment </td>\n    <td> 30/10/2026 </td>\n  </tr>\n</table>`
+    const [n] = parseEmploymentNewsHtml(html, NOW)
+    assert.ok(n, "row still parsed despite surrounding whitespace")
+    assert.equal(n.org, "DRDO")
+})
+
+test("LIMITATION (confirmed, not a claim about the real failures): an inserted leading serial-number column shifts every column and silently drops the row rather than misreading it", () => {
+    // Pins TODAY's actual, positional (c[0]/c[1]/c[2]/c[3]) parsing: if the live
+    // site ever inserts a leading "S.No." column, c[0] stops being a date, the
+    // existing `/^\d{2}\/\d{2}\/\d{4}$/` guard on c[0] correctly rejects it, and
+    // the row is dropped entirely (safe — never a wrong-column-mapped entry)
+    // but SILENTLY (no error raised) — a real redesign of this shape would
+    // show up as "0 rows parsed", not a thrown error, which is worth knowing
+    // when diagnosing a future "adapter returns nothing" report.
+    const html =
+          `<table><tr><td>1</td><td>12/09/2026</td><td>DRDO</td><td>Scientist B</td><td>Direct Recruitment</td><td>30/10/2026</td></tr></table>`
+    const rows = parseEmploymentNewsHtml(html, NOW)
+    assert.equal(rows.length, 0, "a shifted leading column must be dropped, not silently mis-mapped onto the wrong fields")
+})
+
 console.log(`\nemploymentNews date tests: ${passed} passed, ${failed} failed`)
 process.exitCode = failed ? 1 : 0
