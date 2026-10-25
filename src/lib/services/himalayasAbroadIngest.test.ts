@@ -5,8 +5,8 @@
  *   npx tsx src/lib/services/himalayasAbroadIngest.test.ts
  *
  * Exercises the pure, exported helpers (extractAbroadCountry, idFromGuid,
- * stripHtml, unixToIso, toRow) with no network or database I/O — matching
- * the repo's other dependency-free unit tests. Also exercises the
+ * stripHtml, unixToIso, toRow, fetchRawJobs) with no database I/O —
+ * matching the repo's other dependency-free unit tests. Also exercises the
  * "Supabase not configured" short-circuit of ingestHimalayasAbroadJobs()
  * to confirm no real DB call is made when credentials are absent.
  */
@@ -17,8 +17,12 @@ import {
   stripHtml,
   unixToIso,
   toRow,
+  fetchRawJobs,
   ingestHimalayasAbroadJobs,
+  STALE_CLOSE_MIN_SUCCESS_RATIO,
+  STALE_CLOSE_MIN_ELIGIBLE,
   type RawHimalayasJob,
+  type FetchResult,
 } from "./himalayasAbroadIngest"
 
 let passed = 0
@@ -95,6 +99,69 @@ passed += 1
 assert.strictEqual(extractAbroadCountry(["SomeUnknownPlace"]), null)
 passed += 1
 
+// ── Classification honesty tests ──────────────────────────────────────
+// These verify that the system does NOT misrepresent remote jobs as
+// relocation or visa-sponsored opportunities.
+
+// A "Worldwide" remote job must NOT end up on the abroad board
+assert.strictEqual(extractAbroadCountry(["Worldwide"]), null,
+  "Worldwide remote job must go to WFH, not abroad")
+assert.strictEqual(extractAbroadCountry(["Global"]), null,
+  "Global remote job must go to WFH, not abroad")
+passed += 2
+
+// A remote job restricted to UK is NOT a visa-sponsored relocation offer —
+// it's a remote job that requires the employee to be in the UK
+{
+  const ukJob: RawHimalayasJob = {
+    title: "Backend Developer",
+    companyName: "UK Remote Ltd",
+    guid: "https://himalayas.app/jobs/uk-remote-dev",
+    applicationLink: "https://ukremote.com/apply",
+    locationRestrictions: ["United Kingdom"],
+    employmentType: "Full-time",
+  }
+  const row = toRow(ukJob, "United Kingdom")
+
+  // Badge must NOT say "Sourced", "Relocation", "Visa Sponsored", etc.
+  assert.strictEqual(row.badge, "Remote",
+    "Badge must be 'Remote', not 'Sourced' or 'Relocation'")
+
+  // Location must describe it as a location RESTRICTION, not a relocation offer
+  assert.ok(row.location.includes("restricted to"),
+    "Location must say 'restricted to', not imply relocation")
+  assert.ok(!row.location.includes("Relocation"),
+    "Location must NOT mention relocation")
+  assert.ok(!row.location.includes("Visa"),
+    "Location must NOT mention visa")
+
+  // The original apply_url from the source must be preserved
+  assert.strictEqual(row.apply_url, "https://ukremote.com/apply",
+    "Original source apply URL must be preserved")
+
+  // Provenance must be honest
+  assert.strictEqual(row.provenance, "AGGREGATED",
+    "Provenance must be AGGREGATED for sourced jobs")
+  assert.strictEqual(row.employer_id, null,
+    "employer_id must be null for sourced jobs")
+  passed += 7
+}
+
+// Multi-country restriction: not a visa offer for any specific country
+{
+  const multiRow = toRow({
+    title: "DevOps Engineer",
+    companyName: "GlobalCorp",
+    guid: "https://himalayas.app/jobs/devops-multi",
+    applicationLink: "https://globalcorp.com/careers",
+    locationRestrictions: ["United Kingdom", "Germany", "France"],
+  }, "United Kingdom")
+  assert.strictEqual(multiRow.location, "Remote (restricted to United Kingdom, Germany, France)",
+    "Multi-country restriction must list all countries as restrictions")
+  assert.strictEqual(multiRow.badge, "Remote")
+  passed += 2
+}
+
 // ── idFromGuid ─────────────────────────────────────────────────────────
 
 {
@@ -157,7 +224,7 @@ passed += 5
   assert.strictEqual(row.title, "Senior Engineer")
   assert.strictEqual(row.company, "Acme Corp")
   assert.strictEqual(row.country, "United Kingdom")
-  assert.strictEqual(row.location, "Remote — United Kingdom")
+  assert.strictEqual(row.location, "Remote (restricted to United Kingdom)")
   assert.strictEqual(row.type, "Full-time")
   assert.strictEqual(row.salary, "$80K-$120K/yr")
   assert.strictEqual(row.experience, "5+ Yrs")
@@ -168,7 +235,7 @@ passed += 5
   assert.strictEqual(row.provenance, "AGGREGATED")
   assert.strictEqual(row.employer_id, null)
   assert.strictEqual(row.is_featured, false)
-  assert.strictEqual(row.badge, "Sourced")
+  assert.strictEqual(row.badge, "Remote")
   assert.ok(row.source_posted_at, "source_posted_at should be set")
   assert.ok(row.application_deadline, "application_deadline should be set")
   passed += 18
@@ -204,16 +271,40 @@ passed += 5
   passed += 1
 }
 
-// ── ingestHimalayasAbroadJobs short-circuit ─────────────────────────────
+// ── Stale-close safety constants ───────────────────────────────────────
+
+// Verify the safety thresholds are sane
+assert.ok(STALE_CLOSE_MIN_SUCCESS_RATIO > 0 && STALE_CLOSE_MIN_SUCCESS_RATIO <= 1,
+  "STALE_CLOSE_MIN_SUCCESS_RATIO must be between 0 and 1")
+assert.ok(STALE_CLOSE_MIN_ELIGIBLE >= 1,
+  "STALE_CLOSE_MIN_ELIGIBLE must be at least 1")
+passed += 2
+
+// ── fetchRawJobs returns completeness info ─────────────────────────────
 
 ;(async () => {
+  // fetchRawJobs makes real HTTP calls — we can't control the Himalayas API
+  // in a unit test, but we CAN verify the SHAPE of the result.
+  const result: FetchResult = await fetchRawJobs()
+
+  // Must return completeness tracking fields
+  assert.ok(typeof result.endpointsOk === "number", "endpointsOk must be a number")
+  assert.ok(typeof result.endpointsTotal === "number", "endpointsTotal must be a number")
+  assert.ok(result.endpointsTotal > 0, "endpointsTotal must be > 0")
+  assert.ok(result.endpointsOk >= 0, "endpointsOk must be >= 0")
+  assert.ok(result.endpointsOk <= result.endpointsTotal, "endpointsOk must be <= endpointsTotal")
+  assert.ok(Array.isArray(result.jobs), "jobs must be an array")
+  passed += 6
+
+  // ── ingestHimalayasAbroadJobs short-circuit ───────────────────────────
+
   // With no Supabase configured (test environment), should short-circuit
-  const result = await ingestHimalayasAbroadJobs()
-  assert.strictEqual(result.ok, false)
-  assert.strictEqual(result.reason, "supabase-admin-not-configured")
-  assert.strictEqual(result.fetched, 0)
-  assert.strictEqual(result.upserted, 0)
-  assert.strictEqual(result.closed, 0)
+  const ingestResult = await ingestHimalayasAbroadJobs()
+  assert.strictEqual(ingestResult.ok, false)
+  assert.strictEqual(ingestResult.reason, "supabase-admin-not-configured")
+  assert.strictEqual(ingestResult.fetched, 0)
+  assert.strictEqual(ingestResult.upserted, 0)
+  assert.strictEqual(ingestResult.closed, 0)
   passed += 5
 
   console.log(`\n✅ himalayasAbroadIngest: all ${passed} assertions passed\n`)

@@ -23,8 +23,19 @@
  *  - scam filter applied identically
  *  - duplicates prevented via stable id (`himalayas:<sha1(guid)>`)
  *  - posted_at preserved across refreshes (only set on first insert)
- *  - stale rows marked `status: "closed"` (never deleted)
+ *  - stale rows marked `status: "closed"` (never deleted) — but ONLY when
+ *    the fetch is demonstrably complete (≥50% endpoints succeeded AND ≥3
+ *    eligible results). Partial or failed fetches preserve all existing rows.
  *  - source_posted_at / application_deadline from source only (never inferred)
+ *
+ * HONESTY invariants (classification):
+ *  - badge is "Remote" (not "Sourced" or "Relocation" or "Visa Sponsored")
+ *  - location says "Remote (restricted to <countries>)" — the parenthetical
+ *    reflects the SOURCE's own restriction, not a relocation/visa promise
+ *  - no claim of relocation, visa sponsorship, or guaranteed overseas
+ *    employment unless the source explicitly states it
+ *  - worldwide/unrestricted remote jobs go to WFH, not here — so the board
+ *    only shows jobs with genuine non-India location restrictions
  */
 import { createHash } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -216,7 +227,16 @@ function formatSalary(j: RawHimalayasJob): string {
   return `${fmt(min || max!)}/yr`
 }
 
-/** Build a location string from the restrictions (e.g. "Remote — UAE, UK"). */
+/**
+ * Build a location string from the restrictions. These are the SOURCE's own
+ * location restrictions — they describe where the employee may be located,
+ * NOT that the employer offers relocation or visa sponsorship.
+ *
+ * Output examples:
+ *   "Remote (restricted to UAE, UK)"
+ *   "Remote (restricted to Canada)"
+ *   "Remote"
+ */
 function buildLocation(restrictions?: string[]): string {
   if (!restrictions?.length) return "Remote"
   // Filter out generic terms, keep country/region names
@@ -224,25 +244,44 @@ function buildLocation(restrictions?: string[]): string {
     r => !/^(worldwide|global|remote|anywhere)$/i.test(r.trim()),
   )
   if (specific.length === 0) return "Remote"
-  return `Remote — ${specific.slice(0, 3).join(", ")}`
+  return `Remote (restricted to ${specific.slice(0, 3).join(", ")})`
 }
 
-async function fetchRawJobs(): Promise<RawHimalayasJob[]> {
+export interface FetchResult {
+  jobs: RawHimalayasJob[]
+  /** Number of endpoints that returned a successful HTTP response. */
+  endpointsOk: number
+  /** Total number of endpoints attempted. */
+  endpointsTotal: number
+}
+
+/**
+ * Fetch from all endpoints and track per-endpoint success. The caller uses
+ * endpointsOk / endpointsTotal to decide whether stale-closing is safe.
+ */
+export async function fetchRawJobs(): Promise<FetchResult> {
   const seen = new Set<string>()
   const results: RawHimalayasJob[] = []
+  let endpointsOk = 0
+  const endpointsTotal = ENDPOINTS.length
   await Promise.allSettled(
     ENDPOINTS.map(async url => {
-      const res = await fetch(url, { next: { revalidate: 3600 } })
-      if (!res.ok) return
-      const data = (await res.json()) as { jobs?: RawHimalayasJob[] }
-      for (const j of data.jobs ?? []) {
-        if (!j.guid || seen.has(j.guid)) continue
-        seen.add(j.guid)
-        results.push(j)
+      try {
+        const res = await fetch(url, { next: { revalidate: 3600 } })
+        if (!res.ok) return
+        const data = (await res.json()) as { jobs?: RawHimalayasJob[] }
+        endpointsOk++
+        for (const j of data.jobs ?? []) {
+          if (!j.guid || seen.has(j.guid)) continue
+          seen.add(j.guid)
+          results.push(j)
+        }
+      } catch {
+        // Network error, timeout, JSON parse failure — counted as a failed endpoint
       }
     }),
   )
-  return results
+  return { jobs: results, endpointsOk, endpointsTotal }
 }
 
 export function toRow(j: RawHimalayasJob, country: string): AbroadIngestRow {
@@ -261,7 +300,7 @@ export function toRow(j: RawHimalayasJob, country: string): AbroadIngestRow {
     category: mapCategory(j.categories),
     description,
     skills: [],
-    badge: "Sourced",
+    badge: "Remote",
     apply_url: (j.applicationLink || "").trim(),
     status: "active",
     provenance: "AGGREGATED",
@@ -279,6 +318,12 @@ export interface HimalayasAbroadIngestSummary {
   eligible: number
   upserted: number
   closed: number
+  /** Number of API endpoints that returned a successful response. */
+  endpointsOk?: number
+  /** Total number of API endpoints attempted. */
+  endpointsTotal?: number
+  /** True when stale-closing was skipped due to incomplete fetch. */
+  staleCloseSkipped?: boolean
   reason?: string
 }
 
@@ -288,12 +333,37 @@ export interface HimalayasAbroadIngestSummary {
  * rows. Jobs previously ingested from Himalayas that no longer appear in this
  * fetch are marked `status: "closed"` (never deleted).
  */
+/**
+ * Minimum ratio of successful endpoints to total endpoints required before
+ * stale-closing is allowed. If fewer than this fraction succeeded, we treat
+ * the fetch as incomplete and preserve all existing active rows.
+ *
+ * With 13 endpoints, a threshold of 0.5 means at least 7 must succeed.
+ */
+export const STALE_CLOSE_MIN_SUCCESS_RATIO = 0.5
+
+/**
+ * Even with a fully successful fetch, if the eligible result count drops
+ * below this floor we skip stale-closing — the API may have temporarily
+ * returned empty results.
+ */
+export const STALE_CLOSE_MIN_ELIGIBLE = 3
+
 export async function ingestHimalayasAbroadJobs(): Promise<HimalayasAbroadIngestSummary> {
   if (!isSupabaseAdminConfigured()) {
     return { ok: false, fetched: 0, eligible: 0, upserted: 0, closed: 0, reason: "supabase-admin-not-configured" }
   }
 
-  const raw = await fetchRawJobs()
+  const { jobs: raw, endpointsOk, endpointsTotal } = await fetchRawJobs()
+
+  // If ALL endpoints failed, preserve everything and bail early.
+  if (endpointsOk === 0) {
+    return {
+      ok: true, fetched: 0, eligible: 0, upserted: 0, closed: 0,
+      endpointsOk, endpointsTotal, staleCloseSkipped: true,
+      reason: "all-endpoints-failed",
+    }
+  }
 
   // Filter: must have required fields, not be a scam, and be an abroad (non-India) job
   const eligible: Array<{ job: RawHimalayasJob; country: string }> = []
@@ -307,7 +377,10 @@ export async function ingestHimalayasAbroadJobs(): Promise<HimalayasAbroadIngest
   }
 
   if (eligible.length === 0) {
-    return { ok: true, fetched: raw.length, eligible: 0, upserted: 0, closed: 0 }
+    return {
+      ok: true, fetched: raw.length, eligible: 0, upserted: 0, closed: 0,
+      endpointsOk, endpointsTotal, staleCloseSkipped: true,
+    }
   }
 
   const ids = eligible.map(({ job }) => idFromGuid(job.guid!))
@@ -326,26 +399,50 @@ export async function ingestHimalayasAbroadJobs(): Promise<HimalayasAbroadIngest
 
   const upserted = await upsertRows(rows)
 
-  // Close rows previously ingested from Himalayas that are no longer in the feed
+  // ── Stale-closing with safety guards ──────────────────────────────────
+  //
+  // Close rows previously ingested from Himalayas that are no longer in the
+  // feed — but ONLY when we have high confidence the fetch was complete.
+  //
+  // Safety conditions (ALL must hold):
+  //  1. At least STALE_CLOSE_MIN_SUCCESS_RATIO of endpoints succeeded
+  //  2. At least STALE_CLOSE_MIN_ELIGIBLE jobs passed filtering
+  //  3. A job's source-provided expiryDate (if any) has passed, OR it is
+  //     genuinely absent from a complete fetch
+  //
+  // If conditions aren't met, we skip stale-closing entirely — a false
+  // negative (keeping a closed job visible a bit longer) is much less
+  // harmful than a false positive (hiding a genuine open job).
+
   let closed = 0
-  const currentIds = new Set(ids)
-  const { data: activeHimalayasRows } = await supabaseAdmin
-    .from("abroad_jobs")
-    .select("id")
-    .eq("provenance", "AGGREGATED")
-    .eq("status", "active")
-    .like("id", "himalayas:%")
-  const staleIds = (activeHimalayasRows ?? []).map(r => r.id as string).filter(id => !currentIds.has(id))
-  if (staleIds.length) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await supabaseAdmin
+  const successRatio = endpointsOk / endpointsTotal
+  const fetchIsComplete = successRatio >= STALE_CLOSE_MIN_SUCCESS_RATIO
+    && eligible.length >= STALE_CLOSE_MIN_ELIGIBLE
+  const staleCloseSkipped = !fetchIsComplete
+
+  if (fetchIsComplete) {
+    const currentIds = new Set(ids)
+    const { data: activeHimalayasRows } = await supabaseAdmin
       .from("abroad_jobs")
-      .update({ status: "closed" } as any)
-      .in("id", staleIds)
-    if (!error) closed = staleIds.length
+      .select("id")
+      .eq("provenance", "AGGREGATED")
+      .eq("status", "active")
+      .like("id", "himalayas:%")
+    const staleIds = (activeHimalayasRows ?? []).map(r => r.id as string).filter(id => !currentIds.has(id))
+    if (staleIds.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabaseAdmin
+        .from("abroad_jobs")
+        .update({ status: "closed" } as any)
+        .in("id", staleIds)
+      if (!error) closed = staleIds.length
+    }
   }
 
-  return { ok: true, fetched: raw.length, eligible: eligible.length, upserted, closed }
+  return {
+    ok: true, fetched: raw.length, eligible: eligible.length,
+    upserted, closed, endpointsOk, endpointsTotal, staleCloseSkipped,
+  }
 }
 
 async function upsertRows(rows: Array<AbroadIngestRow & { posted_at: string }>): Promise<number> {
