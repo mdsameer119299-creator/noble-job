@@ -40,7 +40,10 @@ export async function getGenuineJobCounts(opts: { govt?: boolean } = {}): Promis
   try {
     if (opts.govt === false) throw new Error("govt not requested")
     const { getActiveGovtRows } = await import("@/lib/services/govtStatsSource")
-    govt = filterActionable((await getActiveGovtRows()).filter(isCurrentGovtNotification), "govt").length
+    // NOT `.filter(isCurrentGovtNotification)` directly — see govtJobLocal.ts's doc
+    // comment (Array.filter's (element, index, array) collides with the predicate's
+    // second `now` parameter and throws `now.getTime is not a function`).
+    govt = filterActionable((await getActiveGovtRows()).filter(j => isCurrentGovtNotification(j)), "govt").length
   } catch {
     govt = 0
   }

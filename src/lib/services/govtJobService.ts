@@ -19,7 +19,10 @@ export async function getGovtJobs(tab: GovtJobTab = "latest", state?: string): P
   const pool = await getActiveGovtRows()
   const list = getGovtJobsLocal(tab, state, pool)
   if (["latest", "railway", "banking", "ssc", "upsc", "state", "psu"].includes(tab)) {
-    return list.filter(isCurrentGovtNotification)
+    // NOT `.filter(isCurrentGovtNotification)` — see govtJobLocal.ts's doc comment:
+    // Array.filter passes (element, index, array), and `index` collides with the
+    // predicate's second (`now`) parameter.
+    return list.filter(j => isCurrentGovtNotification(j))
   }
   return list
 }
@@ -109,7 +112,8 @@ export async function getGovtJobsFiltered(filters: GovtJobFilters = {}): Promise
   }
 
   // This endpoint is the recruitment-job surface; informational records have separate content surfaces.
-  list = list.filter(isCurrentGovtNotification)
+  // NOT `.filter(isCurrentGovtNotification)` directly — see govtJobLocal.ts's doc comment.
+  list = list.filter(j => isCurrentGovtNotification(j))
 
   return {
     items: list.slice((page - 1) * limit, page * limit),

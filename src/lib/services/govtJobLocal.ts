@@ -38,7 +38,12 @@ export function getGovtJobsLocal(tab: GovtJobTab = "latest", state?: string, poo
     list = list.filter(j => j.state === state || j.location === state)
   }
   if (["latest", "railway", "banking", "ssc", "upsc", "state", "psu"].includes(tab)) {
-    list = list.filter(isCurrentGovtNotification)
+    // NOT `.filter(isCurrentGovtNotification)` — Array.filter calls its predicate
+    // with (element, index, array), and `index` collides with isCurrentGovtNotification's
+    // second (`now: Date`) parameter, throwing `now.getTime is not a function` the
+    // moment any element reaches that line (any genuine notification with a real
+    // source_published_at — i.e. every row this gate exists to let through).
+    list = list.filter(j => isCurrentGovtNotification(j))
   }
   // Remove jobs whose application window has closed based on lastDate.
   // status === "expired" catches DB-flagged jobs; isGovtJobExpired catches
