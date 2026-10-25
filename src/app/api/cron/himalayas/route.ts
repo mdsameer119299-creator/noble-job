@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { refreshHimalayasCache } from "@/services/himalayasCronService"
 import { ingestHimalayasWfhJobs } from "@/lib/services/himalayasWfhIngest"
+import { ingestHimalayasAbroadJobs } from "@/lib/services/himalayasAbroadIngest"
 
 /**
  * Scheduled Himalayas refresh — GET /api/cron/himalayas.
@@ -10,12 +11,14 @@ import { ingestHimalayasWfhJobs } from "@/lib/services/himalayasWfhIngest"
  * on /api/external/jobs is never actually invoked by Vercel Cron and is left
  * as-is for any other manual/authenticated trigger.
  *
- * Runs BOTH real Himalayas refresh paths:
+ * Runs ALL Himalayas refresh paths:
  *  1. refreshHimalayasCache() — the existing himalayas_jobs_cache table that
  *     backs the client-side Private-board "live jobs" overlay (unchanged).
- *  2. ingestHimalayasWfhJobs() — the new DB-backed WFH ingestion (Phase 1C /
- *     Phase 2): writes genuine AGGREGATED rows into wfh_jobs, with dedup,
- *     honest source dates, and closing of jobs no longer returned.
+ *  2. ingestHimalayasWfhJobs() — DB-backed WFH ingestion: writes genuine
+ *     AGGREGATED rows into wfh_jobs with dedup + stale-closing.
+ *  3. ingestHimalayasAbroadJobs() — DB-backed Abroad ingestion: writes genuine
+ *     international (non-India) AGGREGATED rows into abroad_jobs with dedup +
+ *     stale-closing. Same API, inverted geo-filter.
  *
  * Example Vercel cron (vercel.json):
  *   { "crons": [{ "path": "/api/cron/himalayas", "schedule": "0 3 * * *" }] }
@@ -39,11 +42,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
-    const [cacheRefreshed, wfhIngest] = await Promise.all([
+    const [cacheRefreshed, wfhIngest, abroadIngest] = await Promise.all([
       refreshHimalayasCache(),
       ingestHimalayasWfhJobs(),
+      ingestHimalayasAbroadJobs(),
     ])
-    return NextResponse.json({ ok: true, cacheRefreshed, wfhIngest })
+    return NextResponse.json({ ok: true, cacheRefreshed, wfhIngest, abroadIngest })
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }
