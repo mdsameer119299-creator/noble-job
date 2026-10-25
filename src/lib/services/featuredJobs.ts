@@ -4,10 +4,49 @@ import { useLocalInventoryOnly } from "@/lib/supabase/useLocalInventory"
 import { filterActionable, filterListable, displayValue } from "@/lib/jobs/renderable"
 import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
 import { getLivePrivateJobs, getLiveWfhJobs, getLiveAbroadJobs } from "@/lib/services/liveJobOpportunities"
+import { getHimalayasJobsForDisplay } from "@/lib/services/himalayasCache"
+import { toLiveExternalJobs } from "@/lib/jobs/clientRecords"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
+
+/**
+ * Genuine Himalayas remote postings, in the homepage's `Job` card shape.
+ *
+ * Root cause this addresses: the Private board's homepage sections
+ * (getFeaturedPrivateJobs / getLatestJobCards) only ever checked the `jobs` DB
+ * table (empty — no employer postings yet) and `getLivePrivateJobs()`, whose
+ * backing API (`liveJobOpportunities.ts`) is permanently disabled (401s, no
+ * credential exists) and always returns []. Meanwhile `/jobs/private`'s own
+ * "Live Jobs" tab already shows real cards by pulling from a DIFFERENT,
+ * working, already-production live source — the Himalayas cache
+ * (`himalayasCache.ts`, fed by the enabled `/api/cron/himalayas` job) — that
+ * the homepage never queried. This reuses that exact existing, genuine source
+ * instead of inventing one, via the same `toLiveExternalJobs` mapper
+ * (AGGREGATED provenance, "View Details"/external apply only, never a fake
+ * on-site "Apply Now") the Private listing page already uses for it.
+ */
+async function getHimalayasPrivateCards(limit: number): Promise<Job[]> {
+  try {
+    const raw = await getHimalayasJobsForDisplay(limit)
+    return toLiveExternalJobs(raw).slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Private board's full "live" pool: the dead 401 aggregator (always []) merged
+ * with the genuine, working Himalayas source — combined here, one level above
+ * `getLatestJobCards`/`getFeaturedPrivateJobs`, so each of those keeps exactly
+ * one live+DB merge in its own body (see `cardApplyGating.test.ts`'s
+ * "private / wfh / abroad branches each merge live + DB results" check).
+ */
+async function getPrivateLivePool(limit: number): Promise<Job[]> {
+  const [deadAggregator, himalayas] = await Promise.all([getLivePrivateJobs(), getHimalayasPrivateCards(limit)])
+  return mergeById(deadAggregator, himalayas)
+}
 
 export type FeaturedBoard = "private" | "wfh" | "abroad"
 
@@ -38,16 +77,16 @@ function mergeById<T extends { id: string }>(primary: T[], secondary: T[]): T[] 
 
 export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
   const localGenuineFeatured = () => filterActionable(getPrivateJobsFeaturedLocal(200, true), "private").slice(0, limit)
+  const liveSources = () => getPrivateLivePool(limit)
 
   if (useLocalInventoryOnly()) {
-    const live = await getLivePrivateJobs()
-    return live.slice(0, limit)
+    return (await liveSources()).slice(0, limit)
   }
 
   try {
     const { createClient } = await import("@/lib/supabase/server")
     const sb = await createClient()
-    if (!sb) return (await getLivePrivateJobs()).slice(0, limit)
+    if (!sb) return (await liveSources()).slice(0, limit)
 
     const { data: featuredRows } = await sb
       .from("jobs")
@@ -68,10 +107,10 @@ export async function getFeaturedPrivateJobs(limit = 4): Promise<Job[]> {
     const latestGenuine = privateActionable(latestRows || []).slice(0, limit)
     if (latestGenuine.length) return latestGenuine
 
-    const live = await getLivePrivateJobs()
+    const live = await liveSources()
     return live.length ? live.slice(0, limit) : localGenuineFeatured()
   } catch {
-    const live = await getLivePrivateJobs()
+    const live = await liveSources()
     return live.length ? live.slice(0, limit) : localGenuineFeatured()
   }
 }
@@ -158,7 +197,7 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
  */
 export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promise<FeaturedJobCard[]> {
   if (board === "private") {
-    const live = await getLivePrivateJobs()
+    const live = await getPrivateLivePool(limit)
     const liveCards = live.map(j => ({
       board, id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
     }))
