@@ -73,8 +73,124 @@ async function main() {
     const now = new Date("2026-10-01T00:00:00.000Z")
     assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: "2026-09-01T00:00:00.000Z" }, now), true)
     assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: "2025-01-01T00:00:00.000Z" }, now), false)
+    // No publication date AND no created_at → not current (no timestamp to check freshness against)
     assert.equal(isCurrentGovtNotification({ recordType: "notification", sourcePublishedAt: null }, now), false)
     assert.equal(isCurrentGovtNotification({ recordType: "result", sourcePublishedAt: "2026-09-01T00:00:00.000Z" }, now), false)
+  })
+
+  await test("created_at fallback: rows without source_published_at use ingestion timestamp for freshness", () => {
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    // Recent created_at → current (even without source_published_at)
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", sourcePublishedAt: undefined,
+      created_at: "2026-09-15T12:00:00.000Z",
+    }, now), true)
+    // Old created_at (>1 year) → not current
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", sourcePublishedAt: undefined,
+      created_at: "2025-01-01T00:00:00.000Z",
+    }, now), false)
+    // source_published_at takes precedence over created_at
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      sourcePublishedAt: "2026-09-01T00:00:00.000Z",
+      created_at: "2025-01-01T00:00:00.000Z",  // old, but ignored
+    }, now), true)
+    // camelCase createdAt also works
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", sourcePublishedAt: undefined,
+      createdAt: "2026-09-15T12:00:00.000Z",
+    }, now), true)
+    // snake_case source_published_at also works with created_at fallback
+    assert.equal(isCurrentGovtNotification({
+      tab: "latest", title: "Recruitment",
+      source_published_at: undefined,
+      created_at: "2026-08-01T00:00:00.000Z",
+    }, now), true)
+    // Neither timestamp → not current
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+    }, now), false)
+  })
+
+  /* ---------- created_at fallback: edge-case tests (safety review) ---------- */
+
+  await test("source_published_at takes strict precedence over a recent created_at", () => {
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    // Old real publication date — must be excluded even though created_at is recent
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      sourcePublishedAt: "2024-06-01T00:00:00.000Z",
+      created_at: "2026-09-20T00:00:00.000Z",
+    }, now), false, "old source_published_at must win over recent created_at")
+    // Recent real publication date — must pass even though created_at is old
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      sourcePublishedAt: "2026-09-01T00:00:00.000Z",
+      created_at: "2024-01-01T00:00:00.000Z",
+    }, now), true, "recent source_published_at must win over old created_at")
+    // Same with snake_case source_published_at
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      source_published_at: "2024-06-01T00:00:00.000Z",
+      created_at: "2026-09-20T00:00:00.000Z",
+    }, now), false, "snake_case source_published_at must also take precedence")
+  })
+
+  await test("future and boundary timestamps are rejected (clock sanity)", () => {
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    // Future timestamp → age < 0 → excluded
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      created_at: "2027-01-01T00:00:00.000Z",
+    }, now), false, "future timestamp must fail (age < 0)")
+    // Exactly 365 days ago → at the boundary (age === MAX) → included
+    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 3600_000).toISOString()
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      created_at: oneYearAgo,
+    }, now), true, "exactly 365-day-old should be included (age <= MAX)")
+    // One millisecond past the 365-day boundary → excluded
+    const justPast = new Date(now.getTime() - 365 * 24 * 3600_000 - 1).toISOString()
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      created_at: justPast,
+    }, now), false, "1ms past the 1-year window must be excluded")
+  })
+
+  await test("malformed and empty created_at values are safely rejected", () => {
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", created_at: "not-a-date",
+    }, now), false, "non-date string must be rejected")
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", created_at: "",
+    }, now), false, "empty string must be rejected")
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", created_at: "0000-00-00",
+    }, now), false, "zero date must be rejected")
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification", created_at: "99999",
+    }, now), false, "numeric junk must be rejected")
+  })
+
+  await test("expiry and status filtering are independent of isCurrentGovtNotification — the function only checks freshness, not status", () => {
+    // isCurrentGovtNotification() does NOT check status/review_status/published.
+    // Those are enforced by the RLS policy and expireStaleJobs() independently.
+    // This test documents that boundary: the function returns true for a row
+    // that is fresh by timestamp, even if it would be excluded by other mechanisms.
+    const now = new Date("2026-10-01T00:00:00.000Z")
+    // A row with status=expired would be excluded by RLS/expireStaleJobs(),
+    // but isCurrentGovtNotification only sees the timestamp.
+    assert.equal(isCurrentGovtNotification({
+      recordType: "notification",
+      created_at: "2026-09-15T00:00:00.000Z",
+    }, now), true, "freshness gate does not check status — that is RLS/expireStaleJobs()'s job")
+    // Verify the actual query-level exclusion is documented in the RLS policy
+    const reconcileSql = read("supabase/migrations/20260610000001_govt_jobs_reconcile.sql")
+    assert.match(reconcileSql, /status\s*=\s*'active'/, "RLS policy must require status = 'active'")
+    assert.match(reconcileSql, /review_status\s*=\s*'approved'/, "RLS policy must require review_status = 'approved'")
+    assert.match(reconcileSql, /published\s*=\s*TRUE/i, "RLS policy must require published = TRUE")
   })
 
   /* -------------------------- stale-seed protection -------------------------- */

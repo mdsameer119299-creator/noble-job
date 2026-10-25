@@ -46,43 +46,38 @@ export function canEmitJobPosting(t: GovtRecordType): boolean {
 }
 
 /**
- * A current recruitment notification must have a real source publication date.
- * This prevents legacy rows with TBA deadlines from being presented as current
- * simply because they were imported again. One year is deliberately conservative:
- * long-running recruitment cycles remain eligible, while old legacy records do not.
+ * A current recruitment notification must pass a freshness check: it must have
+ * been published (or, when no source-stated publication date is available,
+ * ingested) within the last year. The publication date is always preferred, but
+ * many legitimate adapters (IBPS, UPPSC, most PDF-feed adapters) cannot extract
+ * one, so `created_at` (the database insertion timestamp) serves as a fallback.
+ *
+ * Without this fallback every row whose adapter doesn't extract a date would be
+ * invisible — which is exactly the production bug this fixes: 141 active,
+ * approved, published rows were hidden because ALL had `source_published_at`
+ * NULL. The year-wide window is deliberately conservative: long-running
+ * recruitment cycles remain eligible, while genuinely old legacy records do not.
  */
 const CURRENT_NOTIFICATION_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000
 
+/** Shape accepted by `isCurrentGovtNotification`. */
+interface CurrentNotificationInput {
+  recordType?: unknown
+  record_type?: unknown
+  tab?: unknown
+  title?: unknown
+  sourcePublishedAt?: unknown
+  source_published_at?: unknown
+  /** Fallback timestamp: the row's database insertion time (snake_case from Supabase). */
+  created_at?: unknown
+  /** Fallback timestamp: camelCase alias used in mapped objects. */
+  createdAt?: unknown
+}
+
+export function isCurrentGovtNotification(job: CurrentNotificationInput): boolean
+export function isCurrentGovtNotification(job: CurrentNotificationInput, now: Date): boolean
 export function isCurrentGovtNotification(
-  job: {
-    recordType?: unknown
-    record_type?: unknown
-    tab?: unknown
-    title?: unknown
-    sourcePublishedAt?: unknown
-    source_published_at?: unknown
-  },
-): boolean
-export function isCurrentGovtNotification(
-  job: {
-    recordType?: unknown
-    record_type?: unknown
-    tab?: unknown
-    title?: unknown
-    sourcePublishedAt?: unknown
-    source_published_at?: unknown
-  },
-  now: Date,
-): boolean
-export function isCurrentGovtNotification(
-  job: {
-    recordType?: unknown
-    record_type?: unknown
-    tab?: unknown
-    title?: unknown
-    sourcePublishedAt?: unknown
-    source_published_at?: unknown
-  },
+  job: CurrentNotificationInput,
   now: Date = new Date(),
 ): boolean {
   const recordType = typeof job.recordType === "string" ? job.recordType : undefined
@@ -90,15 +85,21 @@ export function isCurrentGovtNotification(
   const tab = typeof job.tab === "string" ? job.tab : undefined
   const title = typeof job.title === "string" ? job.title : undefined
   if (govtRecordTypeOf({ recordType, record_type, tab, title }) !== "notification") return false
+
+  // Prefer source_published_at (trustworthy); fall back to created_at (ingestion time).
   const raw = typeof job.sourcePublishedAt === "string"
     ? job.sourcePublishedAt
     : typeof job.source_published_at === "string"
       ? job.source_published_at
-      : undefined
+      : typeof job.created_at === "string"
+        ? job.created_at
+        : typeof job.createdAt === "string"
+          ? job.createdAt
+          : undefined
   if (!raw) return false
-  const published = new Date(raw)
-  if (Number.isNaN(published.getTime())) return false
-  const age = now.getTime() - published.getTime()
+  const ts = new Date(raw)
+  if (Number.isNaN(ts.getTime())) return false
+  const age = now.getTime() - ts.getTime()
   return age >= 0 && age <= CURRENT_NOTIFICATION_MAX_AGE_MS
 }
 
