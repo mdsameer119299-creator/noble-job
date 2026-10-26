@@ -159,10 +159,29 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(
  *     verified_* are deliberately NOT public content, so recording a verification never moves it.
  * A figure is therefore affirmatively verified only when ALL of:
  *   1. `verifiedAt` is a real timestamp that is not in the future;
- *   2. `verifiedBy` names a verifier, and it is NOT an automated `ingestion:<adapter>` confirmation — the adapter that
- *      scraped the number cannot vouch for it (JNU's came through exactly such an adapter);
+ *   2. `verifiedBy` is an ADMINISTRATOR ID in the exact shape this repository records for an acting admin (see below) —
+ *      not any non-empty string. `ingestion:<adapter>` is rejected explicitly (the adapter that scraped the number cannot
+ *      vouch for it; JNU's came through exactly such an adapter), and so is every other label ("system", "manual",
+ *      "unknown", an e-mail, a name, a malformed or nil UUID);
  *   3. the verification is not older than the last content change (`contentChangedAt <= verifiedAt`), i.e. the stored
  *      figure was not altered after a person confirmed it; a missing `contentChangedAt` cannot show that → unverified.
+ *
+ * THE ADMINISTRATOR-ID CONTRACT. In this repository an administrator is a row of `users` (id UUID PRIMARY KEY REFERENCES
+ * auth.users(id)) with role = 'admin' and status = 'active'; `requireAdminApi()` (lib/auth/verifyAdminApi.ts) is the only
+ * gate that establishes that, and it returns the Supabase auth `user`. Every existing admin audit column stores that value
+ * verbatim (`admin_reviewed_by: auth.user?.id` in api/admin/application-review). So `verified_by` MUST be `auth.user.id`
+ * — a canonical lowercase UUID — written by server code that has just passed `requireAdminApi()`.
+ *
+ * WHAT THIS PURE FUNCTION CAN AND CANNOT PROVE. It can prove the value has the admin-ID *shape*; it cannot prove the UUID
+ * belongs to a live admin (that needs a database read), and a shape check never proves a human compared the figure with the
+ * notice. The remaining guarantee is therefore the TRUSTED-WRITER contract, which is enforced rather than assumed:
+ *   • `govt_jobs` has RLS with a single SELECT policy, so no browser/anon/authenticated client can write `verified_*`;
+ *     only service-role server code can;
+ *   • the only code permitted to write `verified_by` / `verified_at` is an admin-gated route (it must call
+ *     `requireAdminApi()` and store `auth.user.id`); today NO code writes them, and ingestion must never. A static test
+ *     (govtVacancyEvidence.test.ts, section C) fails if any other file starts writing those columns;
+ *   • record the verification in its own statement AFTER any content edit: an edit that changes a public column in the same
+ *     statement is stamped `content_changed_at = now()` by the trigger and would (correctly, fail-closed) look stale.
  * Nothing else is evidence. In particular NOT: a clean-looking `post` string, the figure merely being parseable
  * (`vacanciesStated`), an official/notification URL, `status = active`, `review_status = approved`, a recent insert, the
  * curated seed marker, or a `vacancy_breakup` (the code builds those from the total).
@@ -175,6 +194,18 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(
 const POST_ENUMERATOR_TAIL = /\(\s*(?:[ivxlc]+|[a-z]|\d{1,2})\s*\)\s*\.?\s*$/i
 const POST_LABEL_NOISE = /\b(closing\s+date|last\s+date|click\s+here|apply\s+online|download|advertisement)\b/i
 const AUTOMATED_VERIFIER = /^\s*ingestion\s*:/i
+/**
+ * The administrator-ID shape: a canonical, lowercase, hyphenated UUID of RFC 4122 version 1–8 and variant 8/9/a/b
+ * (Supabase `auth.users.id` is gen_random_uuid(), i.e. v4, and `user.id` is returned in exactly this form). The nil
+ * and max UUIDs fail the version/variant nibbles. No trimming and no case-folding: a padded, braced, upper-case or
+ * prefixed value is not what the trusted writer stores, so it is not accepted.
+ */
+const ADMIN_USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+/** True only for a value shaped like an administrator ID (`auth.users.id`). Shape only — see the contract above. */
+export function isAdminUserId(v: unknown): v is string {
+  return typeof v === "string" && ADMIN_USER_ID.test(v)
+}
 
 /** True for an OBVIOUS scraped fragment. Missing / empty text is not a fragment (it is simply no evidence either way). */
 export function isObviousScrapedFragment(post: unknown): boolean {
@@ -200,7 +231,8 @@ export type VacancyVerdict =
   | "verified"             // affirmative, current, non-automated verification
   | "unverified"           // a figure with no verification record
   | "automated-verification" // confirmed only by an ingestion adapter
-  | "stale-verification"   // verified, but the record changed afterwards (or cannot be shown unchanged)
+  | "invalid-verifier"     // verified_by is not an administrator ID ("system", "manual", "unknown", malformed, …)
+  | "stale-verification"  // verified, but the record changed afterwards (or cannot be shown unchanged)
   | "scraped-fragment"     // the post text is an obvious extraction fragment
 
 export function vacancyVerdict(job: VacancyEvidence, now: Date = new Date()): VacancyVerdict {
@@ -208,9 +240,10 @@ export function vacancyVerdict(job: VacancyEvidence, now: Date = new Date()): Va
   if (isObviousScrapedFragment(job.post)) return "scraped-fragment"
   const verifiedMs = tsOf(job.verifiedAt)
   if (!Number.isFinite(verifiedMs) || verifiedMs > now.getTime() + 5 * 60_000) return "unverified"
-  const by = typeof job.verifiedBy === "string" ? job.verifiedBy.trim() : ""
-  if (!by) return "unverified"
-  if (AUTOMATED_VERIFIER.test(by)) return "automated-verification"
+  const raw = job.verifiedBy
+  if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) return "unverified"
+  if (typeof raw === "string" && AUTOMATED_VERIFIER.test(raw)) return "automated-verification"
+  if (!isAdminUserId(raw)) return "invalid-verifier"
   const changedMs = tsOf(job.contentChangedAt)
   if (!Number.isFinite(changedMs) || changedMs > verifiedMs) return "stale-verification"
   return "verified"
