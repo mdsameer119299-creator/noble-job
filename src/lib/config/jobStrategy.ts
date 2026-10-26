@@ -89,7 +89,10 @@ export const JOB_STRATEGY_PHASE = {
   },
 }
 
-/** Format a counter like 8000 -> "8,000+". */
+/**
+ * Format a counter like 8000 -> "8,000". Every caller passes an EXACT count read from the data, so no "+"
+ * is appended: "201+" would claim "at least 201" of a number that is precisely 201.
+ */
 export function formatCounter(n: number): string {
-  return `${n.toLocaleString("en-IN")}+`
+  return n.toLocaleString("en-IN")
 }

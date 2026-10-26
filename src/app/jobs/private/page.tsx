@@ -23,7 +23,7 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
     ...buildPageMetadata({
       title: 'Private Jobs in India — IT, Banking, Fresher & More | Noble Job',
       description:
-        'Browse Private Jobs across India from employers and external job sources on Job Portal India Noble Job.',
+        'Browse Private Jobs from employers and external job sources on Job Portal India Noble Job.',
       path: '/jobs/private',
       keywords: ['Private Jobs', 'Jobs in India', 'fresher jobs', 'IT jobs India'],
     }),
@@ -64,8 +64,8 @@ export default async function PrivateJobsPage({ searchParams }: SP) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <AiMatchingSidebar />
             <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', padding: '18px 16px' }}>
-              <h4 style={{ fontWeight: 800, color: '#0d1f4e', marginBottom: 10, fontSize: 14 }}>📬 Daily Job Alerts</h4>
-              <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>Get matching jobs delivered to your inbox daily.</p>
+              <h4 style={{ fontWeight: 800, color: '#0d1f4e', marginBottom: 10, fontSize: 14 }}>📬 Job Alerts</h4>
+              <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>Save your email to set up a job alert.</p>
               <EmailAlertForm board="private" placeholder="Your email address" />
             </div>
           </div>

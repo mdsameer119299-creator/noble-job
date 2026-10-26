@@ -23,7 +23,7 @@ export function EmailAlertForm({
     setLoading(true)
     try {
       const res = await fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, board }) })
-      if (res.ok) { toast.success('Subscribed successfully! ✅'); setEmail('') }
+      if (res.ok) { toast.success('Alert preferences saved ✅'); setEmail('') }
       else toast.error('Failed to subscribe')
     } catch { toast.error('Failed to subscribe') }
     setLoading(false)

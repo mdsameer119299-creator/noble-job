@@ -294,7 +294,7 @@ export function buildJobContent(input: JobContentInput): JobContent {
 
   const aboutOrg = input.sample
     ? `${company} is named here only as an example employer for this sample listing. Noble Job has not confirmed a vacancy with ${company}, and nothing on this page should be read as a hiring announcement by that company.`
-    : `${company} is a recognised employer in the ${cat} space and a sought-after destination for ${input.board === "abroad" ? "international" : "Indian"} job seekers. The organisation invests in its people through structured onboarding, mentoring and clear growth paths. By hiring through Noble Job, ${company} reaches verified, job-ready candidates across India. Always confirm the latest company and role information on the official application page before submitting your application.`
+    : `${company} is the hiring organisation named on this listing, in the ${cat} space. Noble Job shows the role as provided by the listing source and has not independently assessed ${company} as an employer. Always confirm the latest company and role information on the official application page before submitting your application.`
 
   const responsibilities = profile.responsibilities
 

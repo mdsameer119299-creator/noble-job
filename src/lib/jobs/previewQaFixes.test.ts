@@ -181,6 +181,9 @@ const CLAIM_FILES = [
   "src/lib/config/categoryHeroThemes.ts", "src/lib/services/heroStatsService.ts", "src/app/editorial-policy/page.tsx",
   "src/components/heroes/CategoryHeroView.tsx", "src/components/home/StatsStrip.tsx", "src/components/home/EmployerCta.tsx",
   "src/components/jobs/JobCard.tsx",
+  // Release-readiness review: remaining surfaces carrying a claim the data does not support.
+  "src/components/shared/Footer.tsx", "src/components/candidate/JobAlertCta.tsx", "src/components/abroad/AbroadAlertForm.tsx",
+  "src/components/jobs/EmailAlertForm.tsx", "src/lib/seo/jobContent.ts", "src/app/opengraph-image.tsx", "src/components/abroad/CountryCard.tsx",
 ]
 
 test("CLAIMS: the blanket / unsupported phrases the QA found are gone from every audited surface", () => {
@@ -205,11 +208,28 @@ test("CLAIMS: the blanket / unsupported phrases the QA found are gone from every
     [/100% verified/i, "100% verified profiles"],
     [/save 80%/i, "save 80% time"],
     [/Remote Verified/, "'Remote Verified' on an external-source card"],
+    [/premier job portal/i, "'premier' superlative"],
+    [/founding charter/i, "unverifiable 'founding charter' promise"],
+    [/Pan-India Reach|n:'Pan-India'|rural India/, "unsupported pan-India / rural reach (private board holds no India-located employer rows)"],
+    [/delivered to your inbox daily|email matching jobs daily|delivered daily|Daily Job Alerts/i, "daily alert delivery (no sender is wired to job_alerts)"],
+    [/job-ready candidates|recognised employer|sought-after destination|invests in its people/i, "generated employer praise / 'verified, job-ready candidates'"],
+    [/Free Forever/, "'Free Forever' promise"],
+    [/Daily Notifications|Updated Listings/, "'Daily' updates claim (the daily job is a source CHECK; most sources fail and new rows are rare)"],
+    [/label:\s*'Govt Updates'/, "'Govt Updates' beside 'Daily'"],
   ]
   for (const f of CLAIM_FILES) {
     const src = read(f)
     for (const [re, label] of banned) assert.doesNotMatch(src, re, `${f}: "${label}"`)
   }
+})
+
+test("CLAIMS: exact counts are not suffixed with '+' (formatCounter, country cards)", () => {
+  const { formatCounter } = require("../config/jobStrategy")
+  assert.equal(formatCounter(190), "190")
+  assert.equal(formatCounter(61352), "61,352")
+  assert.equal(formatCounter(201), "201")
+  assert.doesNotMatch(code("src/lib/config/jobStrategy.ts"), /\}\+`/)
+  assert.doesNotMatch(code("src/components/abroad/CountryCard.tsx"), /\)\}\+ jobs/)
 })
 
 test("CLAIMS: stats strip shows 'Live Jobs' / 'Verified Employers' ONLY when a real count exists", () => {

@@ -15,7 +15,7 @@ export interface HeroTheme {
   anchor?: string
 }
 
-const GOVT_BULLETS = ["Daily Notifications", "SSC • UPSC • Railway • Banking • Defence"]
+const GOVT_BULLETS = ["Official Notifications", "SSC • UPSC • Railway • Banking • Defence"]
 
 export const CATEGORY_HERO_THEMES: Record<HeroVariant, HeroTheme> = {
   govt: {
@@ -36,7 +36,7 @@ export const CATEGORY_HERO_THEMES: Record<HeroVariant, HeroTheme> = {
     badge: "🏢 Private Sector Careers",
     title: "Find Your",
     titleAccent: "Dream Job",
-    description: "Corporate careers across India — openings from employers and external job sources, plus AI-matched roles.",
+    description: "Private-sector openings from employers and external job sources, plus AI-matched roles.",
     bullets: ["Live inventory counts", "Employer and external-source listings"],
     primaryCta: { label: "Find Jobs", href: "#private-jobs" },
     secondaryCta: { label: "Upload Resume", href: "/auth?role=candidate&tab=register" },

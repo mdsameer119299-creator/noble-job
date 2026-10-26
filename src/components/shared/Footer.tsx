@@ -49,7 +49,7 @@ export function Footer() {
           <div>
             <BrandLogo variant="dark" logoSize={64} style={{ marginBottom: 20 }} />
             <p style={{ fontSize: 13.5, color: '#a7b4c6', lineHeight: 1.75, marginBottom: 20, maxWidth: 300 }}>
-              A premier job portal by <strong style={{ color: '#fbbf24' }}>NCC Foundation</strong>, dedicated to empowering India&apos;s workforce.
+              A job portal by <strong style={{ color: '#fbbf24' }}>NCC Foundation</strong>, dedicated to empowering India&apos;s workforce.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               {SOCIAL_PLATFORMS.map(s => (
