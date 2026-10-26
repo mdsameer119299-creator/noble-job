@@ -41,6 +41,7 @@ import {
 import { applyRouteFor, isGenuineApplyRoute } from "./applyRoute"
 import { govtRecordTypeOf, isCurrentGovtNotification } from "../govt/recordType"
 import { plainTextOf } from "../seo/jobPostingDescription"
+import { isZeroSalaryText } from "./salaryRange"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
 
@@ -81,6 +82,8 @@ export function isPlaceholderText(v: unknown): boolean {
   if (!t) return true
   if (PLACEHOLDER_VALUES.has(t.toLowerCase())) return true
   if (/^[\s\-_.?#*·•0]+$/.test(t)) return true
+  // A salary range stored as zeros ("$0K-$0K/yr", "₹0L") is a formatting artefact, not a salary.
+  if (isZeroSalaryText(t)) return true
   return ACCIDENTAL_TOKEN_RE.test(t)
 }
 

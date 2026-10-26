@@ -9,7 +9,7 @@
  */
 import { ABROAD_COUNTRY_COUNT } from "@/lib/data/jobInventory"
 import {
-  getPrivateVisibleCounts,
+  getPrivateListingCounts,
   getWfhVisibleCounts,
   getAbroadVisibleCounts,
   getVisibleAbroadCountryCounts,
@@ -141,7 +141,8 @@ async function govtStatsForSlug(slug?: string): Promise<HeroStatsPayload> {
 export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: string }): Promise<HeroStatsPayload> {
   switch (variant) {
     case "private": {
-      const [c, live] = await Promise.all([getPrivateVisibleCounts(), genuineLive("private")])
+      // The private hero counts what the private LIST shows (employer rows + the live third-party jobs it merges in).
+      const [c, live] = await Promise.all([getPrivateListingCounts(), genuineLive("private")])
       return {
         counters: [
           { key: "all", label: "Roles to Explore", value: c.all },
@@ -173,7 +174,7 @@ export async function getHeroStats(variant: HeroVariant, opts?: { govtSlug?: str
           { label: "Remote", sub: "Work anywhere", accent: "🏠" },
           { label: "Flexible Hours", sub: "Your schedule", accent: "⏰" },
           { label: "Global Teams", sub: "International", accent: "🌍" },
-          { label: "Verified Employers", sub: "Trusted companies", accent: "✓" },
+          { label: "Clear Sources", sub: "Employer or external", accent: "🔗" },
         ],
       }
     }

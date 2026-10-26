@@ -33,6 +33,26 @@ export interface PrivateDbPage {
   counts?: ListingCounts | null
 }
 
+/**
+ * How many live third-party jobs the Private list shows for these cache rows — the very same
+ * renderable / de-duplicated set `mergePrivateListing` puts on the page (live ids are unique within it).
+ */
+export function countLiveListing(liveRows: unknown): number {
+  return new Set(toLiveExternalJobs(liveRows, 'LIVE_JOB').map(j => j.id)).size
+}
+
+/**
+ * The Private board's status counts as its UNFILTERED first page presents them: the employer-table
+ * counts plus the live third-party jobs the list merges in (they are "Live Jobs" in its tabs).
+ * Hero / strip counters use this so "Roles to Explore" equals the number of jobs the list shows,
+ * instead of silently excluding the live feed the list renders. Pure; no I/O.
+ */
+export function withLiveListingCounts(dbCounts: ListingCounts | null | undefined, liveRows: unknown): ListingCounts {
+  const c = dbCounts || { all: 0, live: 0, verified: 0, archived: 0 }
+  const n = countLiveListing(liveRows)
+  return { all: c.all + n, live: c.live + n, verified: c.verified, archived: c.archived }
+}
+
 export function mergePrivateListing(dbData: PrivateDbPage, liveRows: unknown): MergedPrivateListing {
   // Every record is re-checked here: anything incomplete (no title / company /
   // description / location, unknown provenance) is dropped, nothing is defaulted.

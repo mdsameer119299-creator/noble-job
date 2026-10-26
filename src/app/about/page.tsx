@@ -45,7 +45,7 @@ export default function AboutPage() {
               Noble Job was founded with a singular purpose: to make quality employment accessible to every Indian — regardless of background, location or economic status. We believe every talented individual deserves a fair shot at a great career.
             </p>
             <p style={{ color: '#374151', fontSize: 15, lineHeight: 1.8 }}>
-              As an initiative of <strong>NCC Foundation</strong>, we operate on a strict no-fee-from-candidates policy. We earn from verified employers only, ensuring our interests always align with the job seeker.
+              As an initiative of <strong>NCC Foundation</strong>, we operate on a strict no-fee-from-candidates policy.
             </p>
           </div>
           <div style={{ background: 'linear-gradient(135deg,#1847d4,#0d1f4e)', borderRadius: 20, padding: '36px', textAlign: 'center', color: '#fff' }}>
@@ -62,9 +62,9 @@ export default function AboutPage() {
           </div>
           <div className="grid-resp-3" style={{ display: 'grid', gap: 20 }}>
             {[
-              { icon: '🛡️', title: 'Zero Fake Jobs', desc: 'Every listing passes our 40-point anti-scam filter. We partner only with verified employers and official company career pages.' },
+              { icon: '🛡️', title: 'Honest Trust Labels', desc: 'A Verified label appears only on jobs posted by employers we have verified. Jobs from external sources link to the original application page, so you can confirm the details first-hand.' },
               { icon: '💰', title: 'Always Free for Candidates', desc: 'Noble Job has never charged a job seeker and never will. This is written into our founding charter.' },
-              { icon: '🤝', title: 'Trusted Employer Network', desc: 'From TCS and Infosys to local SMEs, our employer network spans every major industry in India.' },
+              { icon: '🤝', title: 'Employers & Official Sources', desc: 'Listings come from employers who post on Noble Job, official government notifications and external job feeds.' },
               { icon: '🌍', title: 'Pan-India Reach', desc: 'Jobs across India — from metro hubs like Delhi and Bangalore to Tier 2/3 cities and rural India.' },
               { icon: '🤖', title: 'AI-Powered Matching', desc: 'Our AI engine matches candidates to the right jobs based on skills, experience and location preferences.' },
               { icon: '📊', title: 'Transparency First', desc: 'We publish our anti-scam policy, fee structure and contact details openly. No hidden charges, ever.' },

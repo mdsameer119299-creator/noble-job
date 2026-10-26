@@ -23,7 +23,7 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
     ...buildPageMetadata({
       title: 'Private Jobs in India — IT, Banking, Fresher & More | Noble Job',
       description:
-        'Browse Private Jobs from top companies across India. Live verified openings on Job Portal India Noble Job.',
+        'Browse Private Jobs across India from employers and external job sources on Job Portal India Noble Job.',
       path: '/jobs/private',
       keywords: ['Private Jobs', 'Jobs in India', 'fresher jobs', 'IT jobs India'],
     }),

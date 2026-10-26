@@ -2,7 +2,7 @@
 export const SITE_NAME = "Noble Job"
 export const SITE_TAGLINE = "Find The Right Job, Build Your Bright Future"
 export const SITE_DESCRIPTION =
-  "Noble Job is India's trusted job portal — browse Jobs in India including Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. Apply to verified openings from top employers."
+  "Noble Job is India's trusted job portal — browse Jobs in India including Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. Listings from external sources link to the original application page."
 
 export const DEFAULT_KEYWORDS = [
   "Jobs in India",

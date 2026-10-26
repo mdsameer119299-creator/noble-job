@@ -22,6 +22,7 @@ import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobsPaginated } from "@/lib/services/wfhJobService"
 import { getAbroadJobsPaginated, getAbroadCountryCounts } from "@/lib/services/abroadJobService"
 import { ABROAD_COUNTRY_TARGETS } from "@/lib/data/jobInventory"
+import { withLiveListingCounts } from "@/lib/jobs/mergePrivateListing"
 import type { JobFilter } from "@/types/job"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 import type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -51,6 +52,23 @@ export async function getPrivateVisibleCounts(filter: JobFilter = {}): Promise<S
   }
 }
 
+/**
+ * Status counts of the Private board exactly as its UNFILTERED list presents them: the employer-table
+ * counts (`getPrivateVisibleCounts`) PLUS the live third-party jobs the list merges in on page 1
+ * (`mergePrivateListing`, fed by the same `getHimalayasJobsForDisplay(100)` read the page uses).
+ * Without the live part, the hero said "0 Roles to Explore" while the list showed those jobs.
+ * A live-cache failure degrades to the employer counts only (as the page degrades to no live jobs).
+ */
+export async function getPrivateListingCounts(): Promise<StatusCounts> {
+  const base = await getPrivateVisibleCounts()
+  try {
+    const { getHimalayasJobsForDisplay } = await import("@/lib/services/himalayasCache")
+    return withLiveListingCounts(base, await getHimalayasJobsForDisplay(100))
+  } catch {
+    return base
+  }
+}
+
 export async function getWfhVisibleCounts(filters: WfhJobFilters = {}): Promise<StatusCounts> {
   try {
     return (await getWfhJobsPaginated({ ...filters, page: 1, limit: 1 })).counts ?? ZERO
@@ -77,7 +95,7 @@ export interface VisibleBoardCounts {
 
 /** Counts of the three job boards exactly as their lists show them. */
 export async function getVisibleBoardCounts(): Promise<VisibleBoardCounts> {
-  const [p, w, a] = await Promise.all([getPrivateVisibleCounts(), getWfhVisibleCounts(), getAbroadVisibleCounts()])
+  const [p, w, a] = await Promise.all([getPrivateListingCounts(), getWfhVisibleCounts(), getAbroadVisibleCounts()])
   return { private: p, wfh: w, abroad: a, total: sum(p, w, a) }
 }
 

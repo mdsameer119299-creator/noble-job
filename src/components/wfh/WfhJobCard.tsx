@@ -5,7 +5,7 @@ import type { WfhJob } from '@/types/wfhJob'
 import { WfhSkillTags } from './WfhSkillTags'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
-import { classifyProvenance, hasVerifiedTrust, isGenuine } from '@/lib/jobs/provenance'
+import { classifyProvenance, isEmployerVerified, isGenuine } from '@/lib/jobs/provenance'
 import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { ApplicationModal } from '@/components/jobs/ApplicationModal'
@@ -103,7 +103,8 @@ export function WfhJobCard({ job, onClick }: WfhJobCardProps) {
               ? `📄 ${nonGenuineListingLabel(job)}`
               : [
                   Number.isFinite(job.applicants) && job.applicants > 0 ? `👤 ${job.applicants} applicants` : '',
-                  hasVerifiedTrust(job) ? 'Verified' : '',
+                  // "Verified" = a verified EMPLOYER's own posting; an aggregated/curated row with a stale flag never is.
+                  isEmployerVerified(job) ? 'Verified' : '',
                 ].filter(Boolean).join(' · ')}
         </span>
         {canApply ? (

@@ -285,6 +285,11 @@ export function jobDetailHref(
   job: Classifiable & { id?: string | null },
 ): string | null {
   if (!job.id) return null
+  // The private detail route reads only the employer `jobs` table, so a live third-party (Himalayas)
+  // id has no detail page there — `/jobs/private/himalayas:<hash>` is a 404. Those jobs link to their
+  // own source URL instead (see privateCardLink). WFH / Abroad store Himalayas rows in their own
+  // tables, so their detail pages exist and are unaffected.
+  if (board === "private" && String(job.id).startsWith("himalayas:")) return null
   return isGenuine(job) ? `/jobs/${board}/${job.id}` : null
 }
 

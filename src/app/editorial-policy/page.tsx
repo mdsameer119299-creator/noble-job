@@ -19,12 +19,12 @@ export default function EditorialPolicyPage() {
         {
           heading: "How We Source Job Listings",
           paragraphs: [
-            "Government job notifications are compiled from official sources including the recruiting organisations, their official websites and published recruitment notifications. Private, work-from-home and abroad listings are sourced from verified employers, official company career pages and trusted recruitment partners.",
+            "Government job notifications are compiled from official sources including the recruiting organisations, their official websites and published recruitment notifications. Private, work-from-home and abroad listings come from employers who post on Noble Job, official company career pages and external job feeds. External listings link to the original application page.",
           ],
           bullets: [
             "Official notifications and government recruitment portals",
-            "Verified employer and company career pages",
-            "Trusted recruitment and staffing partners",
+            "Employer and company career pages",
+            "External job feeds and recruitment partners",
             "Direct submissions from registered, verified employers on Noble Job",
           ],
         },

@@ -569,7 +569,9 @@ test("cards never print 'undefined' / 'null' / filler chips and never claim an u
   assert.match(card, /isActionableJob\(job, 'private'\)/, "Apply Now only for an actionable job")
   const wfh = read("src/components/wfh/WfhJobCard.tsx")
   assert.doesNotMatch(wfh, /'🏠 ' \+ job\.type|`👤 \$\{job\.applicants\} applicants · Verified`/)
-  assert.match(wfh, /hasVerifiedTrust\(job\)/)
+  // 'Verified' needs the strictest predicate (employer-owned + verification evidence) — hasVerifiedTrust alone would also bless an aggregated row.
+  assert.match(wfh, /isEmployerVerified\(job\)/)
+  assert.doesNotMatch(wfh, /hasVerifiedTrust\(job\)/)
   assert.doesNotMatch(read("src/components/jobs/JobDetailModal.tsx"), /\|\| '#'/, "no '#' apply link")
   assert.match(read("src/lib/utils/formatters.ts"), /Number\.isNaN\(date\.getTime\(\)\)\) return ""/, "formatDate never returns 'Invalid Date'")
 })

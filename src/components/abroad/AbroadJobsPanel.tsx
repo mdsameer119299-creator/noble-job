@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
 import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
+import { abroadViewFromParams, sameAbroadView, type AbroadView } from '@/lib/jobs/abroadView'
 import { AbroadJobCard } from './AbroadJobCard'
 import { AbroadDetailModal } from './AbroadDetailModal'
 import { AbroadSearchBar } from './AbroadSearchBar'
@@ -26,8 +27,10 @@ export interface InitialAbroadData {
   total: number
   totalPages: number
   counts: Counts
-  /** The page number the server rendered; the first client fetch is skipped only for this exact, unfiltered view. */
+  /** The page number the server rendered. */
   page: number
+  /** The exact URL view (search, country, category, status, page) the server rendered; the first client fetch is skipped only when the client's URL view equals it. */
+  view?: AbroadView
 }
 
 export function AbroadJobsPanel({ countries, initialData }: { countries: CountryCount[]; initialData?: InitialAbroadData }) {
@@ -42,11 +45,8 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
   const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
   const [selected, setSelected] = useState<AbroadJob | null>(null)
 
-  const q = params.get('q') || ''
-  const country = params.get('country') || ''
-  const category = params.get('category') || ''
-  const status = params.get('status') || 'all'
-  const page = Number(params.get('page') || 1)
+  const view = abroadViewFromParams(params)
+  const { q, country, category, status, page } = view
 
   const setParam = useCallback((key: string, value: string) => {
     const p = new URLSearchParams(params.toString())
@@ -55,10 +55,11 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
     router.push(`${pathname}?${p}`, { scroll: false })
   }, [router, pathname, params])
 
-  // The server already rendered this exact view (no filters, same page) — refetching on mount
-  // would only flash the real list back to "Loading…".
+  // The server already rendered THIS exact URL view (filters and page included, see abroadView.ts) —
+  // refetching on mount would only flash the real list back to "Loading…". Any other view (a filter or page
+  // change, or a server view that could not be rendered) fetches as before.
   const serverRendered = useRef(!!initialData)
-  const isServerView = !q && !country && !category && (!status || status === 'all') && page === initialData?.page
+  const isServerView = sameAbroadView(view, initialData?.view)
 
   useEffect(() => {
     if (serverRendered.current) {

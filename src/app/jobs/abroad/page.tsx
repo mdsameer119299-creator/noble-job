@@ -7,6 +7,7 @@ import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
 import { getVisibleAbroadCountryCounts } from '@/lib/services/visibleCounts'
 import { getAbroadJobsPaginated } from '@/lib/services/abroadJobService'
+import { abroadViewFromSearchParams, abroadQueryFor } from '@/lib/jobs/abroadView'
 
 export const dynamic = "force-dynamic"
 
@@ -18,19 +19,24 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
 }
 
 export default async function AbroadJobsPage({ searchParams }: SP) {
-  const page = pageFromSearchParams(await searchParams)
+  const sp = await searchParams
+  const page = pageFromSearchParams(sp)
+  // The exact view the URL asks for (country / category / search / status / page) — rendered here, not
+  // after hydration, so a filtered deep link never flashes the unfiltered totals first.
+  const view = abroadViewFromSearchParams(sp)
   const countries = await getVisibleAbroadCountryCounts()
 
   // Server-side initial data fetch so search engines see real job content.
   let initialData: InitialAbroadData | undefined
   try {
-    const result = await getAbroadJobsPaginated({ page, limit: 20 })
+    const result = await getAbroadJobsPaginated({ ...abroadQueryFor(view), limit: 20 } as Parameters<typeof getAbroadJobsPaginated>[0])
     initialData = {
       jobs: result.items,
       total: result.total,
       totalPages: result.totalPages,
       counts: result.counts,
       page,
+      view,
     }
   } catch {
     // SSR fetch failed — the client component will re-fetch on mount.

@@ -78,7 +78,7 @@ export function HeroSection() {
                   fontWeight: 400,
                 }}
               >
-                Explore thousands of verified jobs from top companies and government organizations.
+                Explore government, private, work-from-home and international job listings in one place.
               </p>
 
               <div className="flex flex-wrap gap-3 sm:gap-4 items-center">

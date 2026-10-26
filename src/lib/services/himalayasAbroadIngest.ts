@@ -43,6 +43,7 @@ import { isSupabaseAdminConfigured } from "@/lib/supabase/config"
 import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import { isScam } from "@/lib/utils/scamFilter"
 import { mapCategory, mapSeniority, colorForCompany } from "@/lib/utils/jobMapper"
+import { formatSalaryRange } from "@/lib/jobs/salaryRange"
 
 const BASE = "https://himalayas.app/jobs/api"
 
@@ -218,13 +219,10 @@ export function unixToIso(seconds?: number): string | null {
 }
 
 function formatSalary(j: RawHimalayasJob): string {
-  const min = j.minSalary
-  const max = j.maxSalary
   const cur = j.currency || "USD"
-  if (!min && !max) return ""
   const fmt = (n: number) => (cur === "USD" ? `$${Math.round(n / 1000)}K` : `${cur} ${Math.round(n / 1000)}K`)
-  if (min && max) return `${fmt(min)}-${fmt(max)}/yr`
-  return `${fmt(min || max!)}/yr`
+  // "" (unavailable) when there is no usable figure or it rounds to zero ("$0K-$0K/yr").
+  return formatSalaryRange(j.minSalary, j.maxSalary, fmt)
 }
 
 /**

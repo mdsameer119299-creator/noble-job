@@ -121,7 +121,7 @@ export function CategoryHeroView({ theme, stats, showEmployers, variantClass }: 
 
           {showEmployers != null && showEmployers > 0 && (
             <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, marginBottom: 14, fontWeight: 600 }}>
-              {showEmployers.toLocaleString('en-IN')}+ verified employer partners hiring remotely
+              {showEmployers.toLocaleString('en-IN')} verified employers on Noble Job
             </p>
           )}
 

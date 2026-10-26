@@ -293,7 +293,11 @@ for (const [panel, view] of [
   test(`HYDRATION: ${panel} skips its mount fetch only for the exact server-rendered view`, () => {
     const src = code(panel)
     assert.match(src, /useRef\(\s*!!initialData\s*\)/, "tracks whether the first run follows a server render")
-    assert.match(src, new RegExp(`const\\s+${view}\\b[\\s\\S]*?page\\s*===\\s*initialData\\?\\.page`), "view check includes the page number")
+    // Private / WFH compare the page inline; Abroad compares the WHOLE url view (filters + page) via sameAbroadView.
+    const viewCheck = panel.includes("abroad")
+      ? new RegExp(`const\\s+${view}\\s*=\\s*sameAbroadView\\(\\s*view\\s*,\\s*initialData\\?\\.view\\s*\\)`)
+      : new RegExp(`const\\s+${view}\\b[\\s\\S]*?page\\s*===\\s*initialData\\?\\.page`)
+    assert.match(src, viewCheck, "view check includes the page number")
     assert.match(src, new RegExp(`if\\s*\\(\\s*${view}\\s*\\)\\s*return`), "returns before setLoading(true)")
     assert.ok(src.indexOf(`if (${view}) return`) < src.indexOf("setLoading(true)"), "skip happens before the loading flash")
   })
@@ -302,7 +306,9 @@ for (const [panel, view] of [
 test("HYDRATION: filters are part of the server-view check, so a filtered URL still refetches", () => {
   assert.match(code("src/components/jobs/LiveJobsList.tsx"), /isServerView\s*=[\s\S]*?!q[\s\S]*?!location[\s\S]*?!exp[\s\S]*?status/)
   assert.match(code("src/components/wfh/WfhJobsPanel.tsx"), /isServerView\s*=\s*[\s\S]*?!q\s*&&\s*cat\s*===\s*'all'[\s\S]*?sort\s*===\s*'latest'/)
-  assert.match(code("src/components/abroad/AbroadJobsPanel.tsx"), /isServerView\s*=\s*!q\s*&&\s*!country\s*&&\s*!category/)
+  // Abroad: the server now renders the filtered URL view itself, so the check is "my URL view === the view the
+  // server rendered" (see abroadView.ts + previewQaFixes.test.ts) — a different view (filter / page) still refetches.
+  assert.match(code("src/components/abroad/AbroadJobsPanel.tsx"), /isServerView\s*=\s*sameAbroadView\(\s*view\s*,\s*initialData\?\.view\s*\)/)
 })
 
 test("HYDRATION: WFH page requests exactly the defaults the client/API use (cat=all, exp=all, sort=latest, limit=20)", () => {
