@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
 import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
-import { abroadViewFromParams, sameAbroadView, type AbroadView } from '@/lib/jobs/abroadView'
+import { abroadViewFromParams, sameAbroadView, abroadTransition, type AbroadView } from '@/lib/jobs/abroadView'
 import { AbroadJobCard } from './AbroadJobCard'
 import { AbroadDetailModal } from './AbroadDetailModal'
 import { AbroadSearchBar } from './AbroadSearchBar'
@@ -38,7 +38,9 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
   const pathname = usePathname()
   const params = useSearchParams()
   const [jobs, setJobs] = useState<AbroadJob[]>(initialData?.jobs ?? [])
-  const [loading, setLoading] = useState(!initialData)
+  // The view the jobs / total / counts currently held in state belong to. Starts as the view the server rendered
+  // (undefined when there is no server data → pending until the first fetch lands).
+  const [loadedView, setLoadedView] = useState<AbroadView | undefined>(initialData?.view)
   const [failed, setFailed] = useState(false)
   const [total, setTotal] = useState(initialData?.total ?? 0)
   const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
@@ -47,6 +49,9 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
 
   const view = abroadViewFromParams(params)
   const { q, country, category, status, page } = view
+  // Derived each render: while the URL view differs from the loaded one nothing may present the old data as
+  // the new selection's (see abroadTransition) — no number from the previous result set, even for one frame.
+  const { listPending: loading, totalPending } = abroadTransition(view, loadedView)
 
   const setParam = useCallback((key: string, value: string) => {
     const p = new URLSearchParams(params.toString())
@@ -66,7 +71,9 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
       serverRendered.current = false
       if (isServerView) return
     }
-    setLoading(true)
+    // Responses can arrive out of order (UAE then UK quickly); only the latest request may write state.
+    let cancelled = false
+    const requested = view
     const sp = new URLSearchParams({ page: String(page) })
     if (q) sp.set('q', q)
     if (country) sp.set('country', country)
@@ -75,8 +82,9 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
     fetch(`/api/abroad-jobs?${sp}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
+        if (cancelled) return
         // A failed request is an ERROR state — never an empty list that reads as "no jobs".
-        if (!d) { setFailed(true); setJobs([]); setTotal(0); setTotalPages(1); return }
+        if (!d) { setFailed(true); setJobs([]); setTotal(0); setTotalPages(1); setLoadedView(requested); return }
         setFailed(false)
         // Re-check every record on the client; count === displayed jobs.
         const raw: unknown[] = Array.isArray(d.data) ? d.data : Array.isArray(d.jobs) ? d.jobs : []
@@ -86,9 +94,10 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
         setTotal(Math.max(0, (Number(d.total) || ok.length) - dropped))
         setTotalPages(Number(d.totalPages) || 1)
         if (d.counts) setCounts({ ...d.counts, all: Math.max(0, (d.counts.all ?? 0) - dropped) })
+        setLoadedView(requested)
       })
-      .catch(() => { setFailed(true); setJobs([]); setTotal(0) })
-      .finally(() => setLoading(false))
+      .catch(() => { if (!cancelled) { setFailed(true); setJobs([]); setTotal(0); setLoadedView(requested) } })
+    return () => { cancelled = true }
   }, [q, country, category, status, page])
 
   const countFor = (id: string) =>
@@ -113,7 +122,7 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
               }}>
               {t.label}
               <span style={{ fontSize: 11, fontWeight: 800, background: activeTab ? 'rgba(255,255,255,.2)' : '#e0f2fe', color: activeTab ? '#fff' : '#0369a1', padding: '1px 7px', borderRadius: 10 }}>
-                {countFor(t.id).toLocaleString('en-IN')}
+                {totalPending ? '…' : countFor(t.id).toLocaleString('en-IN')}
               </span>
             </button>
           )
@@ -124,8 +133,12 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
         <AbroadFilterSidebar country={country} onCountry={c => setParam('country', c)} />
         <div>
           {!failed && (
-            <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
-              Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs
+            <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }} aria-live="polite" data-total-state={totalPending ? 'loading' : 'ready'}>
+              {totalPending ? (
+                'Updating results…'
+              ) : (
+                <>Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs</>
+              )}
             </p>
           )}
           {loading ? (
@@ -139,7 +152,7 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
               {jobs.map(j => <AbroadJobCard key={j.id} job={j} onClick={setSelected} />)}
             </div>
           )}
-          {totalPages > 1 && (
+          {!totalPending && totalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 24 }}>
               <button disabled={page <= 1} onClick={() => setParam('page', String(page - 1))}
                 style={{ padding: '8px 16px', borderRadius: 9, border: '1.5px solid #e2e8f0', background: '#fff', color: page <= 1 ? '#cbd5e1' : '#0369a1', fontWeight: 700, fontSize: 13, cursor: page <= 1 ? 'default' : 'pointer' }}>← Prev</button>

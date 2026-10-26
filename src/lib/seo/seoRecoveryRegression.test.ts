@@ -251,7 +251,13 @@ for (const b of BOARDS) {
     const src = code(b.panel)
     assert.match(src, new RegExp(`export\\s+interface\\s+${b.type}\\b`), `${b.type} exported`)
     assert.match(src, /useState<[^>]+>\(\s*initialData\?\.jobs\s*\?\?\s*\[\]\s*\)/, "jobs state seeded from initialData")
-    assert.match(src, /useState\(\s*!initialData\s*\)/, "loading starts false when initialData is present")
+    if (b.panel.includes("abroad")) {
+      // Abroad derives "loading" from (URL view vs the view the held data belongs to); it starts as the server-rendered view, so it is NOT loading.
+      assert.match(src, /useState<AbroadView \| undefined>\(\s*initialData\?\.view\s*\)/, "loaded view starts as the server-rendered view")
+      assert.match(src, /abroadTransition\(\s*view\s*,\s*loadedView\s*\)/, "loading derived from view equality")
+    } else {
+      assert.match(src, /useState\(\s*!initialData\s*\)/, "loading starts false when initialData is present")
+    }
   })
 }
 
@@ -298,8 +304,10 @@ for (const [panel, view] of [
       ? new RegExp(`const\\s+${view}\\s*=\\s*sameAbroadView\\(\\s*view\\s*,\\s*initialData\\?\\.view\\s*\\)`)
       : new RegExp(`const\\s+${view}\\b[\\s\\S]*?page\\s*===\\s*initialData\\?\\.page`)
     assert.match(src, viewCheck, "view check includes the page number")
-    assert.match(src, new RegExp(`if\\s*\\(\\s*${view}\\s*\\)\\s*return`), "returns before setLoading(true)")
-    assert.ok(src.indexOf(`if (${view}) return`) < src.indexOf("setLoading(true)"), "skip happens before the loading flash")
+    assert.match(src, new RegExp(`if\\s*\\(\\s*${view}\\s*\\)\\s*return`), "returns before the fetch")
+    // Abroad has no setLoading: its fetch (and its loaded-view bookkeeping) starts after the skip.
+    const afterSkip = panel.includes("abroad") ? "fetch(`/api/abroad-jobs" : "setLoading(true)"
+    assert.ok(src.indexOf(`if (${view}) return`) < src.indexOf(afterSkip), "skip happens before the loading flash / fetch")
   })
 }
 

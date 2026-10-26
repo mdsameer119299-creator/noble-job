@@ -59,6 +59,23 @@ export function sameAbroadView(a: AbroadView | undefined, b: AbroadView | undefi
   return !!a && !!b && a.q === b.q && a.country === b.country && a.category === b.category && a.status === b.status && a.page === b.page
 }
 
+/** Same search / country / category / status (page ignored): the count, tab counts and page total depend only on these. */
+export function sameAbroadFilters(a: AbroadView | undefined, b: AbroadView | undefined): boolean {
+  return !!a && !!b && a.q === b.q && a.country === b.country && a.category === b.category && a.status === b.status
+}
+
+/**
+ * What the panel may present while the URL view and the view its data was loaded for can differ.
+ *   • `listPending`  — the rows on screen belong to another view (a filter OR page change is in flight) → show the loading state;
+ *   • `totalPending` — the FILTER changed, so the old total / tab counts / page count describe a different result set
+ *     (the unfiltered 190 must never be shown as "UK's" count) → show a loading placeholder instead of any number.
+ * A page-only change keeps the total: it is still the right total for the same filters.
+ * Derived during render from the two views, so there is no frame (before any effect runs) that shows the old number.
+ */
+export function abroadTransition(view: AbroadView, loadedView: AbroadView | undefined): { listPending: boolean; totalPending: boolean } {
+  return { listPending: !sameAbroadView(view, loadedView), totalPending: !sameAbroadFilters(view, loadedView) }
+}
+
 /** The query the list API / service is called with for a view (status "all" is the absence of a status filter). */
 export function abroadQueryFor(view: AbroadView): { q: string; country: string; category: string; status?: string; page: number } {
   return { q: view.q, country: view.country, category: view.category, ...(view.status && view.status !== "all" ? { status: view.status } : {}), page: view.page }

@@ -22,7 +22,7 @@ import { mergePrivateListing, withLiveListingCounts, countLiveListing } from "./
 import { formatSalaryRange, isZeroSalaryText } from "./salaryRange"
 import { displayValue, isRealDisplayValue } from "./renderable"
 import {
-  abroadViewFromSearchParams, abroadViewFromParams, sameAbroadView, abroadQueryFor, normalisePage,
+  abroadViewFromSearchParams, abroadViewFromParams, sameAbroadView, sameAbroadFilters, abroadTransition, abroadQueryFor, normalisePage,
 } from "./abroadView"
 import { getAbroadJobsPaginatedLocal } from "../services/abroadJobLocal"
 import { mapRawHimalayasJob } from "../services/himalayasService"
@@ -358,7 +358,107 @@ test("VIEW: wiring — the page renders the URL view and hands it over; the pane
   assert.match(panel, /isServerView\s*=\s*sameAbroadView\(\s*view\s*,\s*initialData\?\.view\s*\)/)
   assert.match(panel, /const\s+view\s*=\s*abroadViewFromParams\(\s*params\s*\)/)
   assert.doesNotMatch(panel, /Number\(params\.get\('page'\)/, "client page parsing is the shared normalisePage")
-  assert.ok(panel.indexOf("if (isServerView) return") < panel.indexOf("setLoading(true)"))
+  assert.doesNotMatch(panel, /setLoading\(/, "loading is derived from view equality, not an effect-set flag that lags the URL change")
+})
+
+/* ───────── 6. Abroad filter change: the old total is never presented as the new selection's ───────── */
+
+const UNFILTERED = { q: "", country: "", category: "", status: "all", page: 1 }
+const view = (over: Record<string, unknown> = {}) => ({ ...UNFILTERED, ...over })
+
+test("TRANSITION: unfiltered → UK / UAE / any filter is a pending TOTAL; page-only change keeps the total; same view is settled", () => {
+  for (const country of ["UK", "UAE"]) {
+    const t = abroadTransition(view({ country }), UNFILTERED)
+    assert.deepEqual(t, { listPending: true, totalPending: true }, `${country}: old total must not be shown`)
+  }
+  assert.deepEqual(abroadTransition(view({ q: "nurse" }), UNFILTERED), { listPending: true, totalPending: true })
+  assert.deepEqual(abroadTransition(view({ status: "LIVE_JOB" }), UNFILTERED), { listPending: true, totalPending: true })
+  assert.deepEqual(abroadTransition(view({ page: 2 }), UNFILTERED), { listPending: true, totalPending: false }, "same filters → same total, only the list is pending")
+  assert.deepEqual(abroadTransition(UNFILTERED, UNFILTERED), { listPending: false, totalPending: false })
+  assert.deepEqual(abroadTransition(view({ country: "UK" }), view({ country: "UK" })), { listPending: false, totalPending: false })
+  // No data yet (no server view) → everything pending, never a zero / stale number.
+  assert.deepEqual(abroadTransition(UNFILTERED, undefined), { listPending: true, totalPending: true })
+  assert.equal(sameAbroadFilters(view({ page: 5 }), view({ page: 1 })), true)
+  assert.equal(sameAbroadFilters(view({ country: "UK" }), view({ country: "UAE" })), false)
+})
+
+// Render the REAL panel on the server (effects do not run) with a mocked router / URL — i.e. the exact frame the
+// browser paints between the click's URL change and the data arriving.
+/* eslint-disable @typescript-eslint/no-require-imports */
+const ReactLib = require("react")
+const { renderToString } = require("react-dom/server")
+const NodeModule = require("node:module")
+let mockSearch = ""
+const origLoad = NodeModule._load
+NodeModule._load = function (req: string, ...rest: unknown[]) {
+  if (req === "next/navigation") {
+    return { useRouter: () => ({ push() {} }), usePathname: () => "/jobs/abroad", useSearchParams: () => new URLSearchParams(mockSearch) }
+  }
+  return origLoad.call(this, req, ...rest)
+}
+;(globalThis as unknown as { React: unknown }).React = ReactLib
+const { AbroadJobsPanel } = require("../../components/abroad/AbroadJobsPanel")
+NodeModule._load = origLoad
+
+const counts = { all: 190, live: 100, verified: 50, archived: 40 }
+function renderPanel(search: string, loaded: { total: number; totalPages: number; view: ReturnType<typeof view> }) {
+  mockSearch = search
+  NodeModule._load = function (req: string, ...rest: unknown[]) {
+    if (req === "next/navigation") return { useRouter: () => ({ push() {} }), usePathname: () => "/jobs/abroad", useSearchParams: () => new URLSearchParams(mockSearch) }
+    return origLoad.call(this, req, ...rest)
+  }
+  try {
+    const initialData = { jobs: [], counts, page: loaded.view.page, ...loaded }
+    return (renderToString(ReactLib.createElement(AbroadJobsPanel, { countries: [], initialData })) as string).replace(/<!-- -->/g, "")
+  } finally {
+    NodeModule._load = origLoad
+  }
+}
+const unfilteredLoaded = { total: 190, totalPages: 10, view: UNFILTERED }
+
+for (const country of ["UK", "UAE"]) {
+  test(`TRANSITION: clicking ${country} from the unfiltered page — the first frame shows NO "190" / "Showing 190" / "Page 1 of 10", only a loading state`, () => {
+    const html = renderPanel(`country=${country}`, unfilteredLoaded)
+    assert.match(html, /data-total-state="loading"/)
+    assert.match(html, /Updating results/)
+    assert.match(html, /Loading abroad jobs/)
+    assert.doesNotMatch(html, /190/, "the unfiltered total must not appear anywhere in the transition frame")
+    assert.doesNotMatch(html, /Showing/)
+    assert.doesNotMatch(html, /Page 1 of 10/)
+    assert.doesNotMatch(html, /No abroad jobs match/, "a pending view is not an empty result")
+  })
+}
+
+test("TRANSITION: the settled server-rendered views are unchanged — unfiltered shows 190; a ?country=UK deep link shows its own 11 immediately", () => {
+  const plain = renderPanel("", unfilteredLoaded)
+  assert.match(plain, /data-total-state="ready"/)
+  assert.match(plain, /Showing <strong[^>]*>190<\/strong> international jobs/)
+  assert.match(plain, /Page 1 of 10/)
+  const ukView = view({ country: "UK" })
+  const deep = renderPanel("country=UK", { total: 11, totalPages: 1, view: ukView })
+  assert.match(deep, /data-total-state="ready"/)
+  assert.match(deep, /Showing <strong[^>]*>11<\/strong> international jobs/)
+  assert.doesNotMatch(deep, /Updating results/)
+  assert.doesNotMatch(deep, /Loading abroad jobs/)
+})
+
+test("TRANSITION: a page-only change keeps the (still valid) total and the pager while the list loads", () => {
+  const html = renderPanel("page=2", unfilteredLoaded)
+  assert.match(html, /data-total-state="ready"/)
+  assert.match(html, /Showing <strong[^>]*>190<\/strong>/)
+  assert.match(html, /Page 2 of 10/)
+  assert.match(html, /Loading abroad jobs/)
+})
+
+test("TRANSITION: wiring — loading derives from the loaded view; a stale response cannot overwrite a newer selection", () => {
+  const panel = code("src/components/abroad/AbroadJobsPanel.tsx")
+  assert.match(panel, /abroadTransition\(\s*view\s*,\s*loadedView\s*\)/)
+  assert.match(panel, /useState<AbroadView \| undefined>\(initialData\?\.view\)/)
+  assert.match(panel, /let cancelled = false/)
+  assert.match(panel, /return \(\) => \{ cancelled = true \}/)
+  assert.equal((panel.match(/if \(cancelled\) return/g) ?? []).length >= 1, true)
+  assert.match(panel, /setLoadedView\(requested\)/)
+  assert.match(panel, /totalPending \? '…'/, "status tab counts are placeholders while the filter is pending")
 })
 
 console.log(`\npreview QA fix tests: ${passed} passed, ${failed} failed`)
