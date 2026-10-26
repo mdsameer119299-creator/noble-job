@@ -23,6 +23,7 @@ import { getWfhJobsPaginated } from "@/lib/services/wfhJobService"
 import { getAbroadJobsPaginated, getAbroadCountryCounts } from "@/lib/services/abroadJobService"
 import { ABROAD_COUNTRY_TARGETS } from "@/lib/data/jobInventory"
 import { withLiveListingCounts } from "@/lib/jobs/mergePrivateListing"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
 import type { JobFilter } from "@/types/job"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 import type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -61,6 +62,10 @@ export async function getPrivateVisibleCounts(filter: JobFilter = {}): Promise<S
  */
 export async function getPrivateListingCounts(): Promise<StatusCounts> {
   const base = await getPrivateVisibleCounts()
+  // The live cache is a database-backed source: without a configured database (unit tests, CI, a bare
+  // local checkout) there is no cache to read and no live HTTP fallback is attempted from a COUNT, so the
+  // number stays deterministic and equal to the employer / local-inventory count.
+  if (!isSupabaseConfigured()) return base
   try {
     const { getHimalayasJobsForDisplay } = await import("@/lib/services/himalayasCache")
     return withLiveListingCounts(base, await getHimalayasJobsForDisplay(100))

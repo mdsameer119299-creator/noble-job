@@ -167,6 +167,9 @@ test("COUNT: wiring — the private hero and the board totals read the listing c
   const vc = code("src/lib/services/visibleCounts.ts")
   assert.match(vc, /export async function getPrivateListingCounts[\s\S]*?withLiveListingCounts\(\s*base\s*,\s*await getHimalayasJobsForDisplay\(100\)\s*\)/, "same 100-row live read the page uses")
   assert.match(vc, /getVisibleBoardCounts[\s\S]*?getPrivateListingCounts\(\)/)
+  // Hermetic: with no configured database (tests / CI / bare checkout) a COUNT never reaches the network.
+  assert.match(vc, /getPrivateListingCounts[\s\S]*?if \(!isSupabaseConfigured\(\)\) return base[\s\S]*?getHimalayasJobsForDisplay/)
+  assert.match(code("src/app/api/jobs/[[...params]]/route.ts"), /getPrivateListingCounts\(\)/, "/api/jobs/count agrees with the hero and the list")
   assert.match(code("src/app/jobs/private/page.tsx"), /getHimalayasJobsForDisplay\(100\)[\s\S]*?mergePrivateListing\(/)
 })
 
