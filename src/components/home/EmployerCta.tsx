@@ -22,8 +22,8 @@ export function EmployerCta() {
           <path d="M9 12l2 2 4-4"/>
         </svg>
       ),
-      title: 'Verified Candidates',
-      desc: '100% verified & quality profiles',
+      title: 'Candidate Profiles',
+      desc: 'Browse candidate profiles matched to your job',
     },
     {
       icon: (
@@ -31,8 +31,8 @@ export function EmployerCta() {
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
         </svg>
       ),
-      title: 'Save Time & Cost',
-      desc: 'Automate screening, save 80% time',
+      title: 'Faster Screening',
+      desc: 'Automate first-round resume screening',
     },
     {
       icon: (

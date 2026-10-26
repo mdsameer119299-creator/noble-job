@@ -179,7 +179,8 @@ const CLAIM_FILES = [
   "src/components/home/HeroSection.tsx", "src/app/page.tsx", "src/lib/seo/constants.ts", "src/lib/seo/faq.ts",
   "src/app/about/page.tsx", "src/app/jobs/private/page.tsx", "src/app/jobs/wfh/layout.tsx",
   "src/lib/config/categoryHeroThemes.ts", "src/lib/services/heroStatsService.ts", "src/app/editorial-policy/page.tsx",
-  "src/components/heroes/CategoryHeroView.tsx", "src/components/home/StatsStrip.tsx",
+  "src/components/heroes/CategoryHeroView.tsx", "src/components/home/StatsStrip.tsx", "src/components/home/EmployerCta.tsx",
+  "src/components/jobs/JobCard.tsx",
 ]
 
 test("CLAIMS: the blanket / unsupported phrases the QA found are gone from every audited surface", () => {
@@ -201,6 +202,9 @@ test("CLAIMS: the blanket / unsupported phrases the QA found are gone from every
     [/verified employer partners hiring remotely/i, "verified employer partners hiring remotely"],
     [/Trusted companies/i, "WFH 'Verified Employers / Trusted companies' card"],
     [/'Growing'|'Daily',\s*label:\s*'Live Jobs'/, "word standing in for a missing count"],
+    [/100% verified/i, "100% verified profiles"],
+    [/save 80%/i, "save 80% time"],
+    [/Remote Verified/, "'Remote Verified' on an external-source card"],
   ]
   for (const f of CLAIM_FILES) {
     const src = read(f)
@@ -223,6 +227,14 @@ test("CLAIMS: 'Verified' on a WFH card needs the employer-verified predicate —
   assert.equal(isEmployerVerified(aggregated), false)
   const employer = { id: "e1", provenance: "EMPLOYER", employer_id: "emp-1", verified: true, jobStatus: "VERIFIED_JOB" as const }
   assert.equal(isEmployerVerified(employer), true, "a verified employer's own posting keeps its label")
+})
+
+test("CLAIMS: an external-source card names its source ('via …') and never says Verified", () => {
+  const src = code("src/components/jobs/JobCard.tsx")
+  assert.match(src, /link\.kind\s*===\s*'external'\s*\|\|\s*link\.kind\s*===\s*'unavailable'\s*\?\s*'🌐 via '/)
+  assert.doesNotMatch(src, /\|\|\s*'Verified'/, "no unconditional 'Verified' fallback in the card footer")
+  // The source-name cleanup used for the label: "Himalayas (Verified Remote)" → "Himalayas".
+  assert.equal("Himalayas (Verified Remote)".replace(/\s*\((?:verified[^)]*)\)/i, ""), "Himalayas")
 })
 
 test("CLAIMS: the OG image carries no counts and no verification claim (verifiable from its source)", () => {

@@ -114,7 +114,8 @@ export function JobCard({ job, onSave }: JobCardProps) {
             : !genuine
               ? `📄 ${nonGenuineListingLabel(job)}`
               : [
-                  job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (displayValue(job.source) || 'Verified'),
+                  // An external-source card names its SOURCE; it never says "Verified" (that label is employer-evidence only).
+                  link.kind === 'external' || link.kind === 'unavailable' ? '🌐 via ' + (displayValue(job.source)?.replace(/\s*\((?:verified[^)]*)\)/i, '') || 'external source') : '✅ ' + (displayValue(job.source) || 'Listed'),
                   formatDate((job as any).posted_at || job.posted || ''),
                 ].filter(Boolean).join(' · ')}
         </span>
