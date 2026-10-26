@@ -230,6 +230,10 @@ test("CLAIMS: exact counts are not suffixed with '+' (formatCounter, country car
   assert.equal(formatCounter(201), "201")
   assert.doesNotMatch(code("src/lib/config/jobStrategy.ts"), /\}\+`/)
   assert.doesNotMatch(code("src/components/abroad/CountryCard.tsx"), /\)\}\+ jobs/)
+  // Government hubs print exact counts too ("132 Notifications", not "132+").
+  for (const f of ["src/components/heroes/CategoryHero.tsx", "src/components/govt/GovtScopeHero.tsx", "src/components/govt/GovtNavGrids.tsx"]) {
+    assert.doesNotMatch(code(f), /\}\+\s*(Vacancies|Notifications|Departments|notices|posts)|\}\+`/, `${f}: exact count with a '+'`)
+  }
 })
 
 test("CLAIMS: stats strip shows 'Live Jobs' / 'Verified Employers' ONLY when a real count exists", () => {

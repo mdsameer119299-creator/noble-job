@@ -37,9 +37,9 @@ function buildDynamicBullets(variant: HeroVariant, stats: HeroStatsPayload, govt
   }
   if (variant === 'govt' || !!govtSlug) {
     return [
-      `${n('vacancies').toLocaleString('en-IN')}+ Vacancies`,
-      `${n('notifications').toLocaleString('en-IN')}+ Notifications`,
-      `${n('departments')}+ Departments`,
+      `${n('vacancies').toLocaleString('en-IN')} Vacancies`,
+      `${n('notifications').toLocaleString('en-IN')} Notifications`,
+      `${n('departments')} Departments`,
       `${n('states')} States Covered`,
     ]
   }
