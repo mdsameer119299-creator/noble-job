@@ -30,6 +30,7 @@ export default async function AbroadJobsPage({ searchParams }: SP) {
       total: result.total,
       totalPages: result.totalPages,
       counts: result.counts,
+      page,
     }
   } catch {
     // SSR fetch failed — the client component will re-fetch on mount.

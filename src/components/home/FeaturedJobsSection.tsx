@@ -1,19 +1,8 @@
 import Link from 'next/link'
 import { getFeaturedJobsMix, type FeaturedJobCard } from '@/lib/services/featuredJobs'
+import { featuredCardLink } from '@/lib/jobs/featuredCardLink'
 
 const BOARD_LABEL: Record<FeaturedJobCard['board'], string> = { private: 'Private', wfh: 'Work From Home', abroad: 'Abroad' }
-
-/**
- * Aggregated external jobs (Himalayas-sourced) link directly to their real source
- * URL rather than to an internal detail page that would 404 — `getJobById()` only
- * checks the `jobs` table, and these live in `wfh_jobs`/`abroad_jobs` instead.
- */
-function cardLink(card: FeaturedJobCard): { href: string; external: boolean } {
-  if (card.apply_url && card.id.startsWith('himalayas:')) {
-    return { href: card.apply_url, external: true }
-  }
-  return { href: `/jobs/${card.board}/${card.id}`, external: false }
-}
 
 /**
  * Genuine-employer jobs only (see featuredJobs.ts), balanced across all three
@@ -40,7 +29,7 @@ export async function FeaturedJobsSection() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 16 }}>
         {jobs.map(job => {
-          const link = cardLink(job)
+          const link = featuredCardLink(job)
           const cardStyle = {
             display: 'block', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 16,
             padding: '18px 20px', textDecoration: 'none', boxShadow: '0 2px 12px rgba(24,71,212,.06)',

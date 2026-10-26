@@ -540,8 +540,12 @@ test("client WFH / abroad / govt list filters drop incomplete rows", () => {
 
 test("client components: every list is re-checked, errors are an ERROR state (never an empty 'no jobs' or a fake job)", () => {
   const live = read("src/components/jobs/LiveJobsList.tsx")
-  assert.match(live, /toListingJobs\(/)
-  assert.match(live, /toLiveExternalJobs\(/)
+  // The re-check lives in the shared merge (the SAME code the server page uses to render the
+  // first page): the component must go through it, and it must still validate BOTH sources.
+  assert.match(live, /mergePrivateListing\(/)
+  const merge = read("src/lib/jobs/mergePrivateListing.ts")
+  assert.match(merge, /toListingJobs\(/)
+  assert.match(merge, /toLiveExternalJobs\(/)
   assert.doesNotMatch(live, /String\(raw\./, "no String(undefined) mapping")
   assert.doesNotMatch(live, /'#'|'Competitive'|'Recent'|\?\? true/, "no placeholder defaults")
   assert.match(live, /role="alert"/, "a failed load has its own intentional error state")

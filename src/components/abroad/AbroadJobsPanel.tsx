@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
 import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
@@ -26,6 +26,8 @@ export interface InitialAbroadData {
   total: number
   totalPages: number
   counts: Counts
+  /** The page number the server rendered; the first client fetch is skipped only for this exact, unfiltered view. */
+  page: number
 }
 
 export function AbroadJobsPanel({ countries, initialData }: { countries: CountryCount[]; initialData?: InitialAbroadData }) {
@@ -53,7 +55,16 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
     router.push(`${pathname}?${p}`, { scroll: false })
   }, [router, pathname, params])
 
+  // The server already rendered this exact view (no filters, same page) — refetching on mount
+  // would only flash the real list back to "Loading…".
+  const serverRendered = useRef(!!initialData)
+  const isServerView = !q && !country && !category && (!status || status === 'all') && page === initialData?.page
+
   useEffect(() => {
+    if (serverRendered.current) {
+      serverRendered.current = false
+      if (isServerView) return
+    }
     setLoading(true)
     const sp = new URLSearchParams({ page: String(page) })
     if (q) sp.set('q', q)

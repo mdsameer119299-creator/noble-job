@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { JobCard } from './JobCard'
 import { JobsLoadingSkeleton } from './JobsLoadingSkeleton'
 import { SourceDisclaimer } from './SourceDisclaimer'
 import { useJobFilters } from '@/hooks/useJobFilters'
-import { toListingJobs, toLiveExternalJobs } from '@/lib/jobs/clientRecords'
+import { mergePrivateListing } from '@/lib/jobs/mergePrivateListing'
 import type { Job } from '@/types/job'
 
 type Counts = { all: number; live: number; verified: number; archived: number }
@@ -21,6 +21,8 @@ export interface InitialJobData {
   total: number
   totalPages: number
   counts: Counts
+  /** The page number the server rendered; the first client fetch is skipped only for this exact, unfiltered view. */
+  page: number
 }
 
 export function LiveJobsList({ initialData }: { initialData?: InitialJobData } = {}) {
@@ -32,7 +34,18 @@ export function LiveJobsList({ initialData }: { initialData?: InitialJobData } =
   const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
   const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
 
+  // The server already rendered this exact view (unfiltered, same page) with the same merge the
+  // client uses — refetching on mount would only flash the real list back to "Loading…".
+  const serverRendered = useRef(!!initialData)
+  const isServerView =
+    !q && (!category || category === 'all') && (!type || type === 'all') && !location && !exp &&
+    (!status || status === 'all') && page === initialData?.page
+
   useEffect(() => {
+    if (serverRendered.current) {
+      serverRendered.current = false
+      if (isServerView) return
+    }
     setLoading(true)
     const params = new URLSearchParams()
     if (q) params.set('q', q)
@@ -62,32 +75,11 @@ export function LiveJobsList({ initialData }: { initialData?: InitialJobData } =
         return
       }
       setFailed(false)
-      // Every record is re-checked here: anything incomplete (no title / company /
-      // description / location, unknown provenance) is dropped, nothing is defaulted.
-      const rawDb: unknown[] = Array.isArray(dbData.jobs) ? dbData.jobs : []
-      const dbJobs = toListingJobs(rawDb, 'VERIFIED_JOB')
-      const liveJobs = toLiveExternalJobs(liveData?.data, 'LIVE_JOB')
-      const seen = new Set<string>()
-      const combined = [...liveJobs, ...dbJobs].filter(j => {
-        if (seen.has(j.id)) return false
-        seen.add(j.id)
-        return true
-      })
-      const liveIds = new Set(liveJobs.map(j => j.id))
-      const liveShown = combined.filter(j => liveIds.has(j.id)).length
-      // The server's totals already describe renderable rows only; subtract anything
-      // this check dropped so the count still equals what can be displayed.
-      const dropped = rawDb.length - dbJobs.length
-      const c: Counts = dbData.counts || { all: 0, live: 0, verified: 0, archived: 0 }
-      setJobs(combined)
-      setTotal(Math.max(0, (Number(dbData.total) || dbJobs.length) - dropped) + liveShown)
-      setTotalPages(Number(dbData.totalPages) || 1)
-      setCounts({
-        all: Math.max(0, c.all - dropped) + liveShown,
-        live: c.live + liveShown,
-        verified: c.verified,
-        archived: c.archived,
-      })
+      const merged = mergePrivateListing(dbData, liveData?.data)
+      setJobs(merged.jobs)
+      setTotal(merged.total)
+      setTotalPages(merged.totalPages)
+      setCounts(merged.counts)
     }).finally(() => setLoading(false))
   }, [q, category, type, location, exp, status, page])
 

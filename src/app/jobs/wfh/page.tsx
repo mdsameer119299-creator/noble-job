@@ -23,12 +23,13 @@ export default async function WfhJobsPage({ searchParams }: SP) {
   // Server-side initial data fetch so search engines see real job content.
   let initialData: InitialWfhData | undefined
   try {
-    const result = await getWfhJobsPaginated({ page, limit: 20 })
+    const result = await getWfhJobsPaginated({ cat: 'all', exp: 'all', sort: 'latest', page, limit: 20 })
     initialData = {
       jobs: result.items,
       total: result.total,
       totalPages: result.totalPages,
       counts: result.counts,
+      page,
     }
   } catch {
     // SSR fetch failed — the client component will re-fetch on mount.

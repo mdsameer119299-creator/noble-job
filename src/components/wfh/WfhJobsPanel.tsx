@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { WfhJob } from '@/types/wfhJob'
 import { toRenderableWfhJobs } from '@/lib/jobs/clientRecords'
@@ -27,6 +27,8 @@ export interface InitialWfhData {
   total: number
   totalPages: number
   counts: Counts
+  /** The page number the server rendered; the first client fetch is skipped only for this exact, unfiltered view. */
+  page: number
 }
 
 export function WfhJobsPanel({ initialData }: { initialData?: InitialWfhData } = {}) {
@@ -64,7 +66,17 @@ export function WfhJobsPanel({ initialData }: { initialData?: InitialWfhData } =
     setLocalQ(q)
   }, [q])
 
+  // The server already rendered this exact view (default filters, same page) — refetching on
+  // mount would only flash the real list back to "Loading…".
+  const serverRendered = useRef(!!initialData)
+  const isServerView =
+    !q && cat === 'all' && exp === 'all' && sort === 'latest' && (!status || status === 'all') && page === initialData?.page
+
   useEffect(() => {
+    if (serverRendered.current) {
+      serverRendered.current = false
+      if (isServerView) return
+    }
     setLoading(true)
     const sp = new URLSearchParams({ cat, exp, sort, page: String(page) })
     if (q) sp.set('q', q)
