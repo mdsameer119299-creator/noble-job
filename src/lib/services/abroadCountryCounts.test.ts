@@ -62,13 +62,15 @@ let dbMode: "ok" | "error" | "throw" = "ok"
 let reads: string[] = []
 let ilikes: string[] = []
 /** Every abroad_jobs batch request, in order: the range asked for and what the fake answered. */
-let batches: Array<{ from: number; to: number; returned: number }> = []
+let batches: Array<{ from: number; to: number; returned: number; countRequested: boolean }> = []
 let maxRows = 1000                   // PostgREST's response cap
 let omitCount = false                // simulate a response without a total
 let failBatch: { at: number; mode: "error" | "throw" } | null = null // 0-based batch index
 /** Full passes over the dataset (a pass starts at offset 0). One shared dataset per request ⇒ 1. */
 const abroadReads = () => batches.filter(b => b.from === 0).length
 const abroadBatches = () => batches.length
+/** Batches that asked the database for an exact total (a COUNT over the whole matching set). */
+const countRequests = () => batches.filter(b => b.countRequested).length
 
 function queryBuilder(table: string) {
   const preds: Array<(r: Row) => boolean> = []
@@ -104,7 +106,7 @@ function queryBuilder(table: string) {
         })
         const [from, to] = range ?? [0, matched.length - 1]
         const slice = matched.slice(from, Math.min(to, from + maxRows - 1) + 1)
-        batches.push({ from, to, returned: slice.length })
+        batches.push({ from, to, returned: slice.length, countRequested: wantCount })
         if (dbMode === "error" || failBatch?.at === index && failBatch.mode === "error") return { data: null, error: { message: "simulated database error" }, count: null }
         if (failBatch?.at === index && failBatch.mode === "throw") throw new Error("simulated mid-read failure")
         return { data: slice, error: null, count: wantCount && !omitCount ? matched.length : null }
@@ -477,6 +479,36 @@ async function main() {
     assert.equal(abroadBatches(), Math.ceil(BIG / 1000), "only the batches the inventory needs (3), shared by every caller")
     // The per-country-read baseline would have been names.length passes × 3 batches.
     assert.ok(abroadBatches() < names.length)
+  })
+
+  await test("EFFICIENCY: the exact total is requested ONCE (first batch only) while every necessary row batch is still fetched", async () => {
+    for (const [n, cap, withCount] of [[BIG, 1000, true], [BIG, 400, true], [2000, 1000, true], [1000, 1000, true], [1, 1000, true], [BIG, 1000, false], [2000, 1000, false]] as const) {
+      scenario({ production: true, data: bigDataset(n) })
+      maxRows = cap
+      omitCount = !withCount
+      const ids = await listedIdsOf()
+      assert.equal(ids.length, n, `${n} rows, cap ${cap}: complete`)
+      assert.equal(new Set(ids).size, n)
+      assert.ok(abroadBatches() >= Math.ceil(n / cap), `${n}/${cap}: all necessary batches fetched (${abroadBatches()})`)
+      assert.equal(countRequests(), 1, `${n} rows, cap ${cap}, total ${withCount ? "reported" : "omitted"}: at most one exact count (got ${countRequests()} over ${abroadBatches()} batches)`)
+      assert.equal(batches[0].countRequested, true, "…and it rides on the FIRST batch")
+      assert.ok(batches.slice(1).every(b => !b.countRequested), "later batches fetch rows only")
+    }
+    // The whole request — list, 16 country counts, hero — still costs one count and ceil(N/1000) batches.
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    await Promise.all([getVisibleAbroadCountryCounts(), getAbroadVisibleCounts({}), getAbroadJobs()])
+    for (const nm of names) await getAbroadJobsPaginated({ country: nm, page: 1, limit: 20 })
+    assert.equal(countRequests(), 1)
+    assert.equal(abroadBatches(), Math.ceil((BIG - 1) / 1000), "2349 active rows → 3 batches")
+  })
+
+  await test("EFFICIENCY: dropping the later counts changes nothing else — a later-batch failure still gives the safe fallback, never partial data", async () => {
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    failBatch = { at: 2, mode: "error" }
+    const c = await getAbroadCountryCounts(names)
+    assert.ok(names.every(nm => c[nm] === 0))
+    assert.equal(countRequests(), 1)
+    assert.equal(abroadBatches(), 3, "stopped at the failing batch")
   })
 
   await test("BATCH EDGES: an exactly-full final batch ends the read correctly, with and without a reported total", async () => {

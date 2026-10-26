@@ -99,8 +99,10 @@ const loadAbroadRest = perRequest(
       // a silently truncated read would drop rows from country lists and counts alike. Order is posted_at DESC
       // with `id` as a unique tie-breaker, so rows with equal (or null) posted_at keep one stable position and
       // are neither skipped nor repeated between batches.
-      const page = (from: number) => {
-        let query = sb.from("abroad_jobs").select("*", { count: "exact" }).eq("status", "active")
+      // The exact total is requested ONLY with the first batch (it is what lets an exactly-full last batch end
+      // the loop); later batches fetch rows alone, so the database does not recount the set once per batch.
+      const page = (from: number, withTotal: boolean) => {
+        let query = sb.from("abroad_jobs").select("*", withTotal ? { count: "exact" } : undefined).eq("status", "active")
         if (filters.q) query = query.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
         if (filters.category) query = query.eq("category", filters.category)
         return query.order("posted_at", { ascending: false }).order("id", { ascending: true }).range(from, from + ABROAD_DB_BATCH - 1)
@@ -112,7 +114,7 @@ const loadAbroadRest = perRequest(
       for (let batches = 0; ; batches++) {
         // Bounded: more batches than any real inventory needs is a failure, never a silently partial result.
         if (batches >= ABROAD_DB_MAX_BATCHES) return local()
-        const { data, error, count: matchedRows } = await page(fetched)
+        const { data, error, count: matchedRows } = await page(fetched, batches === 0)
         if (error) return local() // any failed batch → the safe fallback, never a partial dataset
         const batch = (data || []) as unknown as AbroadJob[]
         fetched += batch.length
