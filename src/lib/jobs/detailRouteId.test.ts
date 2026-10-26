@@ -4,7 +4,7 @@
  *
  *   npm run test:detail-route-id
  *
- * Root cause (proven from runtime logs: `[detail-miss] {"reason":"invalid-id","id":"himalayas%3A…"}`):
+ * Root cause (proven from Vercel runtime logs: the loader rejected id "himalayas%3A…" as invalid):
  * Next.js hands a dynamic `[id]` segment to the page still percent-encoded, so `/jobs/wfh/himalayas:<hash>`
  * arrived as `himalayas%3A<hash>`. `isValidJobId` rejects "%", so the loader returned null before any
  * database query ran. Every aggregated (Himalayas) id contains ":", i.e. every one of them 404'd.

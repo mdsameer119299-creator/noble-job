@@ -40,7 +40,8 @@ function buildDynamicBullets(variant: HeroVariant, stats: HeroStatsPayload, govt
       `${n('vacancies').toLocaleString('en-IN')} Vacancies`,
       `${n('notifications').toLocaleString('en-IN')} Notifications`,
       `${n('departments')} Departments`,
-      `${n('states')} States Covered`,
+      // Only states / UTs that actually have a state-specific notice here; no number rather than "0 …".
+      ...(n('states') > 0 ? [`${n('states')} States & UTs with Listings`] : []),
     ]
   }
   return getHeroTheme(variant).bullets

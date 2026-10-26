@@ -5,7 +5,7 @@
 import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
-import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
+import { countStatesWithListings } from "@/lib/govt/hubCounts"
 import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 
 export interface GovtHubStatItem {
@@ -29,6 +29,7 @@ export async function getGovtHubStats(opts?: { slug?: string }): Promise<GovtHub
     { key: "vacancies", icon: "👥", num: vacancies, label: "Vacancies" },
     { key: "notifications", icon: "📋", num: jobs.length, label: "Notifications" },
     { key: "departments", icon: "🏛", num: departments, label: "Departments" },
-    { key: "states", icon: "🗺️", num: INDIAN_STATES.length, label: "States Covered" },
+    // States / UTs that have a state-specific notice in THIS pool — not the size of the state taxonomy.
+    { key: "states", icon: "🗺️", num: countStatesWithListings(jobs), label: "States & UTs with Listings" },
   ]
 }

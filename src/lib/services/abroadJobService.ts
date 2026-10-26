@@ -1,5 +1,4 @@
 import { cache as reactCache } from "react"
-import { logDetailMiss } from "@/lib/jobs/detailMiss"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isProductionEnvironment, preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
@@ -188,31 +187,26 @@ export async function getAbroadCountryCounts(countries: readonly string[]): Prom
 }
 
 export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {
-  if (!isValidJobId(id)) { logDetailMiss("abroad", id, "invalid-id"); return null }
+  if (!isValidJobId(id)) return null
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = renderableOrNull(getAbroadJobByIdLocal(id, syntheticVisible), "abroad")
-  const fallback = async (reason: Parameters<typeof logDetailMiss>[2], detail?: string): Promise<AbroadJob | null> => {
-    logDetailMiss("abroad", id, reason, detail)
-    const r = isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
-    if (!r) logDetailMiss("abroad", id, "fallback-null", `production=${isProductionEnvironment()}`)
-    return r
-  }
   if (preferLocalInventory() || !isSupabaseConfigured()) {
-    return fallback("local-or-unconfigured", `preferLocal=${preferLocalInventory()} configured=${isSupabaseConfigured()}`)
+    if (isProductionEnvironment()) return await getLiveAbroadJobById(id)
+    return (await getLiveAbroadJobById(id)) || local
   }
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return fallback("no-client")
-    const { data, error } = await sb.from("abroad_jobs").select("*").eq("id", id).maybeSingle()
-    if (error) return fallback("db-error", `${error.code ?? ""} ${error.message}`)
-    if (!data) return fallback("no-row")
-    const mapped = renderableOrNull(
-      applySyntheticVisibility([data as unknown as AbroadJob], syntheticVisible)[0] ?? null,
-      "abroad",
-    )
-    if (mapped) return mapped
-    return fallback("not-renderable", `syntheticVisible=${syntheticVisible}`)
-  } catch (e) {
-    return fallback("exception", e instanceof Error ? e.message : String(e))
+    if (!sb) return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
+    const { data } = await sb.from("abroad_jobs").select("*").eq("id", id).maybeSingle()
+    if (data) {
+      const mapped = renderableOrNull(
+        applySyntheticVisibility([data as unknown as AbroadJob], syntheticVisible)[0] ?? null,
+        "abroad",
+      )
+      if (mapped) return mapped
+    }
+    return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
+  } catch {
+    return isProductionEnvironment() ? await getLiveAbroadJobById(id) : (await getLiveAbroadJobById(id)) || local
   }
 }
