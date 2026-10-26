@@ -16,19 +16,19 @@ export default async function Image() {
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 28 }}>
           <div style={{ width: 90, height: 90, borderRadius: '50%', background: 'linear-gradient(135deg,#f07020,#d95e10)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, fontWeight: 900, color: '#fff' }}>NJ</div>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: 56, fontWeight: 900, color: '#fff', letterSpacing: '0.06em', textTransform: 'uppercase' }}>NOBLE JOB</div>
             <div style={{ fontSize: 20, color: '#94a3b8', marginTop: 4 }}>Connecting Talent with Opportunity</div>
           </div>
         </div>
         {/* Headline */}
-        <div style={{ fontSize: 38, fontWeight: 900, color: '#fff', textAlign: 'center', maxWidth: 800, lineHeight: 1.25, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 12, fontSize: 38, fontWeight: 900, color: '#fff', textAlign: 'center', maxWidth: 800, lineHeight: 1.25, marginBottom: 20 }}>
           Find The Right Job,{' '}
           <span style={{ color: '#f07020' }}>Build Your Bright Future</span>
         </div>
         {/* Stats strip */}
         <div style={{ display: 'flex', gap: 40, marginTop: 16 }}>
-          {[['Govt + Private','Jobs'],['WFH + Abroad','Roles'],['Free Forever','For All']].map(([n, l]) => (
+          {[['Govt + Private','Jobs'],['WFH + Abroad','Roles'],['Free','For Job Seekers']].map(([n, l]) => (
             <div key={l} style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <span style={{ fontSize: 28, fontWeight: 900, color: '#fbbf24' }}>{n}</span>
               <span style={{ fontSize: 15, color: 'rgba(255,255,255,.65)' }}>{l}</span>
