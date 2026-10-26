@@ -76,6 +76,15 @@ export function abroadTransition(view: AbroadView, loadedView: AbroadView | unde
   return { listPending: !sameAbroadView(view, loadedView), totalPending: !sameAbroadFilters(view, loadedView) }
 }
 
+/**
+ * The view the panel is presenting. The URL only changes after Next has rendered the new dynamic server page —
+ * seconds after the click — so while a navigation is in flight the click's TARGET is what is shown; otherwise
+ * (settled, or the navigation was abandoned) it is the URL's view.
+ */
+export function shownAbroadView(urlView: AbroadView, navTarget: AbroadView | undefined, isNavigating: boolean): AbroadView {
+  return isNavigating && navTarget ? navTarget : urlView
+}
+
 /** The query the list API / service is called with for a view (status "all" is the absence of a status filter). */
 export function abroadQueryFor(view: AbroadView): { q: string; country: string; category: string; status?: string; page: number } {
   return { q: view.q, country: view.country, category: view.category, ...(view.status && view.status !== "all" ? { status: view.status } : {}), page: view.page }

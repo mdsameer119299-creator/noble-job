@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
 import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
-import { abroadViewFromParams, sameAbroadView, abroadTransition, type AbroadView } from '@/lib/jobs/abroadView'
+import { abroadViewFromParams, sameAbroadView, abroadTransition, shownAbroadView, type AbroadView } from '@/lib/jobs/abroadView'
 import { AbroadJobCard } from './AbroadJobCard'
 import { AbroadDetailModal } from './AbroadDetailModal'
 import { AbroadSearchBar } from './AbroadSearchBar'
@@ -51,13 +51,21 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
   const { q, country, category, status, page } = view
   // Derived each render: while the URL view differs from the loaded one nothing may present the old data as
   // the new selection's (see abroadTransition) — no number from the previous result set, even for one frame.
-  const { listPending: loading, totalPending } = abroadTransition(view, loadedView)
+  //
+  // The URL itself only changes AFTER Next has rendered the new (dynamic) server page — seconds after the click —
+  // so the click's TARGET view is tracked too: from the click until the navigation commits, the target is what
+  // the panel is "showing", and the previous result set is already not presented as its answer.
+  const [isNavigating, startNavigation] = useTransition()
+  const [navTarget, setNavTarget] = useState<AbroadView | undefined>(undefined)
+  const shownView = shownAbroadView(view, navTarget, isNavigating)
+  const { listPending: loading, totalPending } = abroadTransition(shownView, loadedView)
 
   const setParam = useCallback((key: string, value: string) => {
     const p = new URLSearchParams(params.toString())
     if (value) p.set(key, value); else p.delete(key)
     if (key !== 'page') p.delete('page')
-    router.push(`${pathname}?${p}`, { scroll: false })
+    setNavTarget(abroadViewFromParams(p))
+    startNavigation(() => router.push(`${pathname}?${p}`, { scroll: false }))
   }, [router, pathname, params])
 
   // The server already rendered THIS exact URL view (filters and page included, see abroadView.ts) —
@@ -70,6 +78,13 @@ export function AbroadJobsPanel({ countries, initialData }: { countries: Country
     if (serverRendered.current) {
       serverRendered.current = false
       if (isServerView) return
+    }
+    // The navigation that brought us here already carried the server-rendered data for this exact view: use it
+    // instead of asking the API for the same thing again.
+    if (isServerView && initialData) {
+      setJobs(initialData.jobs); setTotal(initialData.total); setTotalPages(initialData.totalPages)
+      setCounts(initialData.counts); setFailed(false); setLoadedView(initialData.view)
+      return
     }
     // Responses can arrive out of order (UAE then UK quickly); only the latest request may write state.
     let cancelled = false

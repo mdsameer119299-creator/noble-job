@@ -22,7 +22,7 @@ import { mergePrivateListing, withLiveListingCounts, countLiveListing } from "./
 import { formatSalaryRange, isZeroSalaryText } from "./salaryRange"
 import { displayValue, isRealDisplayValue } from "./renderable"
 import {
-  abroadViewFromSearchParams, abroadViewFromParams, sameAbroadView, sameAbroadFilters, abroadTransition, abroadQueryFor, normalisePage,
+  abroadViewFromSearchParams, abroadViewFromParams, sameAbroadView, sameAbroadFilters, abroadTransition, shownAbroadView, abroadQueryFor, normalisePage,
 } from "./abroadView"
 import { getAbroadJobsPaginatedLocal } from "../services/abroadJobLocal"
 import { mapRawHimalayasJob } from "../services/himalayasService"
@@ -382,6 +382,19 @@ test("TRANSITION: unfiltered → UK / UAE / any filter is a pending TOTAL; page-
   assert.equal(sameAbroadFilters(view({ country: "UK" }), view({ country: "UAE" })), false)
 })
 
+test("TRANSITION: from the CLICK (URL not yet changed — Next is still rendering the server page) the target is shown, so the old total is already withdrawn", () => {
+  for (const country of ["UK", "UAE"]) {
+    const target = view({ country })
+    const shown = shownAbroadView(UNFILTERED, target, true) // URL still unfiltered, navigation in flight
+    assert.equal(shown.country, country)
+    assert.deepEqual(abroadTransition(shown, UNFILTERED), { listPending: true, totalPending: true }, `${country}: no "190" from the instant of the click`)
+  }
+  // Navigation finished / abandoned (isNavigating false) → the URL view rules again, so a settled page is never stuck "loading".
+  assert.deepEqual(shownAbroadView(UNFILTERED, view({ country: "UK" }), false), UNFILTERED)
+  assert.deepEqual(abroadTransition(shownAbroadView(UNFILTERED, view({ country: "UK" }), false), UNFILTERED), { listPending: false, totalPending: false })
+  assert.deepEqual(shownAbroadView(UNFILTERED, undefined, true), UNFILTERED)
+})
+
 // Render the REAL panel on the server (effects do not run) with a mocked router / URL — i.e. the exact frame the
 // browser paints between the click's URL change and the data arriving.
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -452,12 +465,18 @@ test("TRANSITION: a page-only change keeps the (still valid) total and the pager
 
 test("TRANSITION: wiring — loading derives from the loaded view; a stale response cannot overwrite a newer selection", () => {
   const panel = code("src/components/abroad/AbroadJobsPanel.tsx")
-  assert.match(panel, /abroadTransition\(\s*view\s*,\s*loadedView\s*\)/)
+  assert.match(panel, /abroadTransition\(\s*shownView\s*,\s*loadedView\s*\)/)
   assert.match(panel, /useState<AbroadView \| undefined>\(initialData\?\.view\)/)
   assert.match(panel, /let cancelled = false/)
   assert.match(panel, /return \(\) => \{ cancelled = true \}/)
   assert.equal((panel.match(/if \(cancelled\) return/g) ?? []).length >= 1, true)
   assert.match(panel, /setLoadedView\(requested\)/)
+  assert.match(panel, /useTransition\(\)/)
+  assert.match(panel, /startNavigation\(\(\) => router\.push\(/, "the click's navigation is a tracked transition")
+  assert.match(panel, /setNavTarget\(abroadViewFromParams\(p\)\)/)
+  assert.match(panel, /shownAbroadView\(\s*view\s*,\s*navTarget\s*,\s*isNavigating\s*\)/)
+  assert.match(panel, /abroadTransition\(\s*shownView\s*,\s*loadedView\s*\)/)
+  assert.match(panel, /if \(isServerView && initialData\) \{[\s\S]*?setLoadedView\(initialData\.view\)[\s\S]*?return/, "a committed navigation adopts its server-rendered data instead of refetching")
   assert.match(panel, /totalPending \? '…'/, "status tab counts are placeholders while the filter is pending")
 })
 

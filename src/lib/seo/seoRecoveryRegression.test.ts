@@ -254,7 +254,7 @@ for (const b of BOARDS) {
     if (b.panel.includes("abroad")) {
       // Abroad derives "loading" from (URL view vs the view the held data belongs to); it starts as the server-rendered view, so it is NOT loading.
       assert.match(src, /useState<AbroadView \| undefined>\(\s*initialData\?\.view\s*\)/, "loaded view starts as the server-rendered view")
-      assert.match(src, /abroadTransition\(\s*view\s*,\s*loadedView\s*\)/, "loading derived from view equality")
+      assert.match(src, /abroadTransition\(\s*shownView\s*,\s*loadedView\s*\)/, "loading derived from view equality")
     } else {
       assert.match(src, /useState\(\s*!initialData\s*\)/, "loading starts false when initialData is present")
     }
