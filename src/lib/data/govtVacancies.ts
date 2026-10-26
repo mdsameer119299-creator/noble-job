@@ -141,61 +141,105 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(
   return { ...job, vacancies, vacancyBreakup }
 }
 
-export function sumGovtVacancies(jobs: Pick<GovtJob, "vacancies">[]): number {
-  return jobs.reduce((s, j) => s + resolveGovtVacancyCount(j), 0)
-}
 
 /* ------------------------------------------------------------------ */
-/* Is a stated vacancy figure TRUSTWORTHY enough to be added up?       */
+/* Evidence gate: may a stored vacancy figure be ADDED UP?              */
 /* ------------------------------------------------------------------ */
 
 /**
  * Why this exists. A scraped notice can carry a number that no source document states: JNU Advt RC/75/2026 was stored
- * with "42,564" vacancies (post text "teachers and other equivalent cadres at any level. (ii)"), but the official notice
- * lists 122 faculty posts and states NO total — the figure does not appear in it — and one such row made a hub-wide
- * "42,566 Vacancies" headline. A total that adds up an unsupported number is itself unsupported.
+ * with "42,564" vacancies, but the official notice lists 122 faculty posts and states NO total (the figure appears
+ * nowhere in it), and that one row made a hub-wide "42,566 Vacancies" headline. A total that adds up an unsupported
+ * number is itself unsupported.
  *
- * The row's own `post` text is the evidence available at display time: a stated count is trusted only when the row
- * names a clean post (not a sentence fragment lifted from running text, nor scraped table/label noise), or when an
- * admin has verified the record (`verifiedAt`). Nothing is deleted or rewritten — the row stays listed.
+ * WHAT COUNTS AS EVIDENCE — only fields whose contract is documented (migration 20260727000001):
+ *   • verified_at  "When the record was last confirmed against the official source."
+ *   • verified_by  "Admin user id, or ingestion:<adapter>."
+ *   • content_changed_at is bumped by a trigger whenever a PUBLIC column — `vacancies` included — changes value;
+ *     verified_* are deliberately NOT public content, so recording a verification never moves it.
+ * A figure is therefore affirmatively verified only when ALL of:
+ *   1. `verifiedAt` is a real timestamp that is not in the future;
+ *   2. `verifiedBy` names a verifier, and it is NOT an automated `ingestion:<adapter>` confirmation — the adapter that
+ *      scraped the number cannot vouch for it (JNU's came through exactly such an adapter);
+ *   3. the verification is not older than the last content change (`contentChangedAt <= verifiedAt`), i.e. the stored
+ *      figure was not altered after a person confirmed it; a missing `contentChangedAt` cannot show that → unverified.
+ * Nothing else is evidence. In particular NOT: a clean-looking `post` string, the figure merely being parseable
+ * (`vacanciesStated`), an official/notification URL, `status = active`, `review_status = approved`, a recent insert, the
+ * curated seed marker, or a `vacancy_breakup` (the code builds those from the total).
+ *
+ * `post` text is kept ONLY as a negative screen: an obvious scraped fragment ("…cadres at any level. (ii)", table-header
+ * noise) vetoes the figure even for a verified record, so a bad extraction is fixed in the data rather than trusted.
+ *
+ * Nothing is deleted, hidden or rewritten: the row stays listed, only the arithmetic over its figure is withheld.
  */
 const POST_ENUMERATOR_TAIL = /\(\s*(?:[ivxlc]+|[a-z]|\d{1,2})\s*\)\s*\.?\s*$/i
 const POST_LABEL_NOISE = /\b(closing\s+date|last\s+date|click\s+here|apply\s+online|download|advertisement)\b/i
+const AUTOMATED_VERIFIER = /^\s*ingestion\s*:/i
 
-export function isCleanPostText(post: unknown): boolean {
-  if (typeof post !== "string") return true // nothing to judge
+/** True for an OBVIOUS scraped fragment. Missing / empty text is not a fragment (it is simply no evidence either way). */
+export function isObviousScrapedFragment(post: unknown): boolean {
+  if (typeof post !== "string") return false
   const t = post.trim()
-  if (!t) return true
-  if (t.length > 120) return false
-  if (/^[a-z]/.test(t)) return false // starts mid-sentence
-  if (POST_ENUMERATOR_TAIL.test(t)) return false // ends on a list marker, "… (ii)"
-  if (POST_LABEL_NOISE.test(t)) return false // scraped label / table-header text
-  return true
+  if (!t) return false
+  return t.length > 120 || /^[a-z]/.test(t) || POST_ENUMERATOR_TAIL.test(t) || POST_LABEL_NOISE.test(t)
+}
+
+/** Postgres timestamptz text ("2026-06-12 15:29:28.905178+00") or ISO → ms, or NaN. */
+function tsOf(raw: unknown): number {
+  if (typeof raw !== "string" || !raw.trim()) return NaN
+  const iso = raw.trim().replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")
+  return Date.parse(iso)
 }
 
 /** The fields a vacancy figure is judged on. */
-export type VacancyEvidence = Pick<GovtJob, "vacancies"> & Partial<Pick<GovtJob, "post" | "verifiedAt">>
+export type VacancyEvidence = Pick<GovtJob, "vacancies"> &
+  Partial<Pick<GovtJob, "post" | "verifiedAt" | "verifiedBy" | "contentChangedAt">>
 
-export function isSubstantiatedVacancy(job: VacancyEvidence): boolean {
-  if (parseVacancyCount(job.vacancies) === null) return true // no number is claimed
-  if (job.verifiedAt) return true
-  return isCleanPostText(job.post)
+export type VacancyVerdict =
+  | "no-figure"            // TBA / absent / 0: nothing is claimed, so nothing needs support
+  | "verified"             // affirmative, current, non-automated verification
+  | "unverified"           // a figure with no verification record
+  | "automated-verification" // confirmed only by an ingestion adapter
+  | "stale-verification"   // verified, but the record changed afterwards (or cannot be shown unchanged)
+  | "scraped-fragment"     // the post text is an obvious extraction fragment
+
+export function vacancyVerdict(job: VacancyEvidence, now: Date = new Date()): VacancyVerdict {
+  if (parseVacancyCount(job.vacancies) === null) return "no-figure"
+  if (isObviousScrapedFragment(job.post)) return "scraped-fragment"
+  const verifiedMs = tsOf(job.verifiedAt)
+  if (!Number.isFinite(verifiedMs) || verifiedMs > now.getTime() + 5 * 60_000) return "unverified"
+  const by = typeof job.verifiedBy === "string" ? job.verifiedBy.trim() : ""
+  if (!by) return "unverified"
+  if (AUTOMATED_VERIFIER.test(by)) return "automated-verification"
+  const changedMs = tsOf(job.contentChangedAt)
+  if (!Number.isFinite(changedMs) || changedMs > verifiedMs) return "stale-verification"
+  return "verified"
+}
+
+/** May this row's figure contribute to an aggregate? (A row that claims no figure never blocks one.) */
+export function isSubstantiatedVacancy(job: VacancyEvidence, now?: Date): boolean {
+  const v = vacancyVerdict(job, now)
+  return v === "no-figure" || v === "verified"
+}
+
+/** False when ANY figure-bearing row in the set lacks affirmative evidence: the set's total must then not be shown at all. */
+export function hasSupportedVacancyAggregate(jobs: VacancyEvidence[], now?: Date): boolean {
+  return jobs.every(j => isSubstantiatedVacancy(j, now))
 }
 
 /**
- * Sum ONLY real, parseable vacancy counts — no keyword-profile fabrication.
- * Used by database-backed statistics so totals reflect actual notified posts;
- * "TBA"/"-"/"0" contribute 0 rather than a synthetic spread value.
- *
- * If ANY contributing figure is unsubstantiated (see isSubstantiatedVacancy) the whole aggregate is withheld: 0, which
- * every display surface treats as "no total" and omits. The aggregate is never replaced by a partial or estimated sum.
+ * Sum of REAL, parseable, VERIFIED vacancy counts — never a keyword-profile spread, an estimate, or a partial sum.
+ * Fail closed: if any figure in the set is unsupported (see above) the whole aggregate is withheld and this returns 0,
+ * which every display treats as "no total" and OMITS (never "0 Vacancies"). "TBA"/"-"/"0" contribute nothing and do not
+ * themselves withhold an otherwise supported total. Use `aggregateVacancies` where 0 and "withheld" must differ.
  */
-export function sumRealVacancies(jobs: VacancyEvidence[]): number {
-  if (!hasSupportedVacancyAggregate(jobs)) return 0
-  return jobs.reduce((s, j) => s + (parseVacancyCount(j.vacancies) ?? 0), 0)
+export function sumRealVacancies(jobs: VacancyEvidence[], now?: Date): number {
+  return aggregateVacancies(jobs, now) ?? 0
 }
 
-/** False when a row inside the set states a vacancy count nothing supports (the set's total must then not be shown). */
-export function hasSupportedVacancyAggregate(jobs: VacancyEvidence[]): boolean {
-  return jobs.every(j => isSubstantiatedVacancy(j))
+/** The supported total, or null when it is withheld (an unsupported figure) or there is nothing to add up. */
+export function aggregateVacancies(jobs: VacancyEvidence[], now?: Date): number | null {
+  if (!hasSupportedVacancyAggregate(jobs, now)) return null
+  const total = jobs.reduce((s, j) => s + (parseVacancyCount(j.vacancies) ?? 0), 0)
+  return total > 0 ? total : null
 }

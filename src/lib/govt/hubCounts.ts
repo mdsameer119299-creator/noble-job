@@ -14,6 +14,7 @@
 import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { INDIAN_STATES } from "@/lib/config/govtTaxonomy"
+import { aggregateVacancies, sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import type { GovtJob } from "@/types/govtJob"
 
 /**
@@ -36,4 +37,48 @@ export function countStatesWithListings(rows: readonly GovtJob[]): number {
   const seen = new Set<string>()
   for (const j of currentNotifications(rows)) if (j.stateSlug && known.has(j.stateSlug)) seen.add(j.stateSlug)
   return seen.size
+}
+
+/* ------------------------------------------------------------------ */
+/* Vacancy aggregates — every rendered total goes through ONE gate      */
+/* ------------------------------------------------------------------ */
+
+export interface GovtHubStatItem {
+  key: string
+  icon: string
+  num: number
+  label: string
+}
+
+/**
+ * The government hub / hero counters for a pool of rows (optionally one category). The vacancy total exists only when
+ * every figure feeding it is affirmatively verified (see govtVacancies.ts); otherwise the item is OMITTED, never "0".
+ * Notification, department and state counts do not depend on vacancy figures and are always present.
+ */
+export function buildGovtHubStats(rows: readonly GovtJob[], categorySlug?: string): GovtHubStatItem[] {
+  const all = currentNotifications(rows)
+  const jobs = categorySlug ? all.filter(j => jobMatchesCategorySlug(j, categorySlug)) : all
+  const vacancies = sumRealVacancies(jobs.filter(isVacancyBearingJob))
+  return [
+    ...(vacancies > 0 ? [{ key: "vacancies", icon: "👥", num: vacancies, label: "Vacancies" }] : []),
+    { key: "notifications", icon: "📋", num: jobs.length, label: "Notifications" },
+    { key: "departments", icon: "🏛", num: new Set(jobs.map(j => j.org)).size, label: "Departments" },
+    // States / UTs that have a state-specific notice in THIS pool — not the size of the state taxonomy.
+    { key: "states", icon: "🗺️", num: countStatesWithListings(jobs), label: "States & UTs with Listings" },
+  ]
+}
+
+/** Total shown in a listing hero for the (already filtered) list; 0 = withheld / none, and the hero omits it. */
+export function listingVacanciesTotal(list: readonly GovtJob[]): number {
+  return sumRealVacancies(list.filter(isVacancyBearingJob))
+}
+
+/** The public stats payload. `totalVacancies` is null — not 0 — when the total is withheld. */
+export function buildGovtStats(source: readonly GovtJob[]) {
+  return {
+    totalVacancies: aggregateVacancies(source.filter(isVacancyBearingJob)),
+    departments: new Set(source.map(j => j.org)).size,
+    locations: new Set(source.map(j => j.location)).size,
+    totalExams: source.length,
+  }
 }
