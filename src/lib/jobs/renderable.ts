@@ -140,6 +140,20 @@ export function isValidJobId(id: unknown): boolean {
   return !PLACEHOLDER_VALUES.has(t.toLowerCase())
 }
 
+/**
+ * A dynamic-route `[id]` segment → the stored job id.
+ *
+ * Next.js hands a dynamic segment to the page still percent-encoded: the sitemap lists
+ * `/jobs/wfh/himalayas:<hash>` and the request arrives with `params.id === "himalayas%3A<hash>"`.
+ * `isValidJobId` (rightly) rejects "%", so every id containing a character that gets encoded — the ":" of
+ * every aggregated (Himalayas) id — was a 404 before any database lookup. Decode exactly ONCE here, at the
+ * route boundary; the validator stays strict (a still-encoded or double-encoded id remains invalid), and a
+ * malformed escape ("%E0%A4%A") falls back to the raw text, which then fails validation and 404s.
+ */
+export function decodeRouteId(raw: string): string {
+  try { return decodeURIComponent(raw) } catch { return raw }
+}
+
 /** Minimum description for a job to be shown at all (JobPosting needs far more — see jobPostingDescription). */
 export const MIN_VISIBLE_DESCRIPTION_CHARS = 20
 export const MIN_VISIBLE_DESCRIPTION_WORDS = 3

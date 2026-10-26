@@ -12,7 +12,7 @@ import { classifyProvenance, isIndexable } from '@/lib/jobs/provenance'
 import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
-import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
+import { decodeRouteId, displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
 import { AbroadApplySlot } from '@/components/abroad/AbroadApplySlot'
 import { JobActionBar } from '@/components/jobs/JobActionBar'
 
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic"
 interface Props { params: Promise<{ id: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { id } = await params
+  const id = decodeRouteId((await params).id)
   const job = await getAbroadJobById(id)
   if (!job) {
     return buildPageMetadata({
@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function AbroadJobDetailPage({ params }: Props) {
-  const { id } = await params
+  const id = decodeRouteId((await params).id)
   const job = await getAbroadJobById(id)
   if (!job) notFound()
   void incrementJobViews('abroad', id)
