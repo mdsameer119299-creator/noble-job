@@ -1,3 +1,4 @@
+import { cache as reactCache } from "react"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isProductionEnvironment, preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
@@ -36,33 +37,120 @@ export async function getAbroadJobsPaginated(filters: AbroadJobFilters = {}) {
   }
 }
 
+/**
+ * Per-request memo (React `cache()`) when running inside the Next server runtime; a plain function in a
+ * bare Node process (unit tests, scripts), where `react` has no `cache`. Same convention as
+ * govtStatsSource.ts. Keyed on primitive arguments, so equal filters share one read within a request.
+ */
+function perRequest<A extends (string | undefined)[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+  return typeof reactCache === "function" ? reactCache(fn) : fn
+}
+
+/** Everything the Abroad list reads that is NOT the live external feed: Supabase rows, or the local demo inventory. */
+interface AbroadRest {
+  jobs: AbroadJob[]
+  /** Which source `jobs` came from — each applies its own `country` filter semantics (see countryMatchers). */
+  origin: "db" | "local"
+}
+
+/** "Every local row that matches" — the local helper paginates, so ask for one page big enough to hold them all. */
+const ALL_LOCAL = Number.MAX_SAFE_INTEGER
+
+/**
+ * The single place the Abroad list reads `abroad_jobs` (or, outside production, the local inventory).
+ * Active rows only → renderable → synthetic-visibility → status-sorted, exactly as the list always did.
+ * Memoised per request: the same filters never trigger a second read in one render.
+ */
+const loadAbroadRest = perRequest(
+  async (q?: string, country?: string, category?: string, status?: string): Promise<AbroadRest> => {
+    const syntheticVisible = await isSyntheticJobsVisible()
+    const filters = { q: q || undefined, country: country || undefined, category: category || undefined }
+    // Production never serves demo inventory; elsewhere it is the fallback when the DB is unavailable.
+    const local = (): AbroadRest => ({
+      jobs: isProductionEnvironment()
+        ? []
+        : getAbroadJobsPaginatedLocal({ ...filters, status: status as AbroadJobFilters["status"], page: 1, limit: ALL_LOCAL }, syntheticVisible).items,
+      origin: "local",
+    })
+
+    if (preferLocalInventory() || !isSupabaseConfigured()) return local()
+
+    try {
+      const sb = await getSupabaseClient()
+      if (!sb) return local()
+      let query = sb.from("abroad_jobs").select("*").eq("status", "active")
+      if (filters.q) query = query.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
+      if (filters.country) query = query.ilike("country", `%${filters.country}%`)
+      if (filters.category) query = query.eq("category", filters.category)
+      query = query.order("posted_at", { ascending: false })
+      const { data, error } = await query
+      if (error) return local()
+      return {
+        jobs: sortByStatus(applySyntheticVisibility(filterRenderable((data || []) as unknown as AbroadJob[], "abroad"), syntheticVisible)),
+        origin: "db",
+      }
+    } catch {
+      return local()
+    }
+  },
+)
+
+/** Live external jobs lead; a row of the same id from the other source is not listed twice. */
+function composeAbroadJobs(live: AbroadJob[], rest: AbroadJob[]): AbroadJob[] {
+  const liveIds = new Set(live.map(j => j.id))
+  return [...live, ...rest.filter(j => !liveIds.has(j.id))]
+}
+
 export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<AbroadJob[]> {
-  const syntheticVisible = await isSyntheticJobsVisible()
-  const local = getAbroadJobsPaginatedLocal(filters, syntheticVisible).items
-  const liveExternal = await getLiveAbroadJobs({ q: filters.q, country: filters.country, category: filters.category })
+  const [live, rest] = await Promise.all([
+    getLiveAbroadJobs({ q: filters.q, country: filters.country, category: filters.category }),
+    loadAbroadRest(filters.q, filters.country, filters.category, filters.status),
+  ])
+  return composeAbroadJobs(live, rest.jobs)
+}
 
-  if (preferLocalInventory() || !isSupabaseConfigured()) {
-    if (isProductionEnvironment()) return liveExternal
-    return [...liveExternal, ...local.filter(j => !liveExternal.some(x => x.id === j.id))]
-  }
+/**
+ * What `?country=<name>` matches in each source — exactly the filter that source applies when the list is
+ * filtered, so a country card's count is the size of the list it opens:
+ *   db    → `abroad_jobs.country ILIKE %name%`   (case-insensitive substring on the country column)
+ *   local → `country.toLowerCase() === name.toLowerCase()`   (abroadJobLocal.ts: case-insensitive equality)
+ * The live external feed is filtered by getLiveAbroadJobs() itself (see getAbroadCountryCounts).
+ */
+const countryMatchers: Record<AbroadRest["origin"], (job: AbroadJob, country: string) => boolean> = {
+  db: (job, country) => (job.country || "").toLowerCase().includes(country.toLowerCase()),
+  local: (job, country) => (job.country || "").toLowerCase() === country.toLowerCase(),
+}
 
+/**
+ * Per-country job counts for the country cards, from ONE read of the Abroad pool instead of one full list
+ * query per country. `counts[name]` equals `getAbroadJobsPaginated({ country: name }).total` — same active /
+ * renderable / provenance / synthetic-visibility / source-selection rules, same per-source country filter
+ * and same live-vs-stored de-duplication — because the stored rows come from the very loader the list uses
+ * and are only narrowed in memory.
+ *
+ * Live external jobs are asked for per country through getLiveAbroadJobs(): that is an in-memory narrowing of
+ * ONE upstream response (the URL does not depend on the country, so Next's fetch cache serves it once) and
+ * a no-op while that source is disabled — it never touches the database.
+ *
+ * Failure is safe: if the read throws, every requested country reports 0 (never a target or invented count).
+ */
+export async function getAbroadCountryCounts(countries: readonly string[]): Promise<Record<string, number>> {
+  const counts: Record<string, number> = Object.fromEntries(countries.map(c => [c, 0]))
   try {
-    const sb = await getSupabaseClient()
-    if (!sb) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
-    let q = sb.from("abroad_jobs").select("*").eq("status", "active")
-    if (filters.q) q = q.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
-    if (filters.country) q = q.ilike("country", `%${filters.country}%`)
-    if (filters.category) q = q.eq("category", filters.category)
-    q = q.order("posted_at", { ascending: false })
-    const { data, error } = await q
-    if (error) return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
-    const dbJobs = sortByStatus(
-      applySyntheticVisibility(filterRenderable((data || []) as unknown as AbroadJob[], "abroad"), syntheticVisible),
-    )
-    return [...liveExternal, ...dbJobs.filter(j => !liveExternal.some(x => x.id === j.id))]
+    const [rest, liveByCountry] = await Promise.all([
+      loadAbroadRest(undefined, undefined, undefined, undefined),
+      Promise.all(countries.map(c => getLiveAbroadJobs({ country: c }))),
+    ])
+    const matches = countryMatchers[rest.origin]
+    countries.forEach((country, i) => {
+      const live = liveByCountry[i]
+      // A blank country is "no filter" in the list, so it is "no narrowing" here too.
+      counts[country] = composeAbroadJobs(live, country ? rest.jobs.filter(j => matches(j, country)) : rest.jobs).length
+    })
   } catch {
-    return isProductionEnvironment() ? liveExternal : [...liveExternal, ...local]
+    // keep the zeros
   }
+  return counts
 }
 
 export async function getAbroadJobById(id: string): Promise<AbroadJob | null> {

@@ -6,6 +6,7 @@ import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
 import { getLivePrivateJobs, getLiveWfhJobs, getLiveAbroadJobs } from "@/lib/services/liveJobOpportunities"
 import { getHimalayasJobsForDisplay } from "@/lib/services/himalayasCache"
 import { toLiveExternalJobs } from "@/lib/jobs/clientRecords"
+import { onlyLinkableCards } from "@/lib/jobs/featuredCardLink"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
@@ -58,9 +59,12 @@ export interface FeaturedJobCard {
   location: string
   salary?: string
   color?: string
-  /** The real external application URL — used when this card cannot resolve to an internal detail page. */
+  /**
+   * The job's own application URL. For an aggregator card (Himalayas id / AGGREGATED provenance) this is
+   * the ONLY place the card may link to — see `featuredCardLink()`; a card without a valid one is dropped.
+   */
   apply_url?: string
-  /** Provenance tag (GENUINE / AGGREGATED / SYNTHETIC) — determines link strategy. */
+  /** Provenance tag (EMPLOYER / AGGREGATED / CURATED / OFFICIAL …). AGGREGATED cards link out, never to an internal page. */
   provenance?: string
 }
 
@@ -180,7 +184,10 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
     apply_url: j.apply_url, provenance: j.provenance,
   }))
 
-  const lists = [privateCards, wfhCards, abroadCards]
+  // A card that cannot be linked safely (an aggregator job without a valid external URL, an invalid id)
+  // is dropped HERE, before mixing, so the other boards can still fill the section — never an internal
+  // fallback link and never an invented destination. See featuredCardLink.ts.
+  const lists = [privateCards, wfhCards, abroadCards].map(onlyLinkableCards)
   const mixed: FeaturedJobCard[] = []
   for (let i = 0; mixed.length < total && lists.some(l => l.length > i); i++) {
     for (const l of lists) {

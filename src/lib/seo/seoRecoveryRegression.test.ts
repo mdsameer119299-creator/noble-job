@@ -5,18 +5,22 @@
  *
  * Each block pins one confirmed production defect so it cannot silently return:
  *
- *   1. HREF       — aggregated (Himalayas) featured cards must link to their real external
- *                   URL, never to an internal `/jobs/<board>/himalayas:<hash>` detail path
- *                   (detail resolution only reads the `jobs` table → guaranteed 404).
+ *   1. HREF       — aggregated (Himalayas) featured cards link ONLY to a valid external http(s) URL.
+ *                   They never get an internal `/jobs/<board>/himalayas:<hash>` href (a guaranteed 404
+ *                   on the Private board), and a card with no valid external URL is dropped — there is
+ *                   no internal fallback and no invented destination.
  *   2. SSR        — the three job-board listing pages must fetch page data on the server and
  *                   hand it to their client panels, so crawlers receive real job content
  *                   instead of an empty "Loading…" shell.
- *   3. COUNTS     — abroad country cards must be counted by the same DB-backed service that
- *                   powers the abroad listing, not by the local-inventory-only fallback.
+ *   3. COUNTS     — abroad country cards come from ONE shared read of the Abroad pool (not one full list
+ *                   query per country) and equal the size of the list each card opens
+ *                   (behavioural proof: abroadCountryCounts.test.ts, `npm run test:abroad-counts`).
  *   2b. HYDRATION — the server render and the client list assemble the Private listing with ONE
  *                   shared merge (employer table + live Himalayas cache), and the first client
  *                   fetch is skipped only for the exact view the server rendered, so real
  *                   content is neither empty in the crawler's HTML nor flashed back to "Loading…".
+ *   2c. COPY      — the homepage Featured section never claims every card is a verified opening from a
+ *                   real employer while external-source (aggregator) jobs can be included.
  *   4. CLAIMS     — no fabricated trust / scale claims ("80,000+ verified openings",
  *                   "2,500+ companies", "50,000+ placed") in any user-facing surface.
  *
@@ -25,7 +29,8 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { featuredCardLink } from "../jobs/featuredCardLink"
+import { featuredCardLink, onlyLinkableCards, safeExternalUrl } from "../jobs/featuredCardLink"
+import { hasRealApplyUrl } from "../jobs/provenance"
 import { mergePrivateListing } from "../jobs/mergePrivateListing"
 
 let passed = 0
@@ -63,17 +68,30 @@ test("HREF: every card builder in featuredJobs.ts populates apply_url (no builde
   assert.ok(populated >= 6, `expected every card builder to set apply_url, found ${populated}`)
 })
 
-test("HREF: FeaturedJobsSection delegates to featuredCardLink() and branches on link.external", () => {
+test("HREF: FeaturedJobsSection resolves every card through featuredCardLink() and DROPS cards that have no link", () => {
   const src = code("src/components/home/FeaturedJobsSection.tsx")
   assert.match(src, /import\s*\{\s*featuredCardLink\s*\}\s*from\s*["']@\/lib\/jobs\/featuredCardLink["']/, "imports the shared resolver")
-  assert.match(src, /featuredCardLink\(\s*job\s*\)/, "resolves every card through it")
+  assert.match(src, /\.flatMap\(\s*job\s*=>\s*\{[\s\S]*?featuredCardLink\(\s*job\s*\)[\s\S]*?return\s+link\s*\?\s*\[\s*\{\s*job\s*,\s*link\s*\}\s*\]\s*:\s*\[\s*\]/, "a card without a link is omitted, not rendered")
+  assert.match(src, /cards\.length\s*===\s*0\)\s*return\s+null/, "the section renders nothing when no card is linkable")
+  assert.match(src, /cards\.map\(\s*\(\{\s*job\s*,\s*link\s*\}\)/, "only linkable cards are rendered")
   assert.match(src, /link\.external\s*\?/, "renders external and internal cards differently")
 })
 
-test("HREF: featuredCardLink.ts is the ONLY place that builds an internal detail href from a card id", () => {
+test("HREF: getFeaturedJobsMix drops unlinkable cards BEFORE mixing, so other boards can still fill the section", () => {
+  const src = code("src/lib/services/featuredJobs.ts")
+  assert.match(src, /import\s*\{\s*onlyLinkableCards\s*\}\s*from\s*["']@\/lib\/jobs\/featuredCardLink["']/)
+  assert.match(src, /\[\s*privateCards\s*,\s*wfhCards\s*,\s*abroadCards\s*\]\.map\(\s*onlyLinkableCards\s*\)/, "each board's list is filtered before the round-robin mix")
+})
+
+test("HREF: featuredCardLink.ts builds an internal detail href ONLY on the non-aggregator path", () => {
   const resolver = code("src/lib/jobs/featuredCardLink.ts")
-  assert.match(resolver, /startsWith\(\s*["']himalayas:["']\s*\)/, "detects himalayas-sourced ids")
+  assert.match(resolver, /AGGREGATOR_ID_PREFIX\s*=\s*['"]himalayas:['"]/, "Himalayas id prefix")
+  assert.match(resolver, /id\.startsWith\(\s*AGGREGATOR_ID_PREFIX\s*\)\s*\|\|\s*card\.provenance\s*===\s*['"]AGGREGATED['"]/, "aggregator = Himalayas id OR AGGREGATED provenance")
   assert.equal((resolver.match(/\/jobs\/\$\{[^}]+\}\/\$\{[^}]+\}/g) ?? []).length, 1, "one internal template in the resolver")
+  const fn = resolver.slice(resolver.indexOf("export function featuredCardLink"))
+  const branch = fn.slice(fn.indexOf("if (isAggregatorCard(card))"), fn.indexOf("if (!isValidJobId(card.id))"))
+  assert.ok(branch.length > 0 && !branch.includes("/jobs/"), "the aggregator branch never mentions an internal /jobs/ path")
+  assert.match(branch, /return\s+href\s*\?\s*\{[^}]*external:\s*true[^}]*\}\s*:\s*null/, "aggregator → external link or null, nothing else")
   const section = code("src/components/home/FeaturedJobsSection.tsx")
   assert.doesNotMatch(section, /\/jobs\/\$\{[^}]+\}\/\$\{[^}]+\}/, "the component must not hand-build a detail href from job.id")
 })
@@ -84,26 +102,98 @@ test("HREF: external aggregated cards render as <a target=_blank rel=noopener no
   assert.match(src, /<Link\b[^>]*href=\{link\.href\}/, "internal next/link")
 })
 
-test("HREF: aggregated cards are never labelled 'Verified' (aggregator jobs are not employer-verified)", () => {
+test("HREF: aggregated cards are labelled 'Source', never 'Verified' (aggregator jobs are not employer-verified)", () => {
   const src = code("src/components/home/FeaturedJobsSection.tsx")
   assert.match(src, /link\.external\s*\n?\s*\?\s*<span[^>]*>Source/, "external cards get the 'Source' badge")
-  assert.match(src, /:\s*<span[^>]*>Verified<\/span>/, "only internal (genuine) cards get 'Verified'")
+  assert.match(src, /:\s*<span[^>]*>Verified<\/span>/, "only internal cards get 'Verified'")
 })
 
-test("HREF matrix: himalayas card → external URL; native cards → internal detail path", () => {
-  const cases: Array<[Card, { href: string; external: boolean }]> = [
+const UUID = "9b2f6c1e-0000-4000-8000-000000000001"
+type Linked = { href: string; external: boolean } | null
+
+test("HREF matrix: valid aggregator → its external URL; native → internal detail page; on every board", () => {
+  const cases: Array<[Card, Linked]> = [
     [{ id: "himalayas:3f9a1c", board: "wfh", apply_url: "https://himalayas.app/jobs/abc" }, { href: "https://himalayas.app/jobs/abc", external: true }],
-    [{ id: "himalayas:77be02", board: "private", apply_url: "https://himalayas.app/jobs/xyz" }, { href: "https://himalayas.app/jobs/xyz", external: true }],
-    [{ id: "himalayas:55d0e1", board: "abroad", apply_url: "https://himalayas.app/jobs/qrs" }, { href: "https://himalayas.app/jobs/qrs", external: true }],
-    // A native row id (uuid) keeps its internal detail page on every board.
-    [{ id: "9b2f6c1e-0000-4000-8000-000000000001", board: "private", apply_url: "https://employer.example/apply" }, { href: "/jobs/private/9b2f6c1e-0000-4000-8000-000000000001", external: false }],
-    [{ id: "9b2f6c1e-0000-4000-8000-000000000002", board: "wfh" }, { href: "/jobs/wfh/9b2f6c1e-0000-4000-8000-000000000002", external: false }],
-    [{ id: "9b2f6c1e-0000-4000-8000-000000000003", board: "abroad" }, { href: "/jobs/abroad/9b2f6c1e-0000-4000-8000-000000000003", external: false }],
-    // Defensive: an aggregated id with NO source URL must not become an external link to nowhere;
-    // it falls through to the internal path (and is filtered upstream by filterActionable).
-    [{ id: "himalayas:deadbeef", board: "wfh" }, { href: "/jobs/wfh/himalayas:deadbeef", external: false }],
+    [{ id: "himalayas:77be02", board: "private", apply_url: "https://himalayas.app/jobs/xyz", provenance: "AGGREGATED" }, { href: "https://himalayas.app/jobs/xyz", external: true }],
+    [{ id: "himalayas:55d0e1", board: "abroad", apply_url: "http://careers.acme.co.in/apply?id=1&x=y#top" }, { href: "http://careers.acme.co.in/apply?id=1&x=y#top", external: true }],
+    [{ id: "himalayas:55d0e2", board: "abroad", apply_url: "  https://himalayas.app/jobs/trim \n" }, { href: "https://himalayas.app/jobs/trim", external: true }],
+    // An AGGREGATED-provenance card is external even without a himalayas: id.
+    [{ id: UUID, board: "wfh", provenance: "AGGREGATED", apply_url: "https://jobs.example-board.io/p/1" }, { href: "https://jobs.example-board.io/p/1", external: true }],
+    // Native employer-owned rows keep their internal page on every board (their apply_url is irrelevant to the link).
+    [{ id: UUID, board: "private", provenance: "EMPLOYER", apply_url: "https://employer.test-co.in/apply" }, { href: `/jobs/private/${UUID}`, external: false }],
+    [{ id: UUID, board: "wfh" }, { href: `/jobs/wfh/${UUID}`, external: false }],
+    [{ id: UUID, board: "abroad", apply_url: "#" }, { href: `/jobs/abroad/${UUID}`, external: false }],
   ]
-  for (const [card, want] of cases) assert.deepEqual(featuredCardLink(card), want, card.id)
+  for (const [card, want] of cases) assert.deepEqual(featuredCardLink(card), want, `${card.id} ${card.apply_url ?? ""}`)
+})
+
+// Every URL that is blank / non-actionable / unsafe. None may ever become an href.
+const BAD_URLS: Array<string | undefined | null> = [
+  undefined, null, "", "   ", "\n\t", "#", "#top", "javascript:alert(1)", "JaVaScRiPt:alert(1)", " javascript:alert(1)", "data:text/html,<b>x</b>", "vbscript:msgbox(1)",
+  "mailto:hr@acme.co.in", "tel:+911234567890", "file:///etc/passwd", "ftp://files.acme.co.in/job", "blob:https://acme.co.in/x",
+  "https://", "http://", "https:///path-only", "//evil.example.net/x", "/jobs/private/abc", "jobs/abc", "himalayas.app/jobs/abc", "https:himalayas.app",
+  "https://example.com/apply", "http://www.example.org/x", "https://user:secret@himalayas.app/jobs/1", "https://localhost/x", "https://intranet/job", "https://[::1]/x",
+  "https://host with space.com/x", "https://himalayas.app/jo bs", "https://himalayas.app/x\u0000y",
+]
+
+test("HREF: an aggregator card with a missing / blank / unsafe / non-actionable URL has NO link (null) — never an internal fallback", () => {
+  for (const board of ["private", "wfh", "abroad"] as const) {
+    for (const id of ["himalayas:deadbeef", "himalayas:0123456789abcdef0123456789abcdef01234567"]) {
+      for (const apply_url of BAD_URLS) {
+        assert.equal(featuredCardLink({ id, board, apply_url: apply_url as string | undefined }), null, `${board} ${id} ${JSON.stringify(apply_url)}`)
+      }
+    }
+  }
+})
+
+test("HREF: AGGREGATED provenance without a valid URL is also dropped, whatever the id looks like", () => {
+  for (const apply_url of BAD_URLS) {
+    assert.equal(featuredCardLink({ id: UUID, board: "private", provenance: "AGGREGATED", apply_url: apply_url as string | undefined }), null, JSON.stringify(apply_url))
+  }
+})
+
+test("HREF: PROPERTY — for any aggregator card the result is null or an external http(s) link; never an internal /jobs/ href", () => {
+  const urls = [...BAD_URLS, "https://himalayas.app/jobs/ok", "http://careers.acme.co.in/x", "/jobs/private/himalayas:abc", "https://a.b/" ]
+  for (const board of ["private", "wfh", "abroad"] as const) {
+    for (const card of [{ id: "himalayas:abc" }, { id: UUID, provenance: "AGGREGATED" }, { id: "himalayas:xyz", provenance: "AGGREGATED" }]) {
+      for (const apply_url of urls) {
+        const link = featuredCardLink({ ...card, board, apply_url: apply_url as string | undefined })
+        if (link === null) continue
+        assert.equal(link.external, true, `${board} ${card.id} ${apply_url}`)
+        assert.match(link.href, /^https?:\/\/[^\s/]+\.[^\s/]+/i, `${board} ${card.id} ${apply_url}`)
+        assert.ok(!link.href.startsWith("/jobs/"), `${board} ${card.id} ${apply_url}`)
+      }
+    }
+  }
+})
+
+test("HREF: native cards are unaffected by apply_url, but an invalid id or non-genuine provenance gets no link", () => {
+  for (const apply_url of BAD_URLS) assert.deepEqual(featuredCardLink({ id: UUID, board: "private", apply_url: apply_url as string | undefined }), { href: `/jobs/private/${UUID}`, external: false })
+  for (const id of ["", " ", "undefined", "null", "a b", "../etc", "x/y", "x?y=1", "x#y", " " + UUID]) assert.equal(featuredCardLink({ id, board: "private" }), null, JSON.stringify(id))
+  for (const provenance of ["SYNTHETIC", "UNCLASSIFIED"]) assert.equal(featuredCardLink({ id: UUID, board: "wfh", provenance }), null, provenance)
+  for (const provenance of ["EMPLOYER", "CURATED", "OFFICIAL", undefined]) assert.ok(featuredCardLink({ id: UUID, board: "abroad", provenance }), String(provenance))
+})
+
+test("HREF: onlyLinkableCards removes exactly the unlinkable cards and keeps order (so a broken card cannot render)", () => {
+  const cards: Card[] = [
+    { id: "himalayas:a", board: "private", apply_url: "https://himalayas.app/jobs/a" },
+    { id: "himalayas:b", board: "wfh" },
+    { id: UUID, board: "private" },
+    { id: "himalayas:c", board: "abroad", apply_url: "javascript:alert(1)" },
+    { id: "himalayas:d", board: "abroad", apply_url: "https://himalayas.app/jobs/d" },
+    { id: "undefined", board: "wfh" },
+  ]
+  assert.deepEqual(onlyLinkableCards(cards).map(c => c.id), ["himalayas:a", UUID, "himalayas:d"])
+  assert.deepEqual(onlyLinkableCards([]), [])
+})
+
+test("HREF: safeExternalUrl accepts real http(s) job URLs unchanged (trimmed) and does not loosen hasRealApplyUrl", () => {
+  assert.equal(safeExternalUrl("https://himalayas.app/companies/acme/jobs/engineer"), "https://himalayas.app/companies/acme/jobs/engineer")
+  assert.equal(safeExternalUrl("  http://jobs.acme.co.in/apply?id=7  "), "http://jobs.acme.co.in/apply?id=7")
+  for (const u of BAD_URLS) assert.equal(safeExternalUrl(u), null, JSON.stringify(u))
+  // Anything the platform's own gate rejects stays rejected here.
+  for (const u of ["https://example.com/x", "#", "", "ftp://a.b.com/x"]) assert.equal(hasRealApplyUrl(u), false, u)
+  assert.match(code("src/lib/jobs/featuredCardLink.ts"), /hasRealApplyUrl\(url\)/, "builds on the platform gate instead of replacing it")
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────
@@ -262,28 +352,98 @@ test("MERGE: page 2+ (no live rows) is the employer page untouched; bad/absent i
 // 3. COUNTS — abroad country cards are DB-backed, same service as the list they open
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
-test("COUNTS: getVisibleAbroadCountryCounts() uses getAbroadJobsPaginated, not the local-inventory fallback", () => {
+const fnBody = (src: string, name: string) => {
+  const i = src.indexOf(`export async function ${name}(`)
+  assert.ok(i >= 0, `${name} exists`)
+  const end = src.indexOf("\n}\n", i) // top-level function: ends at the first column-0 closing brace
+  assert.ok(end > i, `${name} has a closing brace`)
+  return src.slice(i, end + 2)
+}
+
+test("COUNTS: getVisibleAbroadCountryCounts() makes ONE shared-read call — no full list query per country", () => {
   const src = code("src/lib/services/visibleCounts.ts")
-  const fn = src.slice(src.indexOf("export async function getVisibleAbroadCountryCounts"))
-  assert.match(fn, /getAbroadJobsPaginated\s*\(/, "country counts come from the DB-backed list service")
+  const fn = fnBody(src, "getVisibleAbroadCountryCounts")
+  assert.equal((fn.match(/getAbroadCountryCounts\(/g) ?? []).length, 1, "exactly one call to the shared-read function")
+  assert.doesNotMatch(fn, /getAbroadJobsPaginated\s*\(|getAbroadJobs\s*\(|getAbroadJobsPaginatedLocal/, "no per-country list-service query")
+  assert.doesNotMatch(fn, /\.map\(\s*async|for\s*\(.*await|await[\s\S]*\.map\(\s*async/, "no async fan-out over the countries")
   assert.doesNotMatch(src, /getAbroadJobsPaginatedLocal/, "visibleCounts must not import the local-only fallback")
 })
 
-test("COUNTS: country count is the list's counts.all for that country (card === list it opens)", () => {
-  const src = code("src/lib/services/visibleCounts.ts")
-  assert.match(src, /country:\s*c\.country/, "queries by the card's country")
-  assert.match(src, /jobs:\s*result\.counts\.all/, "card number is the list's own all-count")
+test("COUNTS: the country-count function reads the pool once through the list's own loader — no query of its own", () => {
+  const svc = code("src/lib/services/abroadJobService.ts")
+  const fn = fnBody(svc, "getAbroadCountryCounts")
+  assert.equal((fn.match(/loadAbroadRest\(/g) ?? []).length, 1, "one pool read")
+  assert.match(fn, /loadAbroadRest\(\s*undefined\s*,\s*undefined\s*,\s*undefined\s*,\s*undefined\s*\)/, "the UNFILTERED pool, with the same cache key the list uses")
+  assert.doesNotMatch(fn, /\.from\(|getAbroadJobsPaginated\s*\(|getAbroadJobs\s*\(|createClient|getSupabaseClient/, "no query or list-service call of its own")
+  for (const name of ["getAbroadJobsPaginated", "getAbroadJobs", "getAbroadCountryCounts"]) {
+    assert.doesNotMatch(fnBody(svc, name), /\.from\(/, `${name} has no query of its own`)
+  }
+  const loader = svc.slice(svc.indexOf("const loadAbroadRest"), svc.indexOf("function composeAbroadJobs"))
+  assert.equal((loader.match(/\.from\(\s*["']abroad_jobs["']\s*\)/g) ?? []).length, 1, "the list/count path reads abroad_jobs in exactly one place (the shared loader)")
 })
 
-test("COUNTS: one failing country degrades to 0 for that card only (Promise.all never rejects the page)", () => {
-  const src = code("src/lib/services/visibleCounts.ts")
-  const fn = src.slice(src.indexOf("export async function getVisibleAbroadCountryCounts"))
-  assert.match(fn, /catch\s*\{[\s\S]*?jobs:\s*0/, "per-country catch returns 0")
+test("COUNTS: the list and the counts share one loader and one set of rules (list = compose(live, loader))", () => {
+  const svc = code("src/lib/services/abroadJobService.ts")
+  assert.match(fnBody(svc, "getAbroadJobs"), /loadAbroadRest\(/, "the list reads through the same loader")
+  assert.match(svc, /const\s+loadAbroadRest\s*=\s*perRequest\(/, "the loader is memoised per request, so list + counts + hero share one read")
+  assert.match(svc, /applySyntheticVisibility\(\s*filterRenderable\(/, "renderability + synthetic visibility are applied in the loader")
+  assert.match(svc, /\.eq\(\s*["']status["']\s*,\s*["']active["']\s*\)/, "active rows only")
 })
 
-test("COUNTS: never falls back to the marketing target as a count", () => {
-  const fn = code("src/lib/services/visibleCounts.ts")
-  assert.doesNotMatch(fn, /ABROAD_COUNTRY_TARGETS\b[^;]*\.jobs\b/, "marketing target used as a count")
+test("COUNTS: each source's country filter is preserved (db = case-insensitive substring, local = case-insensitive equality)", () => {
+  const svc = code("src/lib/services/abroadJobService.ts")
+  assert.match(svc, /query\.ilike\(\s*["']country["']\s*,\s*`%\$\{filters\.country\}%`\s*\)/, "list still filters stored rows with ILIKE %country%")
+  assert.match(svc, /db:\s*\(job,\s*country\)\s*=>\s*\(job\.country\s*\|\|\s*""\)\.toLowerCase\(\)\.includes\(country\.toLowerCase\(\)\)/, "db matcher mirrors ILIKE")
+  assert.match(svc, /local:\s*\(job,\s*country\)\s*=>\s*\(job\.country\s*\|\|\s*""\)\.toLowerCase\(\)\s*===\s*country\.toLowerCase\(\)/, "local matcher mirrors abroadJobLocal")
+  assert.match(code("src/lib/services/abroadJobLocal.ts"), /\(j\.country\s*\|\|\s*""\)\.toLowerCase\(\)\s*===\s*country\.toLowerCase\(\)/, "local list filter is still case-insensitive equality")
+})
+
+test("COUNTS: failure is safe — a failed read reports 0 for every country, never a marketing target", () => {
+  const svc = code("src/lib/services/abroadJobService.ts")
+  assert.match(fnBody(svc, "getAbroadCountryCounts"), /Object\.fromEntries\(countries\.map\(c\s*=>\s*\[c,\s*0\]\)\)[\s\S]*try\s*\{[\s\S]*\}\s*catch/, "zeros first, then the read inside try/catch")
+  assert.doesNotMatch(code("src/lib/services/visibleCounts.ts"), /ABROAD_COUNTRY_TARGETS\b[^;]*\.(jobs|count)\b/, "marketing target used as a count")
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// 2c. COPY — the Featured section must not claim every card is a verified employer opening
+// ─────────────────────────────────────────────────────────────────────────────────────────
+
+const SECTION = "src/components/home/FeaturedJobsSection.tsx"
+
+test("COPY: the section can include external-source jobs (so an 'all verified' claim would be false)", () => {
+  assert.match(code("src/lib/services/featuredJobs.ts"), /getHimalayasJobsForDisplay\(/, "the featured mix draws on the Himalayas source")
+  assert.match(code(SECTION), />\s*Source/, "the section labels external-source cards")
+})
+
+test("COPY: no unconditional 'verified openings / real employers / all verified' claim in the Featured section", () => {
+  const src = code(SECTION)
+  for (const re of [/verified\s+(openings|jobs|vacancies|employers|listings)/i, /real\s+employers/i, /\ball\b[^<>{}]{0,40}\bverified\b/i, /every\b[^<>{}]{0,40}\bverified\b/i, /\bverified\b[^<>{}]{0,30}\bfrom\b[^<>{}]{0,20}\bemployers\b/i]) {
+    assert.doesNotMatch(src, re, `Featured section still matches ${re}`)
+  }
+})
+
+test("COPY: 'Verified' appears only as the per-card badge of an internal (employer-owned) card — never in header copy", () => {
+  const src = code(SECTION)
+  const hits = src.match(/Verified/g) ?? []
+  assert.equal(hits.length, 1, "exactly one use of the word")
+  assert.match(src, /:\s*<span[^>]*>Verified<\/span>/, "…and it is the internal-card badge")
+  const header = src.slice(src.indexOf("<h2"), src.indexOf("</p>", src.indexOf("<h2")))
+  assert.doesNotMatch(header, /verified/i, "no 'verified' in the section heading or subtitle")
+})
+
+test("COPY: the subtitle honestly covers BOTH employer listings and external job sources", () => {
+  const src = code(SECTION)
+  const sub = src.slice(src.indexOf("<p style", src.indexOf("<h2")), src.indexOf("</p>", src.indexOf("<h2")))
+  assert.match(sub, /employers/i, "mentions employers")
+  assert.match(sub, /external/i, "mentions external job sources")
+  assert.match(sub, /where it comes from/i, "points readers at the per-card source label")
+})
+
+test("COPY: comments no longer say the section is 'genuine-employer jobs only'", () => {
+  const raw = read(SECTION)
+  assert.doesNotMatch(raw, /genuine[- ]employer jobs only/i)
+  assert.match(raw, /NOT all employer-verified/, "the doc comment states the mix includes non-employer sources")
+  assert.match(raw, /external-source/i)
 })
 
 // ─────────────────────────────────────────────────────────────────────────────────────────

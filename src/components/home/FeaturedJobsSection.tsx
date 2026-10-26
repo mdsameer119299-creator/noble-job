@@ -5,14 +5,23 @@ import { featuredCardLink } from '@/lib/jobs/featuredCardLink'
 const BOARD_LABEL: Record<FeaturedJobCard['board'], string> = { private: 'Private', wfh: 'Work From Home', abroad: 'Abroad' }
 
 /**
- * Genuine-employer jobs only (see featuredJobs.ts), balanced across all three
- * employer-postable boards — renders nothing when there aren't any yet,
- * rather than padding the section with synthetic content just to avoid an
- * empty state.
+ * Genuine, open jobs only (never synthetic / unclassified demo content), balanced across the
+ * Private, Work From Home and Abroad boards. The mix is NOT all employer-verified: it can contain
+ *
+ *   • employer-owned openings — internal detail page, labelled "Verified"; and
+ *   • external-source (aggregated, e.g. Himalayas) jobs — link straight to the source site,
+ *     labelled "Source ↗", never presented as employer-verified.
+ *
+ * A card that has no safe link (an aggregator job without a valid external URL) is not rendered at
+ * all — there is no internal fallback. Renders nothing when there are no cards, rather than padding
+ * the section with synthetic content just to avoid an empty state.
  */
 export async function FeaturedJobsSection() {
-  const jobs = await getFeaturedJobsMix(6)
-  if (jobs.length === 0) return null
+  const cards = (await getFeaturedJobsMix(6)).flatMap(job => {
+    const link = featuredCardLink(job)
+    return link ? [{ job, link }] : []
+  })
+  if (cards.length === 0) return null
 
   return (
     <section style={{ padding: '48px 0 8px' }} className="wrap">
@@ -21,15 +30,14 @@ export async function FeaturedJobsSection() {
           <h2 style={{ fontFamily: '"Playfair Display",serif', fontSize: 'clamp(20px,2.4vw,26px)', fontWeight: 900, color: '#0d1f4e', marginBottom: 4 }}>
             ⭐ Featured Jobs
           </h2>
-          <p style={{ color: '#6b7280', fontSize: 13.5 }}>Verified openings from real employers — Private, Work From Home &amp; Abroad</p>
+          <p style={{ color: '#6b7280', fontSize: 13.5 }}>Openings from employers and external job sources — Private, Work From Home &amp; Abroad. Each card shows where it comes from.</p>
         </div>
         <Link href="/jobs/private" style={{ fontSize: 13.5, fontWeight: 700, color: '#1847d4', textDecoration: 'none', whiteSpace: 'nowrap' }}>
           View All Jobs →
         </Link>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 16 }}>
-        {jobs.map(job => {
-          const link = featuredCardLink(job)
+        {cards.map(({ job, link }) => {
           const cardStyle = {
             display: 'block', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 16,
             padding: '18px 20px', textDecoration: 'none', boxShadow: '0 2px 12px rgba(24,71,212,.06)',

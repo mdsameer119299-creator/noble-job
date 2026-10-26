@@ -65,6 +65,7 @@
                       "test:no-empty-jobs": "tsx src/lib/jobs/renderable.test.ts",
                       "test:counts": "tsx src/lib/services/visibleCounts.test.ts",
                       "test:seo-recovery": "tsx src/lib/seo/seoRecoveryRegression.test.ts",
+                      "test:abroad-counts": "tsx src/lib/services/abroadCountryCounts.test.ts",
                       "test:apply-route": "tsx src/lib/jobs/applyRoute.test.ts",
                       "test:apply-state": "tsx src/lib/jobs/applyState.test.ts",
                       "test:source-dates": "tsx src/lib/seo/sourceDateFlows.test.ts",
@@ -79,7 +80,7 @@
                       "test:uppsc-dates": "tsx src/lib/ingest/adapters/uppsc.test.ts",
                       "test:ibps-dates": "tsx src/lib/ingest/adapters/ibps.test.ts",
                       "test:http-fallback": "tsx src/lib/ingest/http.test.ts",
-                      "test:seo-phase1": "npm run test:seo-jobposting && npm run test:seo-sitemap && npm run test:govt-integrity && npm run test:job-lifecycle && npm run test:synthetic-apply && npm run test:no-empty-jobs && npm run test:gate-coverage && npm run test:counts && npm run test:seo-recovery && npm run test:apply-route && npm run test:apply-state && npm run test:source-dates && npm run test:himalayas-wfh && npm run test:himalayas-private && npm run test:card-apply-gating && npm run test:extract-published-date && npm run test:pdf-dates && npm run test:employment-news-dates && npm run test:uppsc-dates && npm run test:ibps-dates && npm run test:http-fallback && npm run test:ingest-status && npm run test:govt-nav-stats && npm run test:govt-vacancies && npm run test:govt-lifecycle-copy && npm run test:govt-listing-freshness && npm run test:govt-lifecycle-backfill-plan && npm run test:htmllist-drop-filter && npm run test:uksssc-drop-filter",
+                      "test:seo-phase1": "npm run test:seo-jobposting && npm run test:seo-sitemap && npm run test:govt-integrity && npm run test:job-lifecycle && npm run test:synthetic-apply && npm run test:no-empty-jobs && npm run test:gate-coverage && npm run test:counts && npm run test:seo-recovery && npm run test:abroad-counts && npm run test:apply-route && npm run test:apply-state && npm run test:source-dates && npm run test:himalayas-wfh && npm run test:himalayas-private && npm run test:card-apply-gating && npm run test:extract-published-date && npm run test:pdf-dates && npm run test:employment-news-dates && npm run test:uppsc-dates && npm run test:ibps-dates && npm run test:http-fallback && npm run test:ingest-status && npm run test:govt-nav-stats && npm run test:govt-vacancies && npm run test:govt-lifecycle-copy && npm run test:govt-listing-freshness && npm run test:govt-lifecycle-backfill-plan && npm run test:htmllist-drop-filter && npm run test:uksssc-drop-filter",
                       "validate:sitemap": "tsx scripts/validate-sitemap.ts",
                       "audit:provenance": "tsx scripts/audit-jobs-provenance.ts",
                       "deploy:storage": "node scripts/apply-migration.mjs 006_storage_resumes.sql && node scripts/apply-migration.mjs 008_storage_rls_helpers.sql"

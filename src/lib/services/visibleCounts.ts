@@ -20,7 +20,7 @@
  */
 import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobsPaginated } from "@/lib/services/wfhJobService"
-import { getAbroadJobsPaginated } from "@/lib/services/abroadJobService"
+import { getAbroadJobsPaginated, getAbroadCountryCounts } from "@/lib/services/abroadJobService"
 import { ABROAD_COUNTRY_TARGETS } from "@/lib/data/jobInventory"
 import type { JobFilter } from "@/types/job"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
@@ -82,22 +82,15 @@ export async function getVisibleBoardCounts(): Promise<VisibleBoardCounts> {
 }
 
 /**
- * Per-country counts for the abroad country cards: the size of the list each card
- * opens (`?country=`), never the marketing target when a country has no visible jobs.
+ * Per-country counts for the abroad country cards: the size of the list each card opens
+ * (`?country=`), never the marketing target when a country has no visible jobs.
  *
- * Uses the same DB-backed `getAbroadJobsPaginated` that the abroad listing page uses,
- * so country cards always agree with the actual job list they link to.
+ * ONE shared read of the Abroad pool (`getAbroadCountryCounts`), not one full list query per
+ * country: the stored rows come from the very loader `getAbroadJobsPaginated` uses — same active /
+ * renderable / provenance / synthetic-visibility / source rules — and are narrowed per country in
+ * memory with each source's own country filter. A read failure reports 0 for every card.
  */
 export async function getVisibleAbroadCountryCounts() {
-  const results = await Promise.all(
-    ABROAD_COUNTRY_TARGETS.map(async c => {
-      try {
-        const result = await getAbroadJobsPaginated({ country: c.country, page: 1, limit: 1 })
-        return { name: c.country, flag: c.flag, jobs: result.counts.all, desc: c.desc }
-      } catch {
-        return { name: c.country, flag: c.flag, jobs: 0, desc: c.desc }
-      }
-    })
-  )
-  return results
+  const counts = await getAbroadCountryCounts(ABROAD_COUNTRY_TARGETS.map(c => c.country))
+  return ABROAD_COUNTRY_TARGETS.map(c => ({ name: c.country, flag: c.flag, jobs: counts[c.country] ?? 0, desc: c.desc }))
 }
