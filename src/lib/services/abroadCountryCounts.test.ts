@@ -8,7 +8,9 @@
  * (module interception), so nothing here opens a network connection, reads or writes a real database, or
  * needs credentials. The fake models only what the Abroad list uses from PostgREST:
  *   .from("abroad_jobs").select(..).eq("status","active").order(..)
- * and RECORDS every ilike() so the test can prove the country filter is no longer pushed down to SQL.
+ * plus .order(..).order(..).range(from,to) and select(.., {count:"exact"}); it RECORDS every ilike() so the test can
+ * prove the country filter is not pushed down to SQL. Like PostgREST it caps every response at `maxRows`
+ * (default 1000), sorts by the requested order keys, and can fail or throw on a chosen batch.
  *
  * What is proven:
  *   • for every country card (and for alias / case / lookalike probes) count === getAbroadJobsPaginated({country}).total
@@ -19,8 +21,13 @@
  *     the list each card opens contains exactly those rows;
  *   • rows that are not active, not renderable, or synthetic-while-hidden are never counted, exactly as in the list;
  *   • the same alias rules hold in local-inventory mode;
- *   • counting 16 countries — and listing any country — costs ONE `abroad_jobs` read (country is not part of
- *     the read), and the list + counts + hero-style callers of one request share it;
+ *   • COMPLETENESS: with more than the response cap (1000) of active rows, records beyond the first page appear
+ *     in the filtered list AND the count, count === list.total, nothing is duplicated or skipped at batch
+ *     boundaries (also under tied posted_at and an exactly-full batch), a failed later batch yields the safe
+ *     fallback — never a partial count — and the loop is bounded;
+ *   • counting 16 countries — and listing any country — uses ONE shared paginated dataset per request (as many
+ *     range() batches as the inventory needs; country is not part of the read), and the list + counts +
+ *     hero-style callers of one request share it;
  *   • failures yield 0 (never a marketing target) and never throw.
  */
 import assert from "node:assert/strict"
@@ -54,12 +61,22 @@ let settings: Record<string, string> = {}
 let dbMode: "ok" | "error" | "throw" = "ok"
 let reads: string[] = []
 let ilikes: string[] = []
-const abroadReads = () => reads.filter(t => t === "abroad_jobs").length
+/** Every abroad_jobs batch request, in order: the range asked for and what the fake answered. */
+let batches: Array<{ from: number; to: number; returned: number }> = []
+let maxRows = 1000                   // PostgREST's response cap
+let omitCount = false                // simulate a response without a total
+let failBatch: { at: number; mode: "error" | "throw" } | null = null // 0-based batch index
+/** Full passes over the dataset (a pass starts at offset 0). One shared dataset per request ⇒ 1. */
+const abroadReads = () => batches.filter(b => b.from === 0).length
+const abroadBatches = () => batches.length
 
 function queryBuilder(table: string) {
   const preds: Array<(r: Row) => boolean> = []
+  const orders: Array<{ col: string; asc: boolean }> = []
+  let wantCount = false
+  let range: [number, number] | null = null
   const b = {
-    select: () => b,
+    select: (_cols?: string, opts?: { count?: string }) => { wantCount = opts?.count === "exact"; return b },
     eq: (col: string, v: unknown) => { preds.push(r => r[col] === v); return b },
     ilike: (col: string, pattern: string) => {
       ilikes.push(`${table}.${col}`)
@@ -68,13 +85,32 @@ function queryBuilder(table: string) {
       return b
     },
     or: () => { throw new Error("unexpected .or() — this test never filters by q") },
-    order: () => b,
-    then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-      Promise.resolve(
-        dbMode === "error"
-          ? { data: null, error: { message: "simulated database error" } }
-          : { data: table === "abroad_jobs" ? rows.filter(r => preds.every(p => p(r))) : [], error: null },
-      ).then(resolve, reject),
+    order: (col: string, o?: { ascending?: boolean }) => { orders.push({ col, asc: o?.ascending !== false }); return b },
+    range: (from: number, to: number) => { range = [from, to]; return b },
+    then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+      const run = async () => {
+        if (table !== "abroad_jobs") return { data: [], error: null }
+        const index = batches.length
+        const matched = rows.filter(r => preds.every(p => p(r)))
+        // Rows the order keys cannot tell apart come back in an ARBITRARY order that differs from request to
+        // request (as in Postgres without a unique sort key) — modelled by a per-request hash of the id.
+        const arbitrary = (r: Row) => { let h = Math.imul(index + 1, 0x9e3779b1) >>> 0; for (const ch of String(r.id)) { h = Math.imul(h ^ ch.charCodeAt(0), 0x85ebca6b) >>> 0; h ^= h >>> 13 } return h >>> 0 }
+        matched.sort((x, y) => {
+          for (const o of orders) {
+            const a = String(x[o.col] ?? ""), c = String(y[o.col] ?? "")
+            if (a !== c) return (a < c ? -1 : 1) * (o.asc ? 1 : -1)
+          }
+          return arbitrary(x) - arbitrary(y)
+        })
+        const [from, to] = range ?? [0, matched.length - 1]
+        const slice = matched.slice(from, Math.min(to, from + maxRows - 1) + 1)
+        batches.push({ from, to, returned: slice.length })
+        if (dbMode === "error" || failBatch?.at === index && failBatch.mode === "error") return { data: null, error: { message: "simulated database error" }, count: null }
+        if (failBatch?.at === index && failBatch.mode === "throw") throw new Error("simulated mid-read failure")
+        return { data: slice, error: null, count: wantCount && !omitCount ? matched.length : null }
+      }
+      return run().then(resolve, reject)
+    },
   }
   return b
 }
@@ -169,6 +205,10 @@ function scenario(opts: { production?: boolean; configured?: boolean; dbSource?:
   rows = opts.data ?? seed()
   reads = []
   ilikes = []
+  batches = []
+  maxRows = 1000
+  omitCount = false
+  failBatch = null
   resetRequest()
 }
 
@@ -256,7 +296,7 @@ async function main() {
   })
 
   // ── efficiency ───────────────────────────────────────────────────────────────────────────────────
-  await test("EFFICIENCY: counting all 16 countries reads abroad_jobs ONCE — and so does listing every country (country is not part of the read)", async () => {
+  await test("EFFICIENCY: counting all 16 countries makes ONE pass over abroad_jobs — and so does listing every country (country is not part of the read)", async () => {
     scenario({ production: true })
     await getAbroadCountryCounts(names)
     assert.equal(abroadReads(), 1, "one shared read for all the counts")
@@ -271,7 +311,7 @@ async function main() {
     assert.equal(abroadReads(), 1, "counts and lists together: still one")
   })
 
-  await test("EFFICIENCY: getVisibleAbroadCountryCounts() — the function the page, hero and APIs call — is one read, with the right shape", async () => {
+  await test("EFFICIENCY: getVisibleAbroadCountryCounts() — the function the page, hero and APIs call — is one shared pass, with the right shape", async () => {
     scenario({ production: true })
     const cards = await getVisibleAbroadCountryCounts()
     assert.equal(abroadReads(), 1)
@@ -289,7 +329,7 @@ async function main() {
     }
   })
 
-  await test("EFFICIENCY: list + counts + hero-style callers of ONE request share a single abroad_jobs read", async () => {
+  await test("EFFICIENCY: list + counts + hero-style callers of ONE request share a single paginated abroad_jobs dataset", async () => {
     scenario({ production: true })
     await Promise.all([
       getVisibleAbroadCountryCounts(),            // page country cards
@@ -357,6 +397,146 @@ async function main() {
     scenario({ dbSource: true, db: "error", synthetic: true })
     const c = await assertCountsEqualLists("dev+error→local", true)
     assert.ok(c.UAE > 20)
+  })
+
+  // ── COMPLETENESS: more active rows than one response can hold ────────────────────────────────────
+  /** N active rows whose ORDER (posted_at desc, id asc) equals their index; `put` overrides single positions. */
+  function bigDataset(total: number, put: Record<number, Row | ((r: Row) => Row)> = {}, tiedPostedAt = false): Row[] {
+    const out: Row[] = []
+    for (let k = 0; k < total; k++) {
+      const row = dbRow("Germany", {
+        id: `himalayas:${String(k).padStart(40, "0")}`,
+        posted_at: tiedPostedAt ? "2026-10-20T00:00:00Z" : new Date(Date.UTC(2026, 9, 20) - Math.floor(k / 50) * 60000).toISOString(),
+      })
+      const o = put[k]
+      out.push(typeof o === "function" ? o(row) : o ? { ...row, ...o } : row)
+    }
+    return out
+  }
+  const PUT: Record<number, Row> = {
+    0: { country: "UAE" }, 1998: { country: "United Arab Emirates" }, 2200: { country: "Dubai, UAE" },
+    5: { country: "United Kingdom" }, 999: { country: "United Kingdom" }, 1000: { country: "United Kingdom" }, 1500: { country: "United Kingdom" }, 2349: { country: "United Kingdom" },
+    1999: { country: "U.K." }, 2000: { country: "U.K." },
+    1001: { country: "Oman" }, 2001: { country: "Oman" }, 1002: { country: "Romania" },
+    1700: { country: "Ukraine" },
+    1200: { country: "United Kingdom", description: "" },                       // not renderable
+    1300: { country: "United Kingdom", status: "closed" },                        // not active
+    1400: { country: "UAE", provenance: "SYNTHETIC", apply_url: "", source: "Live feed" }, // demo row, hidden
+  }
+  const BIG = 2350
+  const excluded = new Set([1200, 1300, 1400]) // never listed or counted
+  const idAt = (k: number) => `himalayas:${String(k).padStart(40, "0")}`
+  const listedIdsOf = async (country?: string) => (await getAbroadJobs(country ? { country } : {})).map(j => j.id)
+  const expectIds = (ks: number[]) => ks.map(idAt).sort()
+
+  await test("COMPLETENESS: >1000 active rows — records beyond the first response page are listed AND counted, count === list.total", async () => {
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    const counts = await assertCountsEqualLists("big", true)
+    // Explicit expectations placed on page 1 (idx<1000), page 2 (1000-1999) and page 3 (2000+):
+    assert.equal(counts.UK, 7, "UK rows sit on all three pages (5, 999 | 1000, 1500, 1999 | 2000, 2349); the non-renderable and closed ones are excluded")
+    assert.equal(counts["United Kingdom"], 7)
+    assert.equal(counts.Oman, 2, "Oman on page 2 and page 3; Romania (1002) is not Oman")
+    assert.equal(counts.UAE, 3, "0 | 1998 | 2200 — the 'Dubai, UAE' record is on the third page; the hidden demo row is not counted")
+    assert.equal(counts.Ukraine, 1)
+    assert.equal(counts.ROMANIA, 1)
+    const idsOf = async (c: string) => (await listedIdsOf(c)).sort()
+    assert.deepEqual(await idsOf("UK"), expectIds([5, 999, 1000, 1500, 1999, 2000, 2349]), "the filtered UK LIST contains every later-page record")
+    assert.deepEqual(await idsOf("Oman"), expectIds([1001, 2001]))
+    assert.deepEqual(await idsOf("UAE"), expectIds([0, 1998, 2200]))
+    const page = await getAbroadJobsPaginated({ country: "UK", page: 1, limit: 20 })
+    assert.equal(page.total, counts.UK)
+    // Germany is everything that is left: card === list === the fixture minus the specials.
+    const specials = Object.keys(PUT).map(Number)
+    assert.equal(counts.Germany, BIG - specials.length)
+  })
+
+  await test("COMPLETENESS: nothing is skipped or duplicated at the batch boundaries (the unfiltered list is exactly the renderable fixture)", async () => {
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    const ids = await listedIdsOf()
+    assert.equal(new Set(ids).size, ids.length, "no duplicates")
+    const expected = Array.from({ length: BIG }, (_, k) => k).filter(k => !excluded.has(k))
+    assert.deepEqual([...ids].sort(), expectIds(expected), "no skipped rows — including idx 999/1000 and 1999/2000, the page edges")
+    assert.deepEqual(batches.map(b => [b.from, b.to, b.returned]), [[0, 999, 1000], [1000, 1999, 1000], [2000, 2999, 349]], `three bounded range() batches: ${JSON.stringify(batches)}`)
+  })
+
+  await test("COMPLETENESS: rows with IDENTICAL posted_at are not skipped or repeated between batches (id is the tie-breaker)", async () => {
+    const data = bigDataset(BIG, PUT, true) // all posted_at equal: only the id tie-breaker keeps the batches stable (the fake orders ties arbitrarily per request)
+    scenario({ production: true, data })
+    const ids = await listedIdsOf()
+    assert.equal(new Set(ids).size, ids.length)
+    assert.equal(ids.length, BIG - excluded.size)
+    const c = await getAbroadCountryCounts(["UK", "Oman", "UAE"])
+    assert.deepEqual([c.UK, c.Oman, c.UAE], [7, 2, 3])
+  })
+
+  await test("COMPLETENESS: all 16 country cards + every country list + the hero reuse ONE paginated dataset (batches = ceil(N/1000), not 16×)", async () => {
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    await Promise.all([getVisibleAbroadCountryCounts(), getVisibleAbroadCountryCounts(), getAbroadVisibleCounts({}), getAbroadJobs()])
+    for (const n of names) await getAbroadJobsPaginated({ country: n, page: 1, limit: 20 })
+    assert.equal(abroadReads(), 1, "one pass over the dataset")
+    assert.equal(abroadBatches(), Math.ceil(BIG / 1000), "only the batches the inventory needs (3), shared by every caller")
+    // The per-country-read baseline would have been names.length passes × 3 batches.
+    assert.ok(abroadBatches() < names.length)
+  })
+
+  await test("BATCH EDGES: an exactly-full final batch ends the read correctly, with and without a reported total", async () => {
+    for (const [n, withCount, expectBatches] of [[2000, true, 2], [2000, false, 3], [1000, true, 1], [1000, false, 2], [1001, true, 2], [999, false, 1], [1, true, 1]] as const) {
+      scenario({ production: true, data: bigDataset(n) })
+      omitCount = !withCount
+      const ids = await listedIdsOf()
+      assert.equal(ids.length, n, `${n} rows, count ${withCount}`)
+      assert.equal(new Set(ids).size, n)
+      assert.equal(abroadBatches(), expectBatches, `${n} rows, count ${withCount}: batches`)
+      if (!withCount && n % 1000 === 0) assert.equal(batches.at(-1)!.returned, 0, "without a total, one extra empty batch establishes the end")
+    }
+  })
+
+  await test("BATCH SIZE: a database that returns fewer rows per response than asked (lower max-rows) is still read completely", async () => {
+    scenario({ production: true, data: bigDataset(BIG, PUT) })
+    maxRows = 400
+    const ids = await listedIdsOf()
+    assert.equal(ids.length, BIG - excluded.size)
+    assert.equal(new Set(ids).size, ids.length)
+    assert.equal(abroadBatches(), Math.ceil(BIG / 400))
+    assert.equal((await getAbroadCountryCounts(["UK"])).UK, 7)
+  })
+
+  await test("FAILURE: a later batch that errors can NOT yield a misleading partial count — safe fallback, card still === list", async () => {
+    for (const mode of ["error", "throw"] as const) {
+      for (const at of [1, 2]) {
+        scenario({ production: true, data: bigDataset(BIG, PUT) })
+        failBatch = { at, mode }
+        const c = await assertCountsEqualLists(`prod+${mode}@${at}`)
+        for (const n of names) assert.equal(c[n], 0, `${mode}@${at} ${n}: zero, not the ${1000 * at} rows that were already read`)
+        assert.equal(c.Germany, 0)
+        assert.equal(abroadBatches(), at + 1, "the read stops at the failing batch")
+        assert.equal((await getVisibleAbroadCountryCounts()).every(card => card.jobs === 0), true)
+      }
+    }
+  })
+
+  await test("FAILURE outside production: a failed later batch falls back to the local inventory for card and list alike (never a partial DB set)", async () => {
+    scenario({ dbSource: true, synthetic: true, data: bigDataset(BIG, PUT) })
+    failBatch = { at: 1, mode: "error" }
+    const c = await assertCountsEqualLists("dev+err@1→local", true)
+    assert.ok(c.UAE > 20, "local inventory")
+    assert.equal(c.Germany > 0 && c.Germany !== BIG - Object.keys(PUT).length, true, "not the (partial or full) DB fixture")
+  })
+
+  await test("BOUNDED: the read never loops without limit — past the safety ceiling it fails closed, it does not return a partial set", async () => {
+    scenario({ production: true, data: bigDataset(600) })
+    maxRows = 10 // 60 batches would be needed; the ceiling is 50
+    const c = await assertCountsEqualLists("bounded")
+    for (const n of names) assert.equal(c[n], 0, n)
+    assert.equal(abroadBatches(), 50, "stopped at the ceiling")
+  })
+
+  await test("COMPLETENESS keeps every earlier rule: provenance + synthetic visibility apply to later-page rows exactly as to page one", async () => {
+    scenario({ production: true, synthetic: true, data: bigDataset(BIG, PUT) })
+    const c = await assertCountsEqualLists("big+synthetic", true)
+    assert.equal(c.UAE, 4, "now the hidden demo row (page 2) is counted too — by the card and the list alike")
+    scenario({ production: true, data: bigDataset(BIG, { ...PUT, 2100: { country: "UK", provenance: "UNCLASSIFIED", source: "unknown", apply_url: "" } }) })
+    assert.equal((await getAbroadCountryCounts(["UK"])).UK, 7, "a later-page UNCLASSIFIED row is dropped by the renderability gate")
   })
 
   await test("deep pages still work in local mode (the first page of 20 is no longer all the list can hold)", async () => {

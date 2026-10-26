@@ -430,7 +430,12 @@ test("the DB list path filters BEFORE counting (in-memory pool) — no raw SQL c
   assert.match(svc, /counts:\s*countByStatus\(combined\)/)
   // WFH / abroad DB paths filter too.
   assert.match(read("src/lib/services/wfhJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as WfhJob\[\], "wfh"\)/)
-  assert.match(read("src/lib/services/abroadJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as AbroadJob\[\], "abroad"\)/)
+  // Abroad: the rows read in range() batches are gated as one complete set; the SQL `count` is used only to know
+  // when the batches are exhausted and is never what a card or list total displays (those derive from the gated rows).
+  const abroad = read("src/lib/services/abroadJobService.ts")
+  assert.match(abroad, /filterRenderable\(rows, "abroad"\)/)
+  assert.match(abroad, /total:\s*all\.length/)
+  assert.doesNotMatch(abroad.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1"), /total\s*[:=]\s*count\b|jobs:\s*count\b/, "the SQL count is never surfaced as a total")
 })
 
 test("API count / stats never use a raw `status = active` row count", () => {

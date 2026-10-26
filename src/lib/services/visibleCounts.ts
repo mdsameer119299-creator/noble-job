@@ -85,7 +85,7 @@ export async function getVisibleBoardCounts(): Promise<VisibleBoardCounts> {
  * Per-country counts for the abroad country cards: the size of the list each card opens
  * (`?country=`), never the marketing target when a country has no visible jobs.
  *
- * ONE shared read of the Abroad pool (`getAbroadCountryCounts`), not one full list query per
+ * ONE shared, paginated read of the Abroad pool (`getAbroadCountryCounts`), not one full list query per
  * country: the stored rows come from the very loader `getAbroadJobsPaginated` uses — same active /
  * renderable / provenance / synthetic-visibility / source rules — and are narrowed per country in
  * memory with each source's own country filter. A read failure reports 0 for every card.

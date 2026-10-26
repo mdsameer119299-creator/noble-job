@@ -12,7 +12,7 @@
  *   2. SSR        — the three job-board listing pages must fetch page data on the server and
  *                   hand it to their client panels, so crawlers receive real job content
  *                   instead of an empty "Loading…" shell.
- *   3. COUNTS     — abroad country cards come from ONE shared read of the Abroad pool (not one full list
+ *   3. COUNTS     — abroad country cards come from ONE shared, complete (range()-paginated) read of the Abroad pool (not one full list
  *                   query per country) and equal the size of the list each card opens
  *                   (behavioural proof: abroadCountryCounts.test.ts, `npm run test:abroad-counts`).
  *                   Country identity is ONE shared rule (countryIdentity.ts: aliases, whole-country tokens —
@@ -411,6 +411,20 @@ test("COUNTS: the list and the counts share one loader and one set of rules (lis
   assert.match(svc, /const\s+loadAbroadRest\s*=\s*perRequest\(/, "the loader is memoised per request, so list + counts + hero share one read")
   assert.match(svc, /applySyntheticVisibility\(\s*filterRenderable\(/, "renderability + synthetic visibility are applied in the loader")
   assert.match(svc, /\.eq\(\s*["']status["']\s*,\s*["']active["']\s*\)/, "active rows only")
+})
+
+test("COUNTS: the shared read is COMPLETE — bounded range() batches, a unique tie-breaker, no partial result on failure", () => {
+  const svc = code("src/lib/services/abroadJobService.ts")
+  const loader = svc.slice(svc.indexOf("const loadAbroadRest"), svc.indexOf("function composeAbroadJobs"))
+  assert.match(loader, /\.range\(\s*from\s*,\s*from\s*\+\s*ABROAD_DB_BATCH\s*-\s*1\s*\)/, "reads in range() batches (one response is capped by the API)")
+  assert.match(loader, /\.order\(\s*["']posted_at["']\s*,\s*\{\s*ascending:\s*false\s*\}\s*\)\s*\.order\(\s*["']id["']\s*,\s*\{\s*ascending:\s*true\s*\}\s*\)/, "posted_at DESC with id as the unique tie-breaker")
+  assert.match(loader, /count:\s*["']exact["']/, "asks for the total so an exactly-full last batch ends the loop")
+  assert.match(svc, /const\s+ABROAD_DB_BATCH\s*=\s*1000\b/)
+  assert.match(svc, /const\s+ABROAD_DB_MAX_BATCHES\s*=\s*\d+/)
+  assert.match(loader, /batches\s*>=\s*ABROAD_DB_MAX_BATCHES\)\s*return\s+local\(\)/, "bounded: past the ceiling it fails closed")
+  assert.match(loader, /if\s*\(error\)\s*return\s+local\(\)/, "a failed batch discards everything read so far")
+  assert.equal((loader.match(/\.from\(\s*["']abroad_jobs["']\s*\)/g) ?? []).length, 1, "still the only place the list/count path reads abroad_jobs")
+  assert.doesNotMatch(loader, /\.limit\(/, "no truncating limit()")
 })
 
 test("COUNTS: list and count apply ONE shared country-identity rule (aliases, whole-country tokens) — no source-specific substring/equality", () => {

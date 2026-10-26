@@ -54,6 +54,15 @@ interface AbroadRest {
   origin: "db" | "local"
 }
 
+/**
+ * Rows per database batch. Equal to PostgREST's default response cap (`max-rows`, 1000), so a batch is never
+ * silently shorter than asked on a default project; the loop advances by what actually came back, so a lower
+ * configured cap still reads everything (only more batches).
+ */
+const ABROAD_DB_BATCH = 1000
+/** Hard ceiling on batches per read (50 000 rows) — a safety stop, treated as a failure rather than a partial result. */
+const ABROAD_DB_MAX_BATCHES = 50
+
 /** "Every local row that matches" — the local helper paginates, so ask for one page big enough to hold them all. */
 const ALL_LOCAL = Number.MAX_SAFE_INTEGER
 
@@ -65,7 +74,8 @@ const ALL_LOCAL = Number.MAX_SAFE_INTEGER
  * `countryMatches` rule (countryIdentity.ts), never by a source-specific rule (SQL ILIKE substring / local
  * equality), so (a) every source uses one definition of "this country" and aliases can never make the list
  * and its count disagree, and (b) the filtered list, the unfiltered list and all the country-card counts
- * share the SAME memoised read — one `abroad_jobs` query per request however many countries are shown.
+ * share the SAME memoised read — one shared, paginated dataset per request however many countries are shown
+ * (as many range() batches as the inventory needs, never one full read per country).
  * Memoised per request: the same filters never trigger a second read in one render.
  */
 const loadAbroadRest = perRequest(
@@ -85,14 +95,41 @@ const loadAbroadRest = perRequest(
     try {
       const sb = await getSupabaseClient()
       if (!sb) return local()
-      let query = sb.from("abroad_jobs").select("*").eq("status", "active")
-      if (filters.q) query = query.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
-      if (filters.category) query = query.eq("category", filters.category)
-      query = query.order("posted_at", { ascending: false })
-      const { data, error } = await query
-      if (error) return local()
+      // The COMPLETE active set, in bounded range() batches: PostgREST caps one response (default 1000 rows), and
+      // a silently truncated read would drop rows from country lists and counts alike. Order is posted_at DESC
+      // with `id` as a unique tie-breaker, so rows with equal (or null) posted_at keep one stable position and
+      // are neither skipped nor repeated between batches.
+      const page = (from: number) => {
+        let query = sb.from("abroad_jobs").select("*", { count: "exact" }).eq("status", "active")
+        if (filters.q) query = query.or(`title.ilike.%${filters.q}%,company.ilike.%${filters.q}%`)
+        if (filters.category) query = query.eq("category", filters.category)
+        return query.order("posted_at", { ascending: false }).order("id", { ascending: true }).range(from, from + ABROAD_DB_BATCH - 1)
+      }
+      const rows: AbroadJob[] = []
+      const seen = new Set<string>()
+      let expectedRows: number | null = null
+      let fetched = 0 // rows the database returned (the next batch starts here), before any de-duplication
+      for (let batches = 0; ; batches++) {
+        // Bounded: more batches than any real inventory needs is a failure, never a silently partial result.
+        if (batches >= ABROAD_DB_MAX_BATCHES) return local()
+        const { data, error, count: matchedRows } = await page(fetched)
+        if (error) return local() // any failed batch → the safe fallback, never a partial dataset
+        const batch = (data || []) as unknown as AbroadJob[]
+        fetched += batch.length
+        if (expectedRows === null && typeof matchedRows === "number") expectedRows = matchedRows
+        for (const r of batch) {
+          const id = String((r as { id?: unknown }).id ?? "")
+          if (id && seen.has(id)) continue // defensive: a concurrent write can shift a boundary
+          if (id) seen.add(id)
+          rows.push(r)
+        }
+        // Exhausted when the batch is empty, or the reported total is reached, or (no total reported) it is short.
+        // An exactly full final batch is handled: with a total we stop on it; without one we ask once more and get [].
+        if (batch.length === 0) break
+        if (expectedRows !== null ? fetched >= expectedRows : batch.length < ABROAD_DB_BATCH) break
+      }
       return {
-        jobs: sortByStatus(applySyntheticVisibility(filterRenderable((data || []) as unknown as AbroadJob[], "abroad"), syntheticVisible)),
+        jobs: sortByStatus(applySyntheticVisibility(filterRenderable(rows, "abroad"), syntheticVisible)),
         origin: "db",
       }
     } catch {
@@ -116,7 +153,7 @@ export async function getAbroadJobs(filters: AbroadJobFilters = {}): Promise<Abr
 }
 
 /**
- * Per-country job counts for the country cards, from ONE read of the Abroad pool instead of one full list
+ * Per-country job counts for the country cards, from ONE shared (paginated) read of the Abroad pool instead of one full list
  * query per country. `counts[name]` equals `getAbroadJobsPaginated({ country: name }).total` — same active /
  * renderable / provenance / synthetic-visibility / source-selection rules, same per-source country filter
  * and same live-vs-stored de-duplication — because the stored rows come from the very loader the list uses
