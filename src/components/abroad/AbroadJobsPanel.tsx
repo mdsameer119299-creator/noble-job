@@ -21,16 +21,23 @@ const STATUS_TABS = [
   { id: 'ARCHIVED_JOB', label: 'Archived' },
 ]
 
-export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
+export interface InitialAbroadData {
+  jobs: AbroadJob[]
+  total: number
+  totalPages: number
+  counts: Counts
+}
+
+export function AbroadJobsPanel({ countries, initialData }: { countries: CountryCount[]; initialData?: InitialAbroadData }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const [jobs, setJobs] = useState<AbroadJob[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<AbroadJob[]>(initialData?.jobs ?? [])
+  const [loading, setLoading] = useState(!initialData)
   const [failed, setFailed] = useState(false)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(1)
-  const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
+  const [total, setTotal] = useState(initialData?.total ?? 0)
+  const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
+  const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
   const [selected, setSelected] = useState<AbroadJob | null>(null)
 
   const q = params.get('q') || ''

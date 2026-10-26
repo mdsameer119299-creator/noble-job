@@ -16,14 +16,21 @@ const STATUS_TABS: { id: string; label: string }[] = [
   { id: 'ARCHIVED_JOB', label: 'Archived Jobs' },
 ]
 
-export function LiveJobsList() {
+export interface InitialJobData {
+  jobs: Job[]
+  total: number
+  totalPages: number
+  counts: Counts
+}
+
+export function LiveJobsList({ initialData }: { initialData?: InitialJobData } = {}) {
   const { q, category, type, location, exp, status, page, setFilter, setPage } = useJobFilters()
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<Job[]>(initialData?.jobs ?? [])
+  const [loading, setLoading] = useState(!initialData)
   const [failed, setFailed] = useState(false)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(1)
-  const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
+  const [total, setTotal] = useState(initialData?.total ?? 0)
+  const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
+  const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
 
   useEffect(() => {
     setLoading(true)

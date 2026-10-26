@@ -4,11 +4,12 @@ import { Suspense } from 'react'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
 import { JobSearchBar } from '@/components/jobs/JobSearchBar'
 import { FilterSidebar } from '@/components/jobs/FilterSidebar'
-import { LiveJobsList } from '@/components/jobs/LiveJobsList'
+import { LiveJobsList, type InitialJobData } from '@/components/jobs/LiveJobsList'
 import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { AiMatchingSidebar } from '@/components/jobs/AiMatchingSidebar'
 import { EmailAlertForm } from '@/components/jobs/EmailAlertForm'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
+import { getJobs } from '@/lib/services/jobService'
 
 export const dynamic = "force-dynamic"
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
     ...buildPageMetadata({
       title: 'Private Jobs in India — IT, Banking, Fresher & More | Noble Job',
       description:
-        'Browse Private Jobs from TCS, Infosys, Amazon, Wipro, HCL and 2,500+ companies. Live verified openings across India on Job Portal India Noble Job.',
+        'Browse Private Jobs from top companies across India. Live verified openings on Job Portal India Noble Job.',
       path: '/jobs/private',
       keywords: ['Private Jobs', 'Jobs in India', 'fresher jobs', 'IT jobs India'],
     }),
@@ -31,6 +32,21 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
 
 export default async function PrivateJobsPage({ searchParams }: SP) {
   const page = pageFromSearchParams(await searchParams)
+
+  // Server-side initial data fetch so search engines see real job content.
+  let initialData: InitialJobData | undefined
+  try {
+    const result = await getJobs({ page, limit: 20 })
+    initialData = {
+      jobs: result.jobs,
+      total: result.total,
+      totalPages: result.totalPages,
+      counts: result.counts ?? { all: result.total, live: 0, verified: 0, archived: 0 },
+    }
+  } catch {
+    // SSR fetch failed — the client component will re-fetch on mount.
+  }
+
   return (
     <div style={{ background: '#f8faff', minHeight: '100vh' }}>
       <CategoryHero variant="private" />
@@ -40,7 +56,7 @@ export default async function PrivateJobsPage({ searchParams }: SP) {
         <div className="jobs-layout-3col">
           <Suspense fallback={null}><FilterSidebar /></Suspense>
           <Suspense fallback={<div style={{ color: '#6b7280', padding: 20 }}>Loading jobs…</div>}>
-            <LiveJobsList />
+            <LiveJobsList initialData={initialData} />
           </Suspense>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <AiMatchingSidebar />

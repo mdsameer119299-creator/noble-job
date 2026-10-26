@@ -22,8 +22,6 @@ import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobsPaginated } from "@/lib/services/wfhJobService"
 import { getAbroadJobsPaginated } from "@/lib/services/abroadJobService"
 import { ABROAD_COUNTRY_TARGETS } from "@/lib/data/jobInventory"
-import { getAbroadJobsPaginatedLocal } from "@/lib/services/abroadJobLocal"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import type { JobFilter } from "@/types/job"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 import type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -86,21 +84,20 @@ export async function getVisibleBoardCounts(): Promise<VisibleBoardCounts> {
 /**
  * Per-country counts for the abroad country cards: the size of the list each card
  * opens (`?country=`), never the marketing target when a country has no visible jobs.
+ *
+ * Uses the same DB-backed `getAbroadJobsPaginated` that the abroad listing page uses,
+ * so country cards always agree with the actual job list they link to.
  */
 export async function getVisibleAbroadCountryCounts() {
-  // The abroad list service is local-inventory-only (abroadJobService.getAbroadJobsPaginated
-  // is exactly getAbroadJobsPaginatedLocal + the visibility switch), so one switch read
-  // serves all 16 countries and the numbers are the lists' own.
-  let visible = true
-  try {
-    visible = await isSyntheticJobsVisible()
-  } catch {
-    visible = true
-  }
-  return ABROAD_COUNTRY_TARGETS.map(c => ({
-    name: c.country,
-    flag: c.flag,
-    jobs: getAbroadJobsPaginatedLocal({ country: c.country, page: 1, limit: 1 }, visible).counts.all,
-    desc: c.desc,
-  }))
+  const results = await Promise.all(
+    ABROAD_COUNTRY_TARGETS.map(async c => {
+      try {
+        const result = await getAbroadJobsPaginated({ country: c.country, page: 1, limit: 1 })
+        return { name: c.country, flag: c.flag, jobs: result.counts.all, desc: c.desc }
+      } catch {
+        return { name: c.country, flag: c.flag, jobs: 0, desc: c.desc }
+      }
+    })
+  )
+  return results
 }

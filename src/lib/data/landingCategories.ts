@@ -127,10 +127,10 @@ export const CATEGORY_LANDINGS: CategoryLanding[] = [
     h1: "Private Jobs in India 2026 - Latest Openings Across Top Companies",
     metaTitle: "Private Jobs in India 2026 - IT, Banking, Sales & Fresher Jobs | Noble Job",
     metaDescription:
-      "Find the latest private jobs in India 2026 across IT, banking, sales, marketing, finance & more. Openings from TCS, Infosys, Amazon, Wipro & 2,500+ companies on Noble Job.",
+      "Find the latest private jobs in India 2026 across IT, banking, sales, marketing, finance & more. Openings from top companies on Noble Job.",
     keywords: ["private jobs", "private jobs in India", "IT jobs", "company jobs", "latest private jobs 2026", "fresher private jobs", "Jobs in India"],
     heroSubtitle: "IT, Banking, Sales, Marketing, Finance, HR & Operations roles from India's leading employers.",
-    heroBadges: ["2,500+ Companies", "Full & Part Time", "Updated Hourly", "Freshers to Experienced"],
+    heroBadges: ["Top Companies", "Full & Part Time", "Updated Hourly", "Freshers to Experienced"],
     intro: [
       "Private-sector jobs power India's fastest-growing industries - from information technology and software to banking, finance, e-commerce, manufacturing, healthcare and professional services. Private companies typically offer competitive salaries, rapid career progression, performance incentives and the chance to work with modern tools and global teams.",
       "This hub brings together the latest private job openings in India for 2026. You will find roles across experience levels - from fresher and entry-level positions to senior and managerial posts - and across functions such as engineering, sales, marketing, customer support, operations, HR and finance. We aggregate verified openings from leading employers and link you straight to the application.",

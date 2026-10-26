@@ -28,7 +28,7 @@ export default async function Image() {
         </div>
         {/* Stats strip */}
         <div style={{ display: 'flex', gap: 40, marginTop: 16 }}>
-          {[['80,000+','Jobs'],['2,500+','Companies'],['50,000+','Placed']].map(([n, l]) => (
+          {[['Govt + Private','Jobs'],['WFH + Abroad','Roles'],['Free Forever','For All']].map(([n, l]) => (
             <div key={l} style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <span style={{ fontSize: 28, fontWeight: 900, color: '#fbbf24' }}>{n}</span>
               <span style={{ fontSize: 15, color: 'rgba(255,255,255,.65)' }}>{l}</span>

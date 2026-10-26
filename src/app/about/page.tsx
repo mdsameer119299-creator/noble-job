@@ -64,8 +64,8 @@ export default function AboutPage() {
             {[
               { icon: '🛡️', title: 'Zero Fake Jobs', desc: 'Every listing passes our 40-point anti-scam filter. We partner only with verified employers and official company career pages.' },
               { icon: '💰', title: 'Always Free for Candidates', desc: 'Noble Job has never charged a job seeker and never will. This is written into our founding charter.' },
-              { icon: '🤝', title: 'Trusted by 2,500+ Employers', desc: 'From TCS and Infosys to local SMEs, our employer network spans every major industry in India.' },
-              { icon: '🌍', title: 'Pan-India Reach', desc: 'Jobs across 800+ cities — from metro hubs like Delhi and Bangalore to Tier 2/3 cities and rural India.' },
+              { icon: '🤝', title: 'Trusted Employer Network', desc: 'From TCS and Infosys to local SMEs, our employer network spans every major industry in India.' },
+              { icon: '🌍', title: 'Pan-India Reach', desc: 'Jobs across India — from metro hubs like Delhi and Bangalore to Tier 2/3 cities and rural India.' },
               { icon: '🤖', title: 'AI-Powered Matching', desc: 'Our AI engine matches candidates to the right jobs based on skills, experience and location preferences.' },
               { icon: '📊', title: 'Transparency First', desc: 'We publish our anti-scam policy, fee structure and contact details openly. No hidden charges, ever.' },
             ].map((v, i) => (
@@ -82,7 +82,7 @@ export default function AboutPage() {
         <div style={{ background: 'linear-gradient(135deg,#0d1f4e,#1847d4)', borderRadius: 20, padding: '40px', marginBottom: 48 }}>
           <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#fff', fontSize: 28, textAlign: 'center', marginBottom: 32 }}>Noble Job by Numbers</h2>
           <div className="grid-resp-4" style={{ display: 'grid', gap: 20 }}>
-            {[{n:'80,000+',l:'Jobs Posted',i:'💼'},{n:'2,500+',l:'Verified Employers',i:'🏢'},{n:'50,000+',l:'Candidates Placed',i:'✅'},{n:'800+',l:'Cities Covered',i:'🗺️'}].map((s,i)=>(
+            {[{n:'4',l:'Job Boards',i:'💼'},{n:'Free',l:'For All Candidates',i:'🆓'},{n:'Daily',l:'Updated Listings',i:'🔄'},{n:'Pan-India',l:'Coverage',i:'🗺️'}].map((s,i)=>(
               <div key={i} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>{s.i}</div>
                 <div style={{ fontFamily: 'Playfair Display,serif', fontSize: 32, fontWeight: 900, color: '#fbbf24' }}>{s.n}</div>

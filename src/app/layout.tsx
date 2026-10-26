@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   ...buildPageMetadata({
     title: `Noble Job — ${SITE_TAGLINE}`,
     description:
-      "Job Portal India for Jobs in India — Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. 80,000+ verified openings by NCC Foundation.",
+      "Job Portal India for Jobs in India — Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. Free job portal by NCC Foundation.",
     noCanonical: true,
   }),
   title: {

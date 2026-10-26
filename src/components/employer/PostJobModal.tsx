@@ -70,7 +70,7 @@ export function PostJobModal({open,onClose,onPosted}:PostJobModalProps){
       <div style={{background:'linear-gradient(135deg,#0d1f4e,#1847d4)',padding:'22px 26px'}}>
         <button onClick={onClose} style={{position:'absolute',top:14,right:14,background:'rgba(255,255,255,.2)',border:'none',color:'#fff',width:36,height:36,borderRadius:'50%',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:10}}>×</button>
         <h2 style={{fontFamily:'Playfair Display,serif',fontWeight:900,color:'#fff',fontSize:22}}>Post a New Job</h2>
-        <p style={{color:'rgba(255,255,255,.75)',fontSize:13}}>Reach 80,000+ qualified candidates on Noble Job</p>
+        <p style={{color:'rgba(255,255,255,.75)',fontSize:13}}>Post your opening on Noble Job — free for employers</p>
       </div>
       <div style={{display:'flex',gap:8,padding:'16px 26px 0',borderBottom:'1.5px solid #eef2fb'}}>
         {BOARD_TABS.map(t=>(

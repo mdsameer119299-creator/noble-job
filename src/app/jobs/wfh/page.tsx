@@ -2,9 +2,10 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { listingMeta, pageFromSearchParams } from '@/lib/seo/metadata'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
-import { WfhJobsPanel } from '@/components/wfh/WfhJobsPanel'
+import { WfhJobsPanel, type InitialWfhData } from '@/components/wfh/WfhJobsPanel'
 import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
+import { getWfhJobsPaginated } from '@/lib/services/wfhJobService'
 import '@/styles/wfh-jobs.css'
 
 export const dynamic = "force-dynamic"
@@ -18,10 +19,25 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
 
 export default async function WfhJobsPage({ searchParams }: SP) {
   const page = pageFromSearchParams(await searchParams)
+
+  // Server-side initial data fetch so search engines see real job content.
+  let initialData: InitialWfhData | undefined
+  try {
+    const result = await getWfhJobsPaginated({ page, limit: 20 })
+    initialData = {
+      jobs: result.items,
+      total: result.total,
+      totalPages: result.totalPages,
+      counts: result.counts,
+    }
+  } catch {
+    // SSR fetch failed — the client component will re-fetch on mount.
+  }
+
   return (
     <div className="wfh-page">
       <CategoryHero variant="wfh" />
-      <WfhJobsPanel />
+      <WfhJobsPanel initialData={initialData} />
       <div className="wrap">
         <Suspense fallback={null}>
           <JobsBrowseIndex board="wfh" page={page} basePath="/jobs/wfh" title="All Work From Home Jobs — Full Directory" />
