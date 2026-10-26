@@ -1,25 +1,36 @@
 import Link from 'next/link'
 import { getFeaturedJobsMix, type FeaturedJobCard } from '@/lib/services/featuredJobs'
 import { featuredCardLink } from '@/lib/jobs/featuredCardLink'
+import { featuredCardBadge, type FeaturedBadgeKind } from '@/lib/jobs/featuredCardBadge'
+
+const BADGE_STYLE: Record<FeaturedBadgeKind, { background: string; color: string }> = {
+  verified: { background: '#eff6ff', color: '#1847d4' },
+  employer: { background: '#f1f5f9', color: '#475569' },
+  source: { background: '#fef3c7', color: '#92400e' },
+  curated: { background: '#f5f3ff', color: '#6d28d9' },
+  official: { background: '#ecfdf5', color: '#047857' },
+}
 
 const BOARD_LABEL: Record<FeaturedJobCard['board'], string> = { private: 'Private', wfh: 'Work From Home', abroad: 'Abroad' }
 
 /**
  * Genuine, open jobs only (never synthetic / unclassified demo content), balanced across the
- * Private, Work From Home and Abroad boards. The mix is NOT all employer-verified: it can contain
+ * Private, Work From Home and Abroad boards. The mix is NOT all employer-verified, and the two
+ * decisions on a card are made independently:
  *
- *   • employer-owned openings — internal detail page, labelled "Verified"; and
- *   • external-source (aggregated, e.g. Himalayas) jobs — link straight to the source site,
- *     labelled "Source ↗", never presented as employer-verified.
+ *   • DESTINATION — `featuredCardLink()`: an internal detail page for native jobs, the job's own
+ *     external URL for external-source (aggregated, e.g. Himalayas) jobs; a card with no safe link
+ *     is not rendered.
+ *   • BADGE — `featuredCardBadge()`: from the job's provenance + verification evidence. "Verified" is
+ *     only for employer-owned jobs that satisfy `isEmployerVerified`; aggregated jobs say "Source ↗";
+ *     curated / official-source jobs get their own accurate label. An internal link proves nothing.
  *
- * A card that has no safe link (an aggregator job without a valid external URL) is not rendered at
- * all — there is no internal fallback. Renders nothing when there are no cards, rather than padding
- * the section with synthetic content just to avoid an empty state.
+ * Renders nothing when there are no cards, rather than padding the section with synthetic content.
  */
 export async function FeaturedJobsSection() {
   const cards = (await getFeaturedJobsMix(6)).flatMap(job => {
     const link = featuredCardLink(job)
-    return link ? [{ job, link }] : []
+    return link ? [{ job, link, badge: featuredCardBadge(job) }] : []
   })
   if (cards.length === 0) return null
 
@@ -37,7 +48,7 @@ export async function FeaturedJobsSection() {
         </Link>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 16 }}>
-        {cards.map(({ job, link }) => {
+        {cards.map(({ job, link, badge }) => {
           const cardStyle = {
             display: 'block', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 16,
             padding: '18px 20px', textDecoration: 'none', boxShadow: '0 2px 12px rgba(24,71,212,.06)',
@@ -54,9 +65,9 @@ export async function FeaturedJobsSection() {
                   </div>
                   <div style={{ fontSize: 12.5, color: '#6b7280' }}>{job.company}</div>
                 </div>
-                {link.external
-                  ? <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 8, flexShrink: 0 }}>Source ↗</span>
-                  : <span style={{ background: '#eff6ff', color: '#1847d4', fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 8, flexShrink: 0 }}>Verified</span>}
+                {badge && (
+                  <span style={{ ...BADGE_STYLE[badge.kind], fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 8, flexShrink: 0 }}>{badge.label}</span>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ background: '#f0f4ff', color: '#374151', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 600 }}>📍 {job.location}</span>

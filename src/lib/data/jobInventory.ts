@@ -10,6 +10,7 @@ import { FALLBACK_PRIVATE_JOBS, FALLBACK_WFH_JOBS, FALLBACK_ABROAD_JOBS } from "
 import { countByStatus } from "./inventoryPagination"
 import { isCountableAsGenuine, isPublishableAsOpen } from "@/lib/jobs/provenance"
 import { filterRenderable } from "@/lib/jobs/renderable"
+import { filterByCountry } from "@/lib/jobs/countryIdentity"
 import { syntheticOpenLabel } from "@/lib/config/jobStrategy"
 import type { Job, JobStatus } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
@@ -489,15 +490,13 @@ export function getAbroadInventoryCounts() {
 
 /** Actual per-country counts from the renderable inventory (for country cards). */
 export function getAbroadCountryCounts() {
-  const map = new Map<string, number>()
-  for (const j of renderableAbroadInventory()) {
-    map.set(j.country, (map.get(j.country) || 0) + 1)
-  }
+  const inventory = renderableAbroadInventory()
   return ABROAD_COUNTRY_TARGETS.map(c => ({
     name: c.country,
     flag: c.flag,
-    // Exactly the jobs that can be shown — never the marketing target when a country has none.
-    jobs: map.get(c.country) ?? 0,
+    // Exactly the jobs that can be shown (same shared country rule as the lists) — never the marketing
+    // target when a country has none.
+    jobs: filterByCountry(inventory, c.country).length,
     desc: c.desc,
   }))
 }

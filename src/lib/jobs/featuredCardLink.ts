@@ -70,17 +70,19 @@ export function safeExternalUrl(raw: string | null | undefined): string | null {
 /**
  * The link for a card, or `null` when the card cannot be linked safely and must not be rendered.
  *
+ *  • SYNTHETIC / UNCLASSIFIED provenance → `null` (never linked), whatever the id or URL;
  *  • aggregator → `{ href: <valid external URL>, external: true }` or `null` — NEVER an internal href;
  *  • native     → `{ href: '/jobs/<board>/<id>', external: false }` for a valid id on a genuine card;
- *  • anything else (invalid id, SYNTHETIC / UNCLASSIFIED provenance) → `null`.
+ *  • anything else (invalid id) → `null`.
  */
 export function featuredCardLink(card: FeaturedCardLinkInput): FeaturedCardLink | null {
+  // Non-genuine content is never linked from the homepage, whatever its id or URL look like.
+  if (card.provenance === 'SYNTHETIC' || card.provenance === 'UNCLASSIFIED') return null
   if (isAggregatorCard(card)) {
     const href = safeExternalUrl(card.apply_url)
     return href ? { href, external: true } : null
   }
   if (!isValidJobId(card.id)) return null
-  if (card.provenance === 'SYNTHETIC' || card.provenance === 'UNCLASSIFIED') return null
   return { href: `/jobs/${card.board}/${card.id}`, external: false }
 }
 

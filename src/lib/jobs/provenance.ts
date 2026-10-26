@@ -297,3 +297,14 @@ export function hasVerifiedTrust(j: Classifiable): boolean {
   if (!isGenuine(j)) return false
   return j.jobStatus === "VERIFIED_JOB" || j.verified === true
 }
+
+/**
+ * May a card claim the job is posted by a VERIFIED EMPLOYER? Stricter than `hasVerifiedTrust`:
+ * besides genuine provenance + verification evidence (`jobStatus` VERIFIED_JOB / `verified`), the row
+ * must actually be EMPLOYER-owned. An aggregated, curated or official-source row that happens to carry
+ * a stale `verified` flag is still not "an employer we verified", and an internal link or a UUID id
+ * is never evidence of anything. Composes the existing predicates; relaxes none of them.
+ */
+export function isEmployerVerified(j: Classifiable): boolean {
+  return classifyProvenance(j) === "EMPLOYER" && hasVerifiedTrust(j)
+}

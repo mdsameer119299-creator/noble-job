@@ -15,6 +15,11 @@
  *   3. COUNTS     — abroad country cards come from ONE shared read of the Abroad pool (not one full list
  *                   query per country) and equal the size of the list each card opens
  *                   (behavioural proof: abroadCountryCounts.test.ts, `npm run test:abroad-counts`).
+ *                   Country identity is ONE shared rule (countryIdentity.ts: aliases, whole-country tokens —
+ *                   UK≠Ukraine, Oman≠Romania) for the list, the counts, local inventory and the live feed.
+ *   1b. BADGE     — the Featured card's trust/source badge comes from provenance + verification evidence
+ *                   (featuredCardBadge.ts), never from whether the link is internal or external
+ *                   (behavioural proof: featuredCardBadge.test.ts, `npm run test:featured-badge`).
  *   2b. HYDRATION — the server render and the client list assemble the Private listing with ONE
  *                   shared merge (employer table + live Himalayas cache), and the first client
  *                   fetch is skipped only for the exact view the server rendered, so real
@@ -71,9 +76,9 @@ test("HREF: every card builder in featuredJobs.ts populates apply_url (no builde
 test("HREF: FeaturedJobsSection resolves every card through featuredCardLink() and DROPS cards that have no link", () => {
   const src = code("src/components/home/FeaturedJobsSection.tsx")
   assert.match(src, /import\s*\{\s*featuredCardLink\s*\}\s*from\s*["']@\/lib\/jobs\/featuredCardLink["']/, "imports the shared resolver")
-  assert.match(src, /\.flatMap\(\s*job\s*=>\s*\{[\s\S]*?featuredCardLink\(\s*job\s*\)[\s\S]*?return\s+link\s*\?\s*\[\s*\{\s*job\s*,\s*link\s*\}\s*\]\s*:\s*\[\s*\]/, "a card without a link is omitted, not rendered")
+  assert.match(src, /\.flatMap\(\s*job\s*=>\s*\{[\s\S]*?featuredCardLink\(\s*job\s*\)[\s\S]*?return\s+link\s*\?\s*\[\s*\{\s*job\s*,\s*link\s*,\s*badge:\s*featuredCardBadge\(\s*job\s*\)\s*\}\s*\]\s*:\s*\[\s*\]/, "a card without a link is omitted, not rendered")
   assert.match(src, /cards\.length\s*===\s*0\)\s*return\s+null/, "the section renders nothing when no card is linkable")
-  assert.match(src, /cards\.map\(\s*\(\{\s*job\s*,\s*link\s*\}\)/, "only linkable cards are rendered")
+  assert.match(src, /cards\.map\(\s*\(\{\s*job\s*,\s*link\s*,\s*badge\s*\}\)/, "only linkable cards are rendered")
   assert.match(src, /link\.external\s*\?/, "renders external and internal cards differently")
 })
 
@@ -102,10 +107,28 @@ test("HREF: external aggregated cards render as <a target=_blank rel=noopener no
   assert.match(src, /<Link\b[^>]*href=\{link\.href\}/, "internal next/link")
 })
 
-test("HREF: aggregated cards are labelled 'Source', never 'Verified' (aggregator jobs are not employer-verified)", () => {
+test("BADGE: the badge is decided by featuredCardBadge() from provenance + evidence — NOT by whether the link is external/internal", () => {
   const src = code("src/components/home/FeaturedJobsSection.tsx")
-  assert.match(src, /link\.external\s*\n?\s*\?\s*<span[^>]*>Source/, "external cards get the 'Source' badge")
-  assert.match(src, /:\s*<span[^>]*>Verified<\/span>/, "only internal cards get 'Verified'")
+  assert.match(src, /featuredCardBadge\(\s*job\s*\)/, "badge resolved from the card's provenance/evidence")
+  assert.doesNotMatch(src, /link\.external\s*\?[^:]*<span/, "no link.external ? <badge> : <badge> ternary")
+  assert.doesNotMatch(src, /Verified|Source\s*↗/, "no hard-coded trust label in the component — the labels come from featuredCardBadge")
+  // The only place the word "Verified" can come from is the badge module, for the 'verified' kind.
+  const badge = code("src/lib/jobs/featuredCardBadge.ts")
+  assert.equal((badge.match(/'Verified'/g) ?? []).length, 1, "one 'Verified' label")
+  assert.match(badge, /verified:\s*\{\s*kind:\s*'verified',\s*label:\s*'Verified'\s*\}/)
+  assert.match(badge, /card\.employerVerified\s*===\s*true\s*\?\s*BADGES\.verified\s*:\s*BADGES\.employer/, "Verified only with explicit evidence")
+  assert.doesNotMatch(badge, /external|href|isValidJobId|uuid/i, "the badge module never looks at the link or the id shape")
+})
+
+test("BADGE: every card builder stamps provenance + employerVerified from the job row's own evidence", () => {
+  const src = code("src/lib/services/featuredJobs.ts")
+  assert.match(src, /interface\s+FeaturedJobCard\b[\s\S]*?employerVerified\?:\s*boolean/, "evidence field on FeaturedJobCard")
+  assert.equal((src.match(/\.\.\.featuredCardTrust\(\s*j\s*\)/g) ?? []).length, 9, "all nine builders")
+  assert.doesNotMatch(src, /provenance:\s*j\.provenance/, "no builder copies a possibly-missing provenance label")
+  assert.doesNotMatch(src, /employerVerified:\s*(true|!!j\.id|Boolean\(j\.id)/, "never hard-coded or inferred from the id")
+  const badge = code("src/lib/jobs/featuredCardBadge.ts")
+  assert.match(badge, /employerVerified:\s*isEmployerVerified\(\s*job\s*\)/, "the application's own verification predicate")
+  assert.match(code("src/lib/jobs/provenance.ts"), /export function isEmployerVerified[\s\S]*?classifyProvenance\(j\)\s*===\s*"EMPLOYER"\s*&&\s*hasVerifiedTrust\(j\)/)
 })
 
 const UUID = "9b2f6c1e-0000-4000-8000-000000000001"
@@ -373,7 +396,7 @@ test("COUNTS: the country-count function reads the pool once through the list's 
   const svc = code("src/lib/services/abroadJobService.ts")
   const fn = fnBody(svc, "getAbroadCountryCounts")
   assert.equal((fn.match(/loadAbroadRest\(/g) ?? []).length, 1, "one pool read")
-  assert.match(fn, /loadAbroadRest\(\s*undefined\s*,\s*undefined\s*,\s*undefined\s*,\s*undefined\s*\)/, "the UNFILTERED pool, with the same cache key the list uses")
+  assert.match(fn, /loadAbroadRest\(\s*undefined\s*,\s*undefined\s*,\s*undefined\s*\)/, "the UNFILTERED pool, with the same cache key the list uses")
   assert.doesNotMatch(fn, /\.from\(|getAbroadJobsPaginated\s*\(|getAbroadJobs\s*\(|createClient|getSupabaseClient/, "no query or list-service call of its own")
   for (const name of ["getAbroadJobsPaginated", "getAbroadJobs", "getAbroadCountryCounts"]) {
     assert.doesNotMatch(fnBody(svc, name), /\.from\(/, `${name} has no query of its own`)
@@ -390,12 +413,17 @@ test("COUNTS: the list and the counts share one loader and one set of rules (lis
   assert.match(svc, /\.eq\(\s*["']status["']\s*,\s*["']active["']\s*\)/, "active rows only")
 })
 
-test("COUNTS: each source's country filter is preserved (db = case-insensitive substring, local = case-insensitive equality)", () => {
+test("COUNTS: list and count apply ONE shared country-identity rule (aliases, whole-country tokens) — no source-specific substring/equality", () => {
   const svc = code("src/lib/services/abroadJobService.ts")
-  assert.match(svc, /query\.ilike\(\s*["']country["']\s*,\s*`%\$\{filters\.country\}%`\s*\)/, "list still filters stored rows with ILIKE %country%")
-  assert.match(svc, /db:\s*\(job,\s*country\)\s*=>\s*\(job\.country\s*\|\|\s*""\)\.toLowerCase\(\)\.includes\(country\.toLowerCase\(\)\)/, "db matcher mirrors ILIKE")
-  assert.match(svc, /local:\s*\(job,\s*country\)\s*=>\s*\(job\.country\s*\|\|\s*""\)\.toLowerCase\(\)\s*===\s*country\.toLowerCase\(\)/, "local matcher mirrors abroadJobLocal")
-  assert.match(code("src/lib/services/abroadJobLocal.ts"), /\(j\.country\s*\|\|\s*""\)\.toLowerCase\(\)\s*===\s*country\.toLowerCase\(\)/, "local list filter is still case-insensitive equality")
+  assert.match(svc, /import\s*\{\s*filterByCountry\s*\}\s*from\s*["']@\/lib\/jobs\/countryIdentity["']/)
+  assert.match(fnBody(svc, "getAbroadJobs"), /filterByCountry\(\s*rest\.jobs\s*,\s*filters\.country\s*\)/, "the list narrows the stored rows with the shared rule")
+  assert.match(fnBody(svc, "getAbroadCountryCounts"), /filterByCountry\(\s*rest\.jobs\s*,\s*country\s*\)/, "the count narrows the SAME rows with the SAME rule")
+  assert.doesNotMatch(svc, /ilike\(\s*["']country["']/, "country is never pushed down to SQL with a different rule")
+  assert.doesNotMatch(svc, /countryMatchers|\.includes\(country\.toLowerCase\(\)\)/, "the per-source substring/equality matchers are gone")
+  const loaderSig = svc.slice(svc.indexOf("const loadAbroadRest"), svc.indexOf("const loadAbroadRest") + 200)
+  assert.doesNotMatch(loaderSig, /country/, "country is not a parameter (nor cache key) of the shared read")
+  assert.match(code("src/lib/services/abroadJobLocal.ts"), /filterByCountry\(\s*pre\s*,\s*country\s*\)/, "the local list filter uses the shared rule")
+  assert.match(code("src/lib/services/liveJobOpportunities.ts"), /countryMatches\(r\.country,\s*wanted\)\s*\|\|\s*countryMatches\(r\.location,\s*wanted\)/, "the live feed uses the shared rule")
 })
 
 test("COUNTS: failure is safe — a failed read reports 0 for every country, never a marketing target", () => {
@@ -412,7 +440,8 @@ const SECTION = "src/components/home/FeaturedJobsSection.tsx"
 
 test("COPY: the section can include external-source jobs (so an 'all verified' claim would be false)", () => {
   assert.match(code("src/lib/services/featuredJobs.ts"), /getHimalayasJobsForDisplay\(/, "the featured mix draws on the Himalayas source")
-  assert.match(code(SECTION), />\s*Source/, "the section labels external-source cards")
+  assert.match(code("src/lib/jobs/featuredCardBadge.ts"), /label:\s*'Source ↗'/, "external-source cards are labelled 'Source ↗' (badge module)")
+  assert.match(code(SECTION), /featuredCardBadge\(/, "…and the section renders that badge")
 })
 
 test("COPY: no unconditional 'verified openings / real employers / all verified' claim in the Featured section", () => {
@@ -422,11 +451,9 @@ test("COPY: no unconditional 'verified openings / real employers / all verified'
   }
 })
 
-test("COPY: 'Verified' appears only as the per-card badge of an internal (employer-owned) card — never in header copy", () => {
+test("COPY: 'Verified' is never header copy, and appears nowhere in the section component itself", () => {
   const src = code(SECTION)
-  const hits = src.match(/Verified/g) ?? []
-  assert.equal(hits.length, 1, "exactly one use of the word")
-  assert.match(src, /:\s*<span[^>]*>Verified<\/span>/, "…and it is the internal-card badge")
+  assert.equal((src.match(/Verified/g) ?? []).length, 0, "the word comes only from the evidence-based badge module")
   const header = src.slice(src.indexOf("<h2"), src.indexOf("</p>", src.indexOf("<h2")))
   assert.doesNotMatch(header, /verified/i, "no 'verified' in the section heading or subtitle")
 })

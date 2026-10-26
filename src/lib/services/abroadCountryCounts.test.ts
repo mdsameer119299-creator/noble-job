@@ -7,17 +7,20 @@
  * Hermetic: the Supabase server client and the admin-settings service are replaced by in-memory fakes
  * (module interception), so nothing here opens a network connection, reads or writes a real database, or
  * needs credentials. The fake models only what the Abroad list uses from PostgREST:
- *   .from("abroad_jobs").select(..).eq("status","active").ilike("country","%name%").order(..)
- * where ILIKE is case-insensitive substring matching — the same semantics the list's SQL filter has.
+ *   .from("abroad_jobs").select(..).eq("status","active").order(..)
+ * and RECORDS every ilike() so the test can prove the country filter is no longer pushed down to SQL.
  *
  * What is proven:
- *   • for every country card (and for extra case / substring probes) count === getAbroadJobsPaginated({country}).total
+ *   • for every country card (and for alias / case / lookalike probes) count === getAbroadJobsPaginated({country}).total
  *     in production-DB mode, with synthetic rows hidden and visible, in DB-error / DB-throw / unconfigured
  *     fallbacks, and in local-inventory mode;
+ *   • COUNTRY IDENTITY, not just parity: the UK card counts "United Kingdom" / "U.K." rows and NOT Ukraine;
+ *     the Oman card counts Oman and NOT Romania; the UAE card counts "United Arab Emirates" and "Dubai, UAE";
+ *     the list each card opens contains exactly those rows;
  *   • rows that are not active, not renderable, or synthetic-while-hidden are never counted, exactly as in the list;
- *   • case-insensitivity (db: substring, local: equality) is preserved per source;
- *   • counting 16 countries costs ONE `abroad_jobs` read (the old per-country approach cost 16), and the
- *     list + counts + hero-style callers of one request still share that single read;
+ *   • the same alias rules hold in local-inventory mode;
+ *   • counting 16 countries — and listing any country — costs ONE `abroad_jobs` read (country is not part of
+ *     the read), and the list + counts + hero-style callers of one request share it;
  *   • failures yield 0 (never a marketing target) and never throw.
  */
 import assert from "node:assert/strict"
@@ -50,6 +53,7 @@ let rows: Row[] = []
 let settings: Record<string, string> = {}
 let dbMode: "ok" | "error" | "throw" = "ok"
 let reads: string[] = []
+let ilikes: string[] = []
 const abroadReads = () => reads.filter(t => t === "abroad_jobs").length
 
 function queryBuilder(table: string) {
@@ -58,6 +62,7 @@ function queryBuilder(table: string) {
     select: () => b,
     eq: (col: string, v: unknown) => { preds.push(r => r[col] === v); return b },
     ilike: (col: string, pattern: string) => {
+      ilikes.push(`${table}.${col}`)
       const needle = pattern.replace(/^%/, "").replace(/%$/, "").toLowerCase()
       preds.push(r => String(r[col] ?? "").toLowerCase().includes(needle))
       return b
@@ -126,13 +131,14 @@ function dbRow(country: string, over: Row = {}): Row {
 }
 function seed(): Row[] {
   return [
-    dbRow("UAE"), dbRow("UAE"), dbRow("UAE"), dbRow("uae"), dbRow("United Arab Emirates"),
+    dbRow("UAE"), dbRow("UAE"), dbRow("UAE"), dbRow("uae"), dbRow("United Arab Emirates"), dbRow("Dubai, UAE"),
     dbRow("Saudi Arabia"), dbRow("Saudi Arabia"),
     dbRow("Qatar"),
     dbRow("Qatar", { description: "" }),                         // not renderable → in neither list nor count
     dbRow("Qatar", { status: "closed" }),                        // not active → in neither list nor count
-    dbRow("Romania"), dbRow("Oman"),                             // "Oman" ILIKE-matches Romania too (substring semantics)
-    dbRow("United Kingdom"), dbRow("United Kingdom"), dbRow("Ukraine"), // "UK" substring-matches Ukraine, not United Kingdom
+    dbRow("Romania"), dbRow("Oman"),                             // lookalikes: Oman must not pick up Romania
+    dbRow("United Kingdom"), dbRow("United Kingdom"), dbRow("U.K."), dbRow("Ukraine"), // UK must not pick up Ukraine
+    dbRow("United States"),
     dbRow("Canada"), dbRow("Canada"), dbRow("CANADA"),
     dbRow("Germany"), dbRow("Singapore"),
     // A demo row: hidden unless the admin switch is on.
@@ -162,6 +168,7 @@ function scenario(opts: { production?: boolean; configured?: boolean; dbSource?:
   settings = opts.synthetic ? { synthetic_jobs_visible: "true" } : {}
   rows = opts.data ?? seed()
   reads = []
+  ilikes = []
   resetRequest()
 }
 
@@ -171,8 +178,8 @@ async function main() {
   const { ABROAD_COUNTRY_TARGETS } = await import("../data/jobInventory")
 
   const names = ABROAD_COUNTRY_TARGETS.map(c => c.country)
-  // Extra probes: other casings, a substring that only ILIKE matches, a name no row has.
-  const probes = [...names, "uae", "UAE", "oman", "ROMANIA", "kingdom", "Emirates", "Atlantis"]
+  // Extra probes: other casings, long-form / alias spellings, lookalike countries, fragments, a name no row has.
+  const probes = [...names, "uae", "United Arab Emirates", "United Kingdom", "uk", "oman", "ROMANIA", "Ukraine", "USA", "kingdom", "Emirat", "Atlantis"]
 
   /** The list each card opens, asked the way the page asks (page 1 of 20) — the ground truth for the count. */
   async function assertCountsEqualLists(label: string, expectNonZero = false) {
@@ -189,43 +196,79 @@ async function main() {
   }
 
   // ── production database mode ─────────────────────────────────────────────────────────────────────
-  await test("production DB, synthetic hidden: every card === the size of the list it opens (case + substring probes included)", async () => {
+  await test("production DB, synthetic hidden: every card === the size of the list it opens (alias, case and lookalike probes included)", async () => {
     scenario({ production: true })
     const c = await assertCountsEqualLists("prod", true)
     // Explicit numbers, so a bug that breaks list AND count the same way still fails:
-    assert.equal(c.UAE, 4, "UAE ILIKE-matches UAE×3 + uae; the demo row is hidden; 'United Arab Emirates' does not contain 'uae'")
+    assert.equal(c.UAE, 6, "UAE×3 + uae + 'United Arab Emirates' + 'Dubai, UAE'; the demo row is hidden")
+    assert.equal(c["United Arab Emirates"], 6, "the long form is the same card")
     assert.equal(c["Saudi Arabia"], 2)
     assert.equal(c.Qatar, 1, "the non-renderable and the closed Qatar rows are excluded exactly as in the list")
     assert.equal(c.Canada, 3, "case-insensitive: CANADA counts for Canada")
-    assert.equal(c.Oman, 2, "substring semantics are preserved: Oman also matches Romania")
-    assert.equal(c.UK, 1, "substring semantics are preserved: UK matches Ukraine, not United Kingdom")
+    assert.equal(c.Oman, 1, "Oman counts Oman only — Romania is not Oman")
+    assert.equal(c.ROMANIA, 1, "…and Romania is its own country")
+    assert.equal(c.UK, 3, "UK counts 'United Kingdom'×2 + 'U.K.' — and not Ukraine")
+    assert.equal(c["United Kingdom"], 3)
+    assert.equal(c.uk, 3)
+    assert.equal(c.Ukraine, 1)
+    assert.equal(c.USA, 1, "USA ↔ 'United States'")
     assert.equal(c.Germany, 1)
     assert.equal(c.Bahrain, 0)
     assert.equal(c.uae, c.UAE, "country names are matched case-insensitively")
+    assert.equal(c.kingdom, 0, "a fragment of a country name is not a country")
+    assert.equal(c.Emirat, 0)
     assert.equal(c.Atlantis, 0)
+  })
+
+  await test("COUNTRY IDENTITY: each card's LIST contains exactly its own country's rows — UK never lists Ukraine, Oman never lists Romania", async () => {
+    scenario({ production: true })
+    const countriesOf = async (c: string) => (await getAbroadJobs({ country: c })).map(j => j.country).sort()
+    assert.deepEqual(await countriesOf("UK"), ["U.K.", "United Kingdom", "United Kingdom"])
+    assert.deepEqual(await countriesOf("Oman"), ["Oman"])
+    assert.deepEqual(await countriesOf("UAE"), ["Dubai, UAE", "UAE", "UAE", "UAE", "United Arab Emirates", "uae"])
+    assert.deepEqual(await countriesOf("Ukraine"), ["Ukraine"])
+    assert.deepEqual(await countriesOf("Romania"), ["Romania"])
+    // And the same set via the paginated service the page calls.
+    const page = await getAbroadJobsPaginated({ country: "UK", page: 1, limit: 20 })
+    assert.equal(page.total, 3)
+    assert.ok(page.items.every(j => !/ukraine/i.test(j.country)))
+  })
+
+  await test("the country filter is NOT pushed down to SQL (no ILIKE on country) — the list and the counts cannot diverge on alias handling", async () => {
+    scenario({ production: true })
+    await getAbroadJobsPaginated({ country: "UK", page: 1, limit: 20 })
+    await getAbroadCountryCounts(names)
+    assert.deepEqual(ilikes, [], "no ilike() was issued at all")
   })
 
   await test("production DB, synthetic VISIBLE (admin switch on): the demo row is counted by the card and the list alike", async () => {
     scenario({ production: true, synthetic: true })
     const c = await assertCountsEqualLists("prod+synthetic", true)
-    assert.equal(c.UAE, 5)
+    assert.equal(c.UAE, 7, "six real UAE rows + the demo row")
   })
 
   await test("non-production with the Supabase data source: same rules, card === list", async () => {
     scenario({ dbSource: true })
     const c = await assertCountsEqualLists("dev+db", true)
-    assert.equal(c.UAE, 4)
+    assert.equal(c.UAE, 6)
+    assert.equal(c.UK, 3)
+    assert.equal(c.Oman, 1)
   })
 
   // ── efficiency ───────────────────────────────────────────────────────────────────────────────────
-  await test("EFFICIENCY: counting all 16 countries reads abroad_jobs ONCE (the per-country list approach read it 16 times)", async () => {
+  await test("EFFICIENCY: counting all 16 countries reads abroad_jobs ONCE — and so does listing every country (country is not part of the read)", async () => {
     scenario({ production: true })
     await getAbroadCountryCounts(names)
-    assert.equal(abroadReads(), 1, "one shared read")
+    assert.equal(abroadReads(), 1, "one shared read for all the counts")
 
     scenario({ production: true })
     for (const c of names) await getAbroadJobsPaginated({ country: c, page: 1, limit: 1 })
-    assert.equal(abroadReads(), names.length, "baseline: the old approach is one full read per country — the harness measures what it claims")
+    assert.equal(abroadReads(), 1, "16 country lists share the same read; the old per-country approach issued 16")
+
+    scenario({ production: true })
+    await getAbroadCountryCounts(names)
+    for (const c of names) await getAbroadJobsPaginated({ country: c, page: 1, limit: 1 })
+    assert.equal(abroadReads(), 1, "counts and lists together: still one")
   })
 
   await test("EFFICIENCY: getVisibleAbroadCountryCounts() — the function the page, hero and APIs call — is one read, with the right shape", async () => {
@@ -235,7 +278,9 @@ async function main() {
     assert.equal(cards.length, ABROAD_COUNTRY_TARGETS.length)
     assert.deepEqual(cards.map(c => c.name), names, "order and names follow the targets")
     const byName = Object.fromEntries(cards.map(c => [c.name, c.jobs]))
-    assert.equal(byName.UAE, 4)
+    assert.equal(byName.UAE, 6)
+    assert.equal(byName.UK, 3)
+    assert.equal(byName.Oman, 1)
     for (const t of ABROAD_COUNTRY_TARGETS) {
       const card = cards.find(c => c.name === t.country)!
       assert.equal(card.flag, t.flag)
@@ -254,9 +299,11 @@ async function main() {
       getAbroadJobs(),                            // detail-page / landing style callers
     ])
     assert.equal(abroadReads(), 1)
-    // A genuinely different query (a filter) is a different read — the memo never serves it stale data.
+    // A country filter reuses the shared read; a genuinely different DB query (another category) is a different read.
     await getAbroadJobsPaginated({ country: "Canada", page: 1, limit: 20 })
-    assert.equal(abroadReads(), 2)
+    assert.equal(abroadReads(), 1)
+    await getAbroadJobsPaginated({ category: "Engineering", page: 1, limit: 20 })
+    assert.equal(abroadReads(), 2, "the memo never serves a different query stale data")
   })
 
   // ── failure handling ─────────────────────────────────────────────────────────────────────────────
@@ -282,13 +329,22 @@ async function main() {
   })
 
   // ── local inventory (non-production fallback) ────────────────────────────────────────────────────
-  await test("local-inventory mode (synthetic visible): card === list for every country; equality, not substring, as the local list filters", async () => {
+  await test("local-inventory mode (synthetic visible): card === list for every country; the same alias rules as the DB path", async () => {
     scenario({ synthetic: true }) // development, no JOB_DATA_SOURCE=supabase → local demo inventory
     const c = await assertCountsEqualLists("local", true)
     assert.ok(c.UAE > 20, "the whole local match set is counted — not just the first page of 20")
-    assert.equal(c.uae, c.UAE, "case-insensitive equality")
-    assert.equal(c.Emirates, 0, "local filtering is equality, so a fragment matches nothing")
+    assert.equal(c.uae, c.UAE, "case-insensitive")
+    assert.equal(c["United Arab Emirates"], c.UAE, "UAE ↔ United Arab Emirates in the local inventory too")
+    assert.equal(c["United Kingdom"], c.UK, "UK ↔ United Kingdom in the local inventory too")
+    assert.ok(c.UK > 0)
+    assert.equal(c.kingdom, 0, "a fragment matches nothing")
+    assert.equal(c.Emirat, 0)
     assert.equal(abroadReads(), 0, "local mode never touches the database")
+    // The UK card lists only UK rows; Oman lists only Oman rows.
+    const uk = await getAbroadJobs({ country: "UK" })
+    assert.ok(uk.length === c.UK && uk.every(j => j.country === "UK"))
+    const oman = await getAbroadJobs({ country: "Oman" })
+    assert.ok(oman.length === c.Oman && oman.every(j => j.country === "Oman"))
   })
 
   await test("local-inventory mode, synthetic HIDDEN: nothing is counted and the list agrees", async () => {

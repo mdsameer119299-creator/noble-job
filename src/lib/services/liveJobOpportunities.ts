@@ -1,6 +1,7 @@
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
+import { countryMatches } from "@/lib/jobs/countryIdentity"
 
 /**
  * Live external inventory from Job Opportunities API's keyless public surface.
@@ -238,8 +239,10 @@ export async function getLiveWfhJobs(filters: { q?: string; type?: string } = {}
 export async function getLiveAbroadJobs(filters: { q?: string; country?: string; category?: string } = {}): Promise<AbroadJob[]> {
   const rows = await fetchRows("abroad", { q: filters.q, category: filters.category })
   if (!filters.country) return rows.map(toAbroad)
-  const needle = filters.country.toLowerCase()
-  return rows.filter(r => `${r.country || ""} ${r.location || ""}`.toLowerCase().includes(needle)).map(toAbroad)
+  // Shared identity rule on the country code/name OR the location text ("London, UK", "Dubai, AE"):
+  // aliases resolve, and one country's name can never match another's (no substring matching).
+  const wanted = filters.country
+  return rows.filter(r => countryMatches(r.country, wanted) || countryMatches(r.location, wanted)).map(toAbroad)
 }
 
 export async function getLivePrivateJobById(id: string): Promise<Job | null> {
