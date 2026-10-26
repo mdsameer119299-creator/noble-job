@@ -14,6 +14,7 @@
 import assert from "node:assert/strict"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { createHash } from "node:crypto"
 import {
   sumRealVacancies, aggregateVacancies, isSubstantiatedVacancy, hasSupportedVacancyAggregate, vacancyVerdict, isObviousScrapedFragment,
   isVacancyBearingJob, parseVacancyCount, isAdminUserId,
@@ -185,8 +186,24 @@ test("an explicitly source-verified figure is handled by the verification contra
   assert.equal(isSubstantiatedVacancy(CLEAN_VERIFIED), true)
   assert.equal(sumRealVacancies([CLEAN_VERIFIED]), 250)
   assert.equal(sumRealVacancies([CLEAN_VERIFIED, job({ id: "v2", vacancies: "1,750", ...VERIFIED })]), 2000)
-  // verified at the very moment of the last change is still current (<=), and Postgres' textual timestamps parse
-  assert.equal(vacancyVerdict(job({ verifiedAt: "2026-06-12 15:29:28.905178+00", verifiedBy: ADMIN_ID, contentChangedAt: "2026-06-12 15:29:28.905178+00" })), "verified")
+  // Postgres' textual timestamps parse; verified strictly AFTER the last change counts
+  assert.equal(vacancyVerdict(job({ verifiedAt: "2026-06-12 15:29:29.000000+00", verifiedBy: ADMIN_ID, contentChangedAt: "2026-06-12 15:29:28.905178+00" })), "verified")
+})
+
+test("EQUAL content_changed_at and verified_at is NOT verified (Postgres NOW() is transaction-stable: equality cannot show which came first)", () => {
+  for (const [c, v] of [
+    ["2026-06-12 15:29:28.905178+00", "2026-06-12 15:29:28.905178+00"],     // Postgres text form
+    ["2026-10-26T10:00:00.000Z", "2026-10-26T10:00:00.000Z"],                // ISO form
+    ["2026-10-26T10:00:00.000Z", "2026-10-26 10:00:00+00"],                  // mixed forms, same instant
+    ["2026-10-26T10:00:00.000100Z", "2026-10-26T10:00:00.000900Z"],           // same millisecond: JS cannot order them → stale
+  ]) {
+    const j = job({ verifiedBy: ADMIN_ID, verifiedAt: v, contentChangedAt: c })
+    assert.equal(vacancyVerdict(j, new Date("2026-10-27T00:00:00Z")), "stale-verification", `${c} / ${v}`)
+    assert.equal(sumRealVacancies([j], new Date("2026-10-27T00:00:00Z")), 0)
+    assert.equal(aggregateVacancies([CLEAN_VERIFIED, j], new Date("2026-10-27T00:00:00Z")), null, "an equal-timestamp row withholds the whole total")
+  }
+  // one millisecond later is verified
+  assert.equal(vacancyVerdict(job({ verifiedBy: ADMIN_ID, verifiedAt: "2026-10-26T10:00:00.001Z", contentChangedAt: "2026-10-26T10:00:00.000Z" }), new Date("2026-10-27T00:00:00Z")), "verified")
 })
 
 test("verification does not launder a scraped fragment: post-text validation still VETOES (fix the data, not the gate)", () => {
@@ -333,7 +350,7 @@ function filesUnder(dir: string, exts: RegExp, out: string[] = []): string[] {
 }
 const REPO_FILES = ["src", "scripts", "supabase"].flatMap(d => filesUnder(join(process.cwd(), d), /\.(ts|tsx|mjs|js|sql)$/))
 const VERIFIED_COL = /\bverified_(?:by|at)\b/
-/** Files that may MENTION the columns, and why. NONE of them writes a value: they declare, select, map or document. */
+/** Files that may MENTION the columns, and why. NONE of them is application code that writes a value: they declare, select, map, document, or are the database-side enforcement / scratch scenarios. */
 const READ_ONLY_TOUCHES = [
   "src/types/govtJob.ts",                      // type declaration
   "src/lib/config/govtColumns.ts",             // SELECT column list
@@ -341,6 +358,9 @@ const READ_ONLY_TOUCHES = [
   "src/lib/data/govtVacancies.ts",             // the gate + the contract text
   "supabase/migrations/20260727000001_govt_jobs_record_integrity.sql",
   "supabase/migrations/20260727000001_govt_jobs_record_integrity.down.sql",
+  "supabase/migrations/20261026000001_govt_jobs_verification_integrity.sql",       // the trigger that ENFORCES the contract
+  "supabase/migrations/20261026000001_govt_jobs_verification_integrity.down.sql",
+  "supabase/scratch-scenarios/govt_jobs_verification_integrity.sql",                           // scratch-database scenarios (refuses any other DB)
 ]
 /** Code that is ALLOWED to write verified_by / verified_at. Empty today; an entry must be an admin-gated route. */
 const TRUSTED_WRITERS: string[] = []
@@ -354,13 +374,110 @@ test("TRUSTED WRITER: no source, script or migration writes verified_by / verifi
   }
 })
 
-test("TRUSTED WRITER: any allowed writer must be an admin-gated route that stores the authenticated admin's id", () => {
-  for (const w of TRUSTED_WRITERS) {
-    const src = strip(read(w))
-    assert.match(src, /requireAdminApi\(\)/, `${w}: must call requireAdminApi()`)
-    assert.match(src, /verified_by\s*:\s*auth\.user\.id/, `${w}: verified_by must be the authenticated admin's id`)
-    assert.doesNotMatch(src, /verified_by\s*:\s*["'`]/, `${w}: verified_by must never be a literal label`)
+/** Text inside the balanced parentheses that open at `openIdx` (string literals skipped). */
+function insideParens(src: string, openIdx: number): string {
+  let depth = 0, quote = ""
+  for (let i = openIdx; i < src.length; i++) {
+    const ch = src[i]
+    if (quote) { if (ch === "\\") i++; else if (ch === quote) quote = ""; continue }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; continue }
+    if (ch === "(") depth++
+    else if (ch === ")" && --depth === 0) return src.slice(openIdx + 1, i)
   }
+  return src.slice(openIdx + 1)
+}
+/** Top-level comma-separated entries of an object-literal body (nesting and strings respected). */
+function topLevelEntries(body: string): string[] {
+  const out: string[] = []
+  let depth = 0, quote = "", cur = ""
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (quote) { cur += ch; if (ch === "\\") cur += body[++i] ?? ""; else if (ch === quote) quote = ""; continue }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; cur += ch; continue }
+    if ("([{".includes(ch)) depth++
+    if (")]}".includes(ch)) depth--
+    if (ch === "," && depth === 0) { out.push(cur); cur = ""; continue }
+    cur += ch
+  }
+  if (cur.trim()) out.push(cur)
+  return out.map(e => e.trim()).filter(Boolean)
+}
+/**
+ * The TRUSTED-WRITER contract for code that records a verification, as a checker. Returns the problems found ([] = compliant).
+ * A compliant writer is an admin-gated handler whose verification is a single-row `.update()` carrying EXACTLY
+ * `verified_by: auth.user.id` and `verified_at: …` — so it can never edit public content or `content_changed_at` in the same
+ * mutation (the database trigger rejects that too, but this keeps the mistake out of review), never upserts/inserts a
+ * verification, and never takes the verifier from the request.
+ */
+function checkVerificationWriter(source: string): string[] {
+  const src = strip(source)
+  const problems: string[] = []
+  if (!/\brequireAdminApi\(\)/.test(src)) problems.push("does not call requireAdminApi()")
+  let found = 0
+  for (const m of src.matchAll(/\.(update|upsert|insert)\s*\(/g)) {
+    const open = m.index! + m[0].length - 1
+    const arg = insideParens(src, open)
+    if (!/\bverified_(?:by|at)\b/.test(arg)) continue
+    found++
+    if (m[1] !== "update") problems.push(`${m[1]}() carries a verification; only a single-row update() may`)
+    const after = src.slice(open + arg.length + 2, open + arg.length + 2 + 120)
+    if (!/^\s*\.eq\(\s*["']id["']\s*,/.test(after)) problems.push('update() is not scoped to one row: .eq("id", …) must directly follow the payload')
+    const body = arg.trim()
+    if (!body.startsWith("{") || !body.endsWith("}")) { problems.push("payload is not an object literal"); continue }
+    const keys = new Map<string, string>()
+    for (const entry of topLevelEntries(body.slice(1, -1))) {
+      if (entry.startsWith("...")) { problems.push("payload spreads another object"); continue }
+      const k = entry.match(/^["']?([A-Za-z_$][\w$]*)["']?\s*(?::([\s\S]*))?$/)
+      if (!k) { problems.push(`payload entry is not a plain key: ${entry.slice(0, 40)}`); continue }
+      keys.set(k[1], (k[2] ?? k[1]).trim())
+    }
+    for (const key of keys.keys()) if (key !== "verified_by" && key !== "verified_at") problems.push(`payload also sets "${key}": a verification must not change anything else in the same mutation`)
+    if (!keys.has("verified_by") || !keys.has("verified_at")) problems.push("payload must set both verified_by and verified_at (a re-verification needs a new verified_at)")
+    if (keys.has("verified_by") && keys.get("verified_by") !== "auth.user.id") problems.push(`verified_by must be exactly auth.user.id, not ${keys.get("verified_by")}`)
+  }
+  if (found === 0) problems.push("contains no verification write")
+  return problems
+}
+
+const GOOD_WRITER = `
+import { requireAdminApi } from "@/lib/auth/verifyAdminApi"
+export async function POST(req: Request) {
+  const auth = await requireAdminApi()
+  if (auth.error) return auth.error
+  const { id } = await req.json()
+  const { error } = await supabaseAdmin
+    .from("govt_jobs")
+    .update({ verified_by: auth.user.id, verified_at: new Date().toISOString() })
+    .eq("id", id)
+}`
+
+test("TRUSTED WRITER checker: a compliant admin-gated, single-row, verification-only update passes", () => {
+  assert.deepEqual(checkVerificationWriter(GOOD_WRITER), [])
+})
+
+test("TRUSTED WRITER checker: a verification riding along with a content edit, a content_changed_at write, a spread, an upsert/insert, or a request-supplied verifier is REJECTED", () => {
+  const bad = (name: string, src: string, expect: RegExp) => assert.match(checkVerificationWriter(src).join(" | "), expect, name)
+  bad("public field in the same mutation", GOOD_WRITER.replace("verified_at: new Date().toISOString()", "verified_at: new Date().toISOString(), vacancies: body.vacancies"), /also sets "vacancies"/)
+  bad("post in the same mutation", GOOD_WRITER.replace("verified_by: auth.user.id,", "verified_by: auth.user.id, post: p,"), /also sets "post"/)
+  bad("content_changed_at in the same mutation", GOOD_WRITER.replace("verified_by: auth.user.id,", "verified_by: auth.user.id, content_changed_at: old,"), /also sets "content_changed_at"/)
+  bad("shorthand public field", GOOD_WRITER.replace("verified_by: auth.user.id,", "verified_by: auth.user.id, vacancies,"), /also sets "vacancies"/)
+  bad("spread of a request body", GOOD_WRITER.replace("verified_by: auth.user.id,", "...body, verified_by: auth.user.id,"), /spreads another object/)
+  bad("upsert", GOOD_WRITER.replace(".update(", ".upsert("), /upsert\(\) carries a verification/)
+  bad("insert", GOOD_WRITER.replace(".update(", ".insert("), /insert\(\) carries a verification/)
+  bad("verifier from the request", GOOD_WRITER.replace("verified_by: auth.user.id", "verified_by: body.verified_by"), /verified_by must be exactly auth\.user\.id/)
+  bad("literal label", GOOD_WRITER.replace("verified_by: auth.user.id", 'verified_by: "system"'), /verified_by must be exactly auth\.user\.id/)
+  bad("not admin-gated", GOOD_WRITER.replace("await requireAdminApi()", "await getSession()"), /requireAdminApi/)
+  bad("not scoped to one row", GOOD_WRITER.replace('.eq("id", id)', '.eq("tab", "latest")'), /not scoped to one row/)
+  bad("bulk filter", GOOD_WRITER.replace('.eq("id", id)', '.in("id", ids)'), /not scoped to one row/)
+  bad("missing verified_at", GOOD_WRITER.replace(", verified_at: new Date().toISOString()", ""), /both verified_by and verified_at/)
+  bad("computed key", GOOD_WRITER.replace("verified_by: auth.user.id,", "verified_by: auth.user.id, [k]: v,"), /not a plain key/)
+  bad("no verification at all", GOOD_WRITER.replace(/\.update\([\s\S]*?\)\s*\.eq/, ".update({ title: t }).eq"), /contains no verification write/)
+  bad("comment text is not code", "// .update({ verified_by: auth.user.id, verified_at: now })\nconst auth = await requireAdminApi()", /contains no verification write/)
+})
+
+test("TRUSTED WRITER: every file allowed to write verified_by / verified_at satisfies the checker (none exists today)", () => {
+  for (const w of TRUSTED_WRITERS) assert.deepEqual(checkVerificationWriter(read(w)), [], w)
+  assert.deepEqual(TRUSTED_WRITERS, [], "premise: no verification writer has been added; add one only with review, via the checker")
 })
 
 test("TRUSTED WRITER: ingestion cannot write a verification — its upsert payload, plan and runner never mention it", () => {
@@ -476,26 +593,196 @@ test("a mixed ingestion batch: unchanged verified row keeps its verification, th
   assert.equal(aggregateVacancies([mapRow({ ...rowA, ...base }), mapRow({ ...rowB, ...base })], now), null)
 })
 
-test("non-ingestion edits: the BEFORE UPDATE trigger bumps content_changed_at for `vacancies`/`post` and never for verified_* — compared in the migration SQL", () => {
-  const sql = read("supabase/migrations/20260727000001_govt_jobs_record_integrity.sql")
-  const m = sql.match(/ROW\(\s*(NEW\.[\s\S]*?)\)\s*IS DISTINCT FROM\s*ROW\(\s*(OLD\.[\s\S]*?)\)\s*THEN/)
-  assert.ok(m, "found the NEW/OLD comparison in set_govt_jobs_content_changed_at()")
+/* ---------- the database side: migration 20261026000001 (a code artifact; not applied anywhere) ---------- */
+
+const MIG_V1 = "supabase/migrations/20260727000001_govt_jobs_record_integrity.sql"
+const MIG_V2 = "supabase/migrations/20261026000001_govt_jobs_verification_integrity.sql"
+const MIG_V2_DOWN = "supabase/migrations/20261026000001_govt_jobs_verification_integrity.down.sql"
+const SCENARIOS = "supabase/scratch-scenarios/govt_jobs_verification_integrity.sql"
+const norm = (t: string) => t.replace(/\r/g, "")
+const fnBody = (sql: string, name: string): string => {
+  const m = norm(sql).match(new RegExp(`CREATE OR REPLACE FUNCTION ${name}\\(\\)[\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$ LANGUAGE plpgsql;`))
+  assert.ok(m, `function ${name} found`)
+  return m![1].replace(/--.*$/gm, "").replace(/\s+/g, " ").trim()
+}
+const publicColumns = (sql: string) => {
+  const m = norm(sql).match(/ROW\(\s*(NEW\.[\s\S]*?)\)\s*IS DISTINCT FROM\s*ROW\(\s*(OLD\.[\s\S]*?)\)\s*(?:THEN|;)/)
+  assert.ok(m, "found the NEW/OLD comparison")
   const cols = (list: string, who: "NEW" | "OLD") => list.split(",").map(x => x.trim().replace(new RegExp(`^${who}\\.`), "")).filter(Boolean)
   const nw = cols(m![1], "NEW"), od = cols(m![2], "OLD")
   assert.deepEqual(nw, od, "NEW and OLD compare the same columns")
-  for (const c of ["vacancies", "post", "vacancy_breakup", "title", "org", "last_date", "official_url", "notification_pdf", "status", "published", "review_status"]) assert.ok(nw.includes(c), `${c} is public content`)
-  for (const c of ["verified_at", "verified_by", "content_changed_at", "updated_at", "record_type", "source_published_at", "created_at"]) assert.ok(!nw.includes(c), `${c} must not count as a content change`)
-  assert.match(sql, /CREATE TRIGGER trg_govt_jobs_content_changed\s+BEFORE UPDATE ON govt_jobs\s+FOR EACH ROW/)
-  assert.match(sql, /NEW\.content_changed_at := NOW\(\)/)
-  assert.match(sql, /IF NEW\.content_changed_at IS NOT DISTINCT FROM OLD\.content_changed_at/, "a writer that stamps content_changed_at itself (ingestion) wins; otherwise the trigger stamps it")
+  return nw
+}
+
+test("the already-applied migration 20260727000001 is NOT edited in place (content pinned; fixes arrive as forward migrations)", () => {
+  const sha = createHash("sha256").update(norm(read(MIG_V1))).digest("hex")
+  assert.equal(sha, "e77f0040ac5d4b4568b36514c85f78a6e34c68e856e2d49bda70ee8936d6fe11")
 })
 
-test("the trigger function is defined once (no later migration redefines what counts as a content change)", () => {
-  const defs = REPO_FILES.filter(f => f.endsWith(".sql") && /set_govt_jobs_content_changed_at\b/.test(readFileSync(f, "utf8"))).map(rel).sort()
-  assert.deepEqual(defs, [
-    "supabase/migrations/20260727000001_govt_jobs_record_integrity.down.sql",
-    "supabase/migrations/20260727000001_govt_jobs_record_integrity.sql",
-  ])
+test("the effective trigger is the NEWEST forward migration that defines it, and it changes only function bodies and comments", () => {
+  const forward = REPO_FILES.filter(f => f.endsWith(".sql") && !f.endsWith(".down.sql") && /CREATE OR REPLACE FUNCTION set_govt_jobs_content_changed_at\(\)/.test(readFileSync(f, "utf8"))).map(rel).sort()
+  assert.deepEqual(forward, [MIG_V1, MIG_V2])
+  assert.equal(forward[forward.length - 1], MIG_V2, "the newest definition wins")
+  const sql = norm(read(MIG_V2))
+  assert.equal((sql.match(/CREATE OR REPLACE FUNCTION/g) ?? []).length, 2)
+  assert.equal((sql.match(/COMMENT ON COLUMN govt_jobs\.\w+/g) ?? []).length, 3)
+  assert.doesNotMatch(strip(sql.replace(/--.*$/gm, "")), /\b(ALTER\s+TABLE|DROP\s|DELETE\s+FROM|TRUNCATE|INSERT\s+INTO|UPDATE\s+govt_jobs|CREATE\s+TABLE|CREATE\s+INDEX)\b/i, "no table, data or index change")
+  assert.match(sql, /^BEGIN;/m); assert.match(sql, /^COMMIT;/m)
+})
+
+test("what counts as PUBLIC content is unchanged by the forward migration: same columns, `vacancies`/`post` included, verified_* / content_changed_at excluded", () => {
+  const v1 = publicColumns(read(MIG_V1)), v2 = publicColumns(read(MIG_V2))
+  assert.deepEqual(v2, v1)
+  for (const c of ["vacancies", "post", "vacancy_breakup", "title", "org", "last_date", "official_url", "notification_pdf", "status", "published", "review_status"]) assert.ok(v2.includes(c), `${c} is public content`)
+  for (const c of ["verified_at", "verified_by", "content_changed_at", "updated_at", "record_type", "source_published_at", "created_at"]) assert.ok(!v2.includes(c), `${c} must not count as a content change`)
+})
+
+test("EXPLICIT content_changed_at OVERRIDE: the new trigger never takes the stamp from the caller (static check of the SQL; executed by the scratch scenarios B1/B2)", () => {
+  const body = fnBody(read(MIG_V2), "set_govt_jobs_content_changed_at")
+  const edit = body.match(/IF content_changed THEN NEW\.content_changed_at := (GREATEST\([\s\S]*?\));\s*ELSE/)
+  assert.ok(edit, "found the stamp for a public edit")
+  assert.doesNotMatch(edit![1], /\bNEW\./, "the stamp for an edit is computed from the clock and OLD values only — never from a NEW (caller-supplied) value")
+  assert.match(edit![1], /clock_timestamp\(\)/)
+  assert.match(edit![1], /OLD\.content_changed_at/); assert.match(edit![1], /OLD\.verified_at/)
+  assert.match(body, /ELSE NEW\.content_changed_at := COALESCE\(OLD\.content_changed_at, NEW\.content_changed_at, NEW\.created_at\);/, "without an edit the previous stamp is kept; the caller value is only a fallback for a legacy NULL")
+  assert.doesNotMatch(body, /IS NOT DISTINCT FROM OLD\.content_changed_at/, "the old 'caller-supplied value wins' escape hatch is gone")
+})
+
+test("SAME-STATEMENT / EQUAL-INSTANT: edit + verification in one statement is rejected, verified_at is stamped from the clock, no NOW() anywhere in the update trigger (static check; executed by scratch scenarios B3/B4/B5)", () => {
+  const body = fnBody(read(MIG_V2), "set_govt_jobs_content_changed_at")
+  assert.match(body, /IF content_changed AND verification_changed THEN RAISE EXCEPTION [\s\S]*?USING ERRCODE = 'check_violation';/)
+  assert.match(body, /verification_changed := NEW\.verified_by IS NOT NULL AND \(NEW\.verified_by IS DISTINCT FROM OLD\.verified_by OR NEW\.verified_at IS DISTINCT FROM OLD\.verified_at\);/)
+  assert.match(body, /IF verification_changed THEN NEW\.verified_at := clock_timestamp\(\); END IF;/, "a supplied verified_at is overwritten by the database clock")
+  assert.doesNotMatch(body, /\bNOW\(\)/i, "NOW() is transaction-stable: using it for either stamp would allow equal instants")
+  const ins = fnBody(read(MIG_V2), "set_govt_jobs_content_changed_at_insert")
+  assert.match(ins, /IF NEW\.verified_at IS NOT NULL OR NEW\.verified_by IS NOT NULL THEN RAISE EXCEPTION [\s\S]*?'check_violation'/, "a row cannot be created already verified")
+})
+
+test("the rollback restores the 20260727000001 function bodies exactly (and nothing else)", () => {
+  for (const fn of ["set_govt_jobs_content_changed_at", "set_govt_jobs_content_changed_at_insert"]) assert.equal(fnBody(read(MIG_V2_DOWN), fn), fnBody(read(MIG_V1), fn), fn)
+  assert.doesNotMatch(norm(read(MIG_V2_DOWN)).replace(/--.*$/gm, ""), /\b(ALTER\s+TABLE|DROP\s|DELETE\s+FROM|TRUNCATE)\b/i)
+})
+
+test("the executable scenarios exist, refuse any database but the scratch one, load both migrations and the rollback, and cover each gap", () => {
+  const sql = norm(read(SCENARIOS))
+  assert.match(sql, /current_database\(\) <> 'govt_verification_scratch'/)
+  for (const f of [MIG_V1, MIG_V2, MIG_V2_DOWN]) assert.ok(sql.includes(`\\i ${f}`), f)
+  for (const id of ["A1", "A2", "B1", "B1b", "B2", "B2b", "B3", "B3b", "B3c", "B4", "B5", "B5b", "B6", "B7", "B8", "B9", "B10", "B10b", "B11", "C1"]) assert.ok(new RegExp(`'${id} `).test(sql), `scenario ${id}`)
+})
+
+/* ======================= E. THE INTERPLAY, MODELLED: trigger (old / new) × gate ======================= */
+// A deliberately tiny model of the two trigger versions, so CI exercises the gate against every write sequence. The SQL it
+// mirrors was EXECUTED on a throwaway Postgres 16 (supabase/scratch-scenarios/govt_jobs_verification_integrity.sql, scenarios in the
+// names below) and is pinned token-by-token by the static tests above; this model is not a substitute for either.
+
+type MRow = { vacancies: string; content_changed_at: string | null; verified_at: string | null; verified_by: string | null }
+const iso = (ms: number) => new Date(ms).toISOString()
+const ms = (t: string | null) => (t === null ? -Infinity : Date.parse(t))
+const T0 = Date.parse("2026-06-12T15:29:28.000Z")
+const baseRow = (over: Partial<MRow> = {}): MRow => ({ vacancies: "250", content_changed_at: iso(T0), verified_at: null, verified_by: null, ...over })
+/** 20260727000001: a supplied content_changed_at wins; otherwise a public change is stamped NOW() (transaction-stable). */
+function triggerV1(old: MRow, patch: Partial<MRow>, txNow: number): MRow {
+  const neu = { ...old, ...patch }
+  if (neu.content_changed_at === old.content_changed_at && neu.vacancies !== old.vacancies) neu.content_changed_at = iso(txNow)
+  return neu
+}
+/** 20261026000001. `clock` = clock_timestamp(): strictly advancing within a transaction. */
+function triggerV2(old: MRow, patch: Partial<MRow>, clock: () => number): MRow {
+  const neu = { ...old, ...patch }
+  const contentChanged = neu.vacancies !== old.vacancies
+  const verificationChanged = neu.verified_by !== null && (neu.verified_by !== old.verified_by || neu.verified_at !== old.verified_at)
+  if (contentChanged && verificationChanged) throw Object.assign(new Error("check_violation"), { code: "23514" })
+  neu.content_changed_at = contentChanged ? iso(Math.max(clock(), ms(old.content_changed_at) + 1, ms(old.verified_at) + 1)) : (old.content_changed_at ?? neu.content_changed_at)
+  if (verificationChanged) neu.verified_at = iso(clock())
+  return neu
+}
+const mkClock = (start: number) => { let t = start; return () => (t += 1) }
+const gate = (r: MRow, at = "2027-01-01T00:00:00Z") => vacancyVerdict(job({ vacancies: r.vacancies, post: "Junior Engineer", contentChangedAt: r.content_changed_at ?? undefined, verifiedAt: r.verified_at ?? undefined, verifiedBy: r.verified_by ?? undefined }), new Date(at))
+const TX = Date.parse("2026-10-26T10:00:00.000Z")
+
+test("SAME-TRANSACTION, EQUAL INSTANT (old trigger, scenario A2): an edit and a verification share NOW() → equal timestamps → the strict gate rejects what the old <= rule accepted", () => {
+  let r = triggerV1(baseRow(), { vacancies: "9000" }, TX)
+  r = triggerV1(r, { verified_by: ADMIN_ID, verified_at: iso(TX) }, TX) // verification written with the same transaction NOW()
+  assert.equal(r.content_changed_at, r.verified_at, "premise: the two instants are identical")
+  assert.ok(ms(r.content_changed_at) <= ms(r.verified_at), "premise: the previous '<=' rule would have ACCEPTED this")
+  assert.equal(gate(r), "stale-verification")
+  assert.equal(sumRealVacancies([mapRow({ id: "e", slug: "e", title: "t", org: "o", short: "o", tab: "latest", status: "active", last_date: "2099-01-01", vacancies: r.vacancies, post: "Junior Engineer", content_changed_at: r.content_changed_at, verified_at: r.verified_at, verified_by: r.verified_by })], new Date("2027-01-01T00:00:00Z")), 0)
+})
+
+test("SAME-STATEMENT edit + verification (new trigger, scenario B3): rejected with check_violation and nothing changes", () => {
+  const clock = mkClock(TX)
+  const before = baseRow()
+  assert.throws(() => triggerV2(before, { vacancies: "9000", verified_by: ADMIN_ID, verified_at: iso(TX) }, clock), (e: { code?: string }) => e.code === "23514")
+  assert.throws(() => triggerV2(before, { vacancies: "9000", verified_by: ADMIN_ID, content_changed_at: iso(T0 - 1) }, clock), (e: { code?: string }) => e.code === "23514", "a forged content_changed_at does not help")
+  assert.deepEqual(before, baseRow(), "the row is unchanged")
+})
+
+test("EDIT THEN VERIFY in one transaction (new trigger, scenario B4): content_changed_at < verified_at, strictly → verified", () => {
+  const clock = mkClock(TX)
+  let r = triggerV2(baseRow(), { vacancies: "9000" }, clock)
+  r = triggerV2(r, { verified_by: ADMIN_ID, verified_at: iso(TX) }, clock)
+  assert.ok(ms(r.content_changed_at) < ms(r.verified_at))
+  assert.equal(gate(r), "verified")
+})
+
+test("EXPLICIT content_changed_at OVERRIDE (new trigger, scenarios B1/B2): an edit supplying an older, future or equal stamp is still stamped by the clock → verification invalidated", () => {
+  const verified = triggerV2(baseRow(), { verified_by: ADMIN_ID, verified_at: iso(TX) }, mkClock(TX))
+  assert.equal(gate(verified), "verified")
+  for (const forged of [iso(T0 - 86_400_000), iso(T0), verified.verified_at!, iso(ms(verified.verified_at) - 1), iso(Date.parse("2099-01-01T00:00:00Z")), null]) {
+    const edited = triggerV2(verified, { vacancies: "9000", content_changed_at: forged }, mkClock(TX + 10_000))
+    assert.ok(ms(edited.content_changed_at) > ms(edited.verified_at), `stamp is after the verification (supplied ${forged})`)
+    assert.equal(gate(edited), "stale-verification", `supplied ${forged}`)
+  }
+})
+
+test("EXPLICIT content_changed_at OVERRIDE without an edit (new trigger, scenario B2): moving the stamp backwards cannot re-validate a stale verification", () => {
+  const verified = triggerV2(baseRow(), { verified_by: ADMIN_ID, verified_at: iso(TX) }, mkClock(TX))
+  const stale = triggerV2(verified, { vacancies: "9000" }, mkClock(TX + 10_000))
+  assert.equal(gate(stale), "stale-verification")
+  for (const forged of [iso(T0), iso(T0 - 1), null, iso(Date.parse("2099-01-01T00:00:00Z"))]) {
+    const tampered = triggerV2(stale, { content_changed_at: forged }, mkClock(TX + 20_000))
+    assert.equal(tampered.content_changed_at, stale.content_changed_at, `supplied ${forged}`)
+    assert.equal(gate(tampered), "stale-verification")
+  }
+})
+
+test("a supplied verified_at is ignored (new trigger, scenario B5): back-dated or forward-dated, the database clock wins", () => {
+  for (const forged of [iso(T0 - 1), iso(Date.parse("2099-01-01T00:00:00Z"))]) {
+    const clock = mkClock(TX)
+    const r = triggerV2(baseRow(), { verified_by: ADMIN_ID, verified_at: forged }, clock)
+    assert.equal(r.verified_at, iso(TX + 1), `supplied ${forged}`)
+    assert.equal(gate(r), "verified")
+  }
+})
+
+test("KNOWN GAP until 20261026000001 is applied (old trigger, scenario A1): a writer that SUPPLIES its own content_changed_at defeats the stamp and the gate cannot see it — which is why the forward migration is required", () => {
+  const verifiedRow = triggerV1(baseRow(), { verified_by: ADMIN_ID, verified_at: iso(TX) }, TX)
+  assert.equal(gate(verifiedRow), "verified")
+  // (a) edit while forging an older stamp
+  const forgedEdit = triggerV1(verifiedRow, { vacancies: "9000", content_changed_at: iso(T0 - 1000) }, TX + 60_000)
+  assert.equal(forgedEdit.content_changed_at, iso(T0 - 1000), "premise: the supplied stamp was kept")
+  assert.equal(gate(forgedEdit), "verified", "documented limitation: nothing in the stored row betrays the edit")
+  // (b) honest edit (stale), then the stamp is moved backwards to re-validate it
+  const honest = triggerV1(verifiedRow, { vacancies: "9000" }, TX + 60_000)
+  assert.equal(gate(honest), "stale-verification")
+  assert.equal(gate(triggerV1(honest, { content_changed_at: iso(T0 - 1000) }, TX + 120_000)), "verified", "documented limitation: re-validated by back-dating")
+  // the same attacks against the new trigger fail
+  const v = triggerV2(baseRow(), { verified_by: ADMIN_ID, verified_at: iso(TX) }, mkClock(TX))
+  const stale = triggerV2(v, { vacancies: "9000", content_changed_at: iso(T0 - 1000) }, mkClock(TX + 60_000))
+  assert.equal(gate(stale), "stale-verification")
+  assert.equal(gate(triggerV2(stale, { content_changed_at: iso(T0 - 1000) }, mkClock(TX + 120_000))), "stale-verification")
+})
+
+test("fail-closed aggregates and notification counts are preserved when a verification is stale or equal-timestamped", () => {
+  const equal = job({ id: "eq", vacancies: "400", verifiedBy: ADMIN_ID, verifiedAt: "2026-10-26T10:00:00.000Z", contentChangedAt: "2026-10-26T10:00:00.000Z" })
+  const pool = [CLEAN_VERIFIED, equal]
+  const items = buildGovtHubStats(pool)
+  assert.equal(items.some(i => i.key === "vacancies"), false, "the vacancy total is withheld as a whole")
+  assert.equal(items.find(i => i.key === "notifications")?.num, 2, "notifications are still counted")
+  assert.equal(buildGovtStats(pool).totalVacancies, null)
+  assert.equal(listingVacanciesTotal(pool), 0)
+  assert.equal(computeNavStats(pool).national.notifications, 2)
+  assert.equal(computeNavStats(pool).national.vacancies, 0)
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

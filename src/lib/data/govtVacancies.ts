@@ -163,8 +163,12 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(
  *      not any non-empty string. `ingestion:<adapter>` is rejected explicitly (the adapter that scraped the number cannot
  *      vouch for it; JNU's came through exactly such an adapter), and so is every other label ("system", "manual",
  *      "unknown", an e-mail, a name, a malformed or nil UUID);
- *   3. the verification is not older than the last content change (`contentChangedAt <= verifiedAt`), i.e. the stored
- *      figure was not altered after a person confirmed it; a missing `contentChangedAt` cannot show that → unverified.
+ *   3. the verification is STRICTLY later than the last content change (`contentChangedAt < verifiedAt`), i.e. the stored
+ *      figure was not altered at or after the moment a person confirmed it. EQUAL timestamps are NOT accepted: Postgres
+ *      NOW() is transaction-stable, so an edit and a verification written in one statement/transaction can carry the very
+ *      same instant, and equality cannot show which came first. A missing `contentChangedAt` cannot show it either →
+ *      stale. (JS Dates resolve milliseconds, Postgres microseconds: two instants inside one millisecond compare equal and
+ *      are therefore treated as stale — fail-closed, and unreachable for a human verification.)
  *
  * THE ADMINISTRATOR-ID CONTRACT. In this repository an administrator is a row of `users` (id UUID PRIMARY KEY REFERENCES
  * auth.users(id)) with role = 'admin' and status = 'active'; `requireAdminApi()` (lib/auth/verifyAdminApi.ts) is the only
@@ -179,9 +183,19 @@ export function applyGovtVacancies<T extends Partial<GovtJob>>(
  *     only service-role server code can;
  *   • the only code permitted to write `verified_by` / `verified_at` is an admin-gated route (it must call
  *     `requireAdminApi()` and store `auth.user.id`); today NO code writes them, and ingestion must never. A static test
- *     (govtVacancyEvidence.test.ts, section C) fails if any other file starts writing those columns;
- *   • record the verification in its own statement AFTER any content edit: an edit that changes a public column in the same
- *     statement is stamped `content_changed_at = now()` by the trigger and would (correctly, fail-closed) look stale.
+ *     (govtVacancyEvidence.test.ts, section C) fails if any other file starts writing those columns, and a checker
+ *     (`checkVerificationWriter`, same file) requires an allowed writer to issue a single-row `.update()` whose payload is
+ *     EXACTLY `verified_by` (= `auth.user.id`) and `verified_at` — no public field, no `content_changed_at`, no spread, no
+ *     upsert/insert — so a verification can never ride along with a content edit;
+ *   • the DATABASE enforces the same thing, whoever the caller is — migration 20261026000001 (a forward migration,
+ *     prepared as a code artifact and NOT yet applied anywhere): `content_changed_at` is maintained by the trigger alone
+ *     (a caller-supplied value is ignored; a public edit stamps clock_timestamp(), strictly after the previous stamp and any
+ *     verification), a statement that edits public content cannot also record a verification (check_violation), `verified_at`
+ *     is stamped from the database clock, and a row cannot be inserted already verified. UNTIL IT IS APPLIED the live trigger
+ *     (20260727000001) still lets a writer that supplies its own `content_changed_at` bypass the stamp; this file's strict
+ *     comparison closes only the equal-timestamp half of that gap. The order for a human: save the edit first, record the
+ *     verification afterwards, as a separate statement.
+ *
  * Nothing else is evidence. In particular NOT: a clean-looking `post` string, the figure merely being parseable
  * (`vacanciesStated`), an official/notification URL, `status = active`, `review_status = approved`, a recent insert, the
  * curated seed marker, or a `vacancy_breakup` (the code builds those from the total).
@@ -232,7 +246,7 @@ export type VacancyVerdict =
   | "unverified"           // a figure with no verification record
   | "automated-verification" // confirmed only by an ingestion adapter
   | "invalid-verifier"     // verified_by is not an administrator ID ("system", "manual", "unknown", malformed, …)
-  | "stale-verification"  // verified, but the record changed afterwards (or cannot be shown unchanged)
+  | "stale-verification"  // verified, but the record changed at/after it (or cannot be shown unchanged)
   | "scraped-fragment"     // the post text is an obvious extraction fragment
 
 export function vacancyVerdict(job: VacancyEvidence, now: Date = new Date()): VacancyVerdict {
@@ -245,7 +259,7 @@ export function vacancyVerdict(job: VacancyEvidence, now: Date = new Date()): Va
   if (typeof raw === "string" && AUTOMATED_VERIFIER.test(raw)) return "automated-verification"
   if (!isAdminUserId(raw)) return "invalid-verifier"
   const changedMs = tsOf(job.contentChangedAt)
-  if (!Number.isFinite(changedMs) || changedMs > verifiedMs) return "stale-verification"
+  if (!Number.isFinite(changedMs) || changedMs >= verifiedMs) return "stale-verification"
   return "verified"
 }
 
