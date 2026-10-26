@@ -37,7 +37,7 @@ function buildDynamicBullets(variant: HeroVariant, stats: HeroStatsPayload, govt
   }
   if (variant === 'govt' || !!govtSlug) {
     return [
-      `${n('vacancies').toLocaleString('en-IN')} Vacancies`,
+      ...(n('vacancies') > 0 ? [`${n('vacancies').toLocaleString('en-IN')} Vacancies`] : []),
       `${n('notifications').toLocaleString('en-IN')} Notifications`,
       `${n('departments')} Departments`,
       // Only states / UTs that actually have a state-specific notice here; no number rather than "0 …".

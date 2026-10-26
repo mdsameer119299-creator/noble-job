@@ -104,7 +104,7 @@ export async function GovtNavGrids() {
               <span className="govt-nav-qual-chip__icon">{q.label.slice(0, 1)}</span>
               <span className="govt-nav-qual-chip__label">{q.label}</span>
               <span className="govt-nav-qual-chip__count">
-                {fmt(stat.notifications)} · {fmt(stat.vacancies)} vac.
+                {fmt(stat.notifications)}{stat.vacancies > 0 ? ` · ${fmt(stat.vacancies)} vac.` : ''}
               </span>
             </Link>
           )

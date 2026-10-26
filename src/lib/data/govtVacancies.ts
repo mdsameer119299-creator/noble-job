@@ -145,11 +145,57 @@ export function sumGovtVacancies(jobs: Pick<GovtJob, "vacancies">[]): number {
   return jobs.reduce((s, j) => s + resolveGovtVacancyCount(j), 0)
 }
 
+/* ------------------------------------------------------------------ */
+/* Is a stated vacancy figure TRUSTWORTHY enough to be added up?       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Why this exists. A scraped notice can carry a number that no source document states: JNU Advt RC/75/2026 was stored
+ * with "42,564" vacancies (post text "teachers and other equivalent cadres at any level. (ii)"), but the official notice
+ * lists 122 faculty posts and states NO total — the figure does not appear in it — and one such row made a hub-wide
+ * "42,566 Vacancies" headline. A total that adds up an unsupported number is itself unsupported.
+ *
+ * The row's own `post` text is the evidence available at display time: a stated count is trusted only when the row
+ * names a clean post (not a sentence fragment lifted from running text, nor scraped table/label noise), or when an
+ * admin has verified the record (`verifiedAt`). Nothing is deleted or rewritten — the row stays listed.
+ */
+const POST_ENUMERATOR_TAIL = /\(\s*(?:[ivxlc]+|[a-z]|\d{1,2})\s*\)\s*\.?\s*$/i
+const POST_LABEL_NOISE = /\b(closing\s+date|last\s+date|click\s+here|apply\s+online|download|advertisement)\b/i
+
+export function isCleanPostText(post: unknown): boolean {
+  if (typeof post !== "string") return true // nothing to judge
+  const t = post.trim()
+  if (!t) return true
+  if (t.length > 120) return false
+  if (/^[a-z]/.test(t)) return false // starts mid-sentence
+  if (POST_ENUMERATOR_TAIL.test(t)) return false // ends on a list marker, "… (ii)"
+  if (POST_LABEL_NOISE.test(t)) return false // scraped label / table-header text
+  return true
+}
+
+/** The fields a vacancy figure is judged on. */
+export type VacancyEvidence = Pick<GovtJob, "vacancies"> & Partial<Pick<GovtJob, "post" | "verifiedAt">>
+
+export function isSubstantiatedVacancy(job: VacancyEvidence): boolean {
+  if (parseVacancyCount(job.vacancies) === null) return true // no number is claimed
+  if (job.verifiedAt) return true
+  return isCleanPostText(job.post)
+}
+
 /**
  * Sum ONLY real, parseable vacancy counts — no keyword-profile fabrication.
  * Used by database-backed statistics so totals reflect actual notified posts;
  * "TBA"/"-"/"0" contribute 0 rather than a synthetic spread value.
+ *
+ * If ANY contributing figure is unsubstantiated (see isSubstantiatedVacancy) the whole aggregate is withheld: 0, which
+ * every display surface treats as "no total" and omits. The aggregate is never replaced by a partial or estimated sum.
  */
-export function sumRealVacancies(jobs: Pick<GovtJob, "vacancies">[]): number {
+export function sumRealVacancies(jobs: VacancyEvidence[]): number {
+  if (!hasSupportedVacancyAggregate(jobs)) return 0
   return jobs.reduce((s, j) => s + (parseVacancyCount(j.vacancies) ?? 0), 0)
+}
+
+/** False when a row inside the set states a vacancy count nothing supports (the set's total must then not be shown). */
+export function hasSupportedVacancyAggregate(jobs: VacancyEvidence[]): boolean {
+  return jobs.every(j => isSubstantiatedVacancy(j))
 }

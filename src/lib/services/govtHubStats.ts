@@ -26,7 +26,8 @@ export async function getGovtHubStats(opts?: { slug?: string }): Promise<GovtHub
   const departments = new Set(jobs.map(j => j.org)).size
 
   return [
-    { key: "vacancies", icon: "👥", num: vacancies, label: "Vacancies" },
+    // No total when a contributing figure is unsubstantiated (sumRealVacancies returns 0) — omitted, never "0 Vacancies".
+    ...(vacancies > 0 ? [{ key: "vacancies", icon: "👥", num: vacancies, label: "Vacancies" }] : []),
     { key: "notifications", icon: "📋", num: jobs.length, label: "Notifications" },
     { key: "departments", icon: "🏛", num: departments, label: "Departments" },
     // States / UTs that have a state-specific notice in THIS pool — not the size of the state taxonomy.

@@ -6,6 +6,9 @@
  *   • "61,352 Roles to Explore" (homepage Government card): a vacancy total over every active row, labelled as roles,
  *     while the page it opens lists the current notifications only.
  *   • "36 States Covered": the size of the state taxonomy, not a property of any listing.
+ *   • "42,566 Vacancies": 42,564 of it came from ONE row (JNU Advt RC/75/2026) whose official notice states no total
+ *     (122 faculty posts, no counts — the figure appears nowhere in it). An aggregate that adds up an unsupported
+ *     number is withheld; the notification count stays.
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -13,6 +16,7 @@ import { join } from "node:path"
 import { currentNotifications, notificationCountFor, countStatesWithListings } from "./hubCounts"
 import { INDIAN_STATES } from "../config/govtTaxonomy"
 import { computeNavStats } from "../services/govtNavStats"
+import { sumRealVacancies, isSubstantiatedVacancy, isCleanPostText, hasSupportedVacancyAggregate } from "../data/govtVacancies"
 import type { GovtJob } from "@/types/govtJob"
 
 let passed = 0
@@ -79,6 +83,75 @@ test("states: agrees with the state grid's own per-state notice counts", () => {
 
 test("states: national notices are not attributed to any state; unknown slugs are ignored", () => {
   assert.equal(countStatesWithListings([job({ state: "All India" }), job({ id: "z", stateSlug: "atlantis", state: "Atlantis" })]), 0)
+})
+
+/* ---- vacancy aggregate: an unsupported figure must not reach a total ---- */
+
+// The exact stored values of the two rows that made the live "42,566 Vacancies" (read-only SELECT, 2026-10-26).
+const JNU = job({
+  id: "jnu:jnu-rc-75-2026", org: "Jawaharlal Nehru University (JNU)", title: "Jawaharlal Nehru University (JNU) Recruitment (Advt RC/75/2026) 2026",
+  post: "teachers and other equivalent cadres at any level. (ii)", vacancies: "42,564", state: "All India",
+})
+const DRDO = job({
+  id: "drdo-rac:drdo-rac-152", org: "DRDO (Recruitment & Assessment Centre)", title: "DRDO (Recruitment & Assessment Centre) Recruitment (Advt 152) 2025",
+  post: "SCIENTISTS IN DRDO Closing date of Advertisement", vacancies: "2", state: "All India",
+})
+const CLEAN = job({ id: "clean-1", org: "SSC", title: "SSC CGL Recruitment 2026", post: "Combined Graduate Level Examiner", vacancies: "5000", state: "All India" })
+
+test("REGRESSION — the JNU row (post text is a sentence fragment, no source states a total) is not a substantiated vacancy figure", () => {
+  assert.equal(isSubstantiatedVacancy(JNU), false)
+  assert.equal(isCleanPostText(JNU.post), false)
+})
+
+test("REGRESSION — a total containing the JNU figure is withheld (0 = no aggregate), not shown and not replaced by a partial sum", () => {
+  assert.equal(sumRealVacancies([JNU]), 0)
+  assert.equal(sumRealVacancies([JNU, CLEAN]), 0, "one unsupported figure taints the whole aggregate: no '5,000' substitute either")
+  assert.equal(hasSupportedVacancyAggregate([JNU, CLEAN]), false)
+})
+
+test("scraped label noise in the post field is unsubstantiated too (the DRDO row)", () => {
+  assert.equal(isSubstantiatedVacancy(DRDO), false)
+  assert.equal(sumRealVacancies([JNU, DRDO]), 0)
+})
+
+test("clean rows still sum exactly; TBA / absent figures claim nothing and never taint", () => {
+  assert.equal(sumRealVacancies([CLEAN, job({ id: "c2", vacancies: "250", post: "Junior Engineer" })]), 5250)
+  assert.equal(sumRealVacancies([CLEAN, job({ id: "tba", vacancies: "TBA", post: "teachers and other equivalent cadres at any level. (ii)" })]), 5000)
+  assert.equal(sumRealVacancies([]), 0)
+})
+
+test("an admin-verified record (verifiedAt) is trusted even when its post text is unusual", () => {
+  assert.equal(isSubstantiatedVacancy({ ...JNU, verifiedAt: "2026-10-26T00:00:00.000Z" }), true)
+  assert.equal(sumRealVacancies([{ ...JNU, verifiedAt: "2026-10-26T00:00:00.000Z" }]), 42564)
+})
+
+test("post-text rules: fragments, list markers, label noise and over-long text fail; real post names pass", () => {
+  for (const bad of ["teachers and other equivalent cadres", "Junior Assistant (ii)", "Clerk. (a)", "Scientists Closing date of Advertisement", "Click here to download", "x".repeat(121)]) assert.equal(isCleanPostText(bad), false, bad)
+  for (const good of ["Station Master, Goods Guard, Sr. Clerk", "Constable (Tradesman)", "Assistant Professor (Economics)", "Group B & C", "सहायक अध्यापक", "SCIENTISTS IN DRDO", undefined, ""]) assert.equal(isCleanPostText(good), true, String(good))
+})
+
+test("every aggregate surface goes through the gate: nav stats keep the NOTICE count and withhold the vacancy total", () => {
+  const nav = computeNavStats([JNU, CLEAN, job({ id: "s", state: "Gujarat", stateSlug: "gujarat", org: "GPSC", title: "GPSC Recruitment 2026" })])
+  assert.equal(nav.national.notifications, 2)
+  assert.equal(nav.national.vacancies, 0)
+  assert.equal(nav.states["gujarat"].notifications, 1)
+  assert.equal(nav.states["gujarat"].opportunities.notifications, 3, "notifications are preserved")
+  // the same rows without the unsupported figure still total normally
+  assert.equal(computeNavStats([CLEAN]).national.vacancies, 5000)
+})
+
+test("wiring: a withheld total is OMITTED by every display (never '0 Vacancies' / '0 posts')", () => {
+  assert.match(strip(read("src/lib/services/govtHubStats.ts")), /vacancies > 0 \? \[\{ key: "vacancies"/)
+  assert.match(strip(read("src/components/heroes/CategoryHero.tsx")), /n\('vacancies'\) > 0 \?/)
+  assert.match(strip(read("src/components/govt/GovtScopeHero.tsx")), /stat\.vacancies > 0 \? \[\{ label: "Vacancies"/)
+  assert.match(strip(read("src/components/govt/GovtNavGrids.tsx")), /stat\.vacancies > 0 \? ` · /)
+  // The database-backed aggregates (hub counters, nav-grid stats, listing/category/state/qualification totals) all use the gate.
+  assert.match(strip(read("src/lib/services/govtHubStats.ts")), /sumRealVacancies\(jobs\.filter\(isVacancyBearingJob\)\)/)
+  assert.match(strip(read("src/lib/services/govtJobService.ts")), /vacanciesTotal: sumRealVacancies\(/)
+  assert.match(strip(read("src/lib/services/govtJobService.ts")), /totalVacancies = sumRealVacancies\(/)
+  const nav = strip(read("src/lib/services/govtNavStats.ts"))
+  assert.match(nav, /function realStatsFromRows[\s\S]{0,200}sumRealVacancies\(active\.filter\(isVacancyBearingJob\)\)/)
+  assert.doesNotMatch(strip(read("src/lib/services/govtHubStats.ts")), /sumGovtVacancies\(/)
 })
 
 test("wiring: no surface derives a govt count from the taxonomy length or an unfiltered vacancy sum", () => {
