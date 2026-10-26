@@ -1,3 +1,4 @@
+import { logDetailMiss } from "@/lib/jobs/detailMiss"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { isProductionEnvironment, preferLocalInventory } from "@/lib/supabase/useLocalInventory"
 import { sortByStatus } from "@/lib/data/inventoryPagination"
@@ -81,26 +82,31 @@ export async function getWfhJobs(filters: WfhJobFilters = {}): Promise<WfhJob[]>
 }
 
 export async function getWfhJobById(id: string): Promise<WfhJob | null> {
-  if (!isValidJobId(id)) return null
+  if (!isValidJobId(id)) { logDetailMiss("wfh", id, "invalid-id"); return null }
   const syntheticVisible = await isSyntheticJobsVisible()
   const local = renderableOrNull(getWfhJobByIdLocal(id, syntheticVisible), "wfh")
+  const fallback = async (reason: Parameters<typeof logDetailMiss>[2], detail?: string): Promise<WfhJob | null> => {
+    logDetailMiss("wfh", id, reason, detail)
+    const r = isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
+    if (!r) logDetailMiss("wfh", id, "fallback-null", `production=${isProductionEnvironment()}`)
+    return r
+  }
   if (preferLocalInventory() || !isSupabaseConfigured()) {
-    if (isProductionEnvironment()) return await getLiveWfhJobById(id)
-    return (await getLiveWfhJobById(id)) || local
+    return fallback("local-or-unconfigured", `preferLocal=${preferLocalInventory()} configured=${isSupabaseConfigured()}`)
   }
   try {
     const sb = await getSupabaseClient()
-    if (!sb) return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
-    const { data } = await sb.from("wfh_jobs").select("*").eq("id", id).maybeSingle()
-    if (data) {
-      const mapped = renderableOrNull(
-        applySyntheticVisibility([data as unknown as WfhJob], syntheticVisible)[0] ?? null,
-        "wfh",
-      )
-      if (mapped) return mapped
-    }
-    return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
-  } catch {
-    return isProductionEnvironment() ? await getLiveWfhJobById(id) : (await getLiveWfhJobById(id)) || local
+    if (!sb) return fallback("no-client")
+    const { data, error } = await sb.from("wfh_jobs").select("*").eq("id", id).maybeSingle()
+    if (error) return fallback("db-error", `${error.code ?? ""} ${error.message}`)
+    if (!data) return fallback("no-row")
+    const mapped = renderableOrNull(
+      applySyntheticVisibility([data as unknown as WfhJob], syntheticVisible)[0] ?? null,
+      "wfh",
+    )
+    if (mapped) return mapped
+    return fallback("not-renderable", `syntheticVisible=${syntheticVisible}`)
+  } catch (e) {
+    return fallback("exception", e instanceof Error ? e.message : String(e))
   }
 }
