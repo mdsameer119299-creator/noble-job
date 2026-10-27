@@ -99,6 +99,77 @@ test("the layout rule is documented where people will look (supabase/rollbacks/R
   assert.match(readme, /Supabase CLI/); assert.match(readme, /supabase\/migrations/); assert.match(readme, /duplicate/i)
 })
 
+/* ------------------------- alignment with the live migration history ------------------------- */
+/*
+ * The live `supabase_migrations.schema_migrations` table was audited read-only on 2026-10-28 (33 rows). Its version/name
+ * inventory is pinned in supabase/rehearsal/live-history-inventory.json (versions and names only). The Supabase CLI compares
+ * VERSIONS: a version present remotely but missing locally, or a local version older than the newest remote one that the
+ * remote lacks, blocks `db push`. These tests pin that the local list lines up with the live history, so the only pending
+ * migration is the intended one. See docs/MIGRATION_HISTORY.md.
+ */
+import { createHash } from "node:crypto"
+const REHEARSAL = join(process.cwd(), "supabase", "rehearsal")
+const PENDING_INTENDED = ["20261026000001"]
+const liveInventory = (JSON.parse(readFileSync(join(REHEARSAL, "live-history-inventory.json"), "utf8")) as { rows: { version: string; name: string }[] }).rows
+const localForward = list(MIGRATIONS).map(e => { const m = CLI_MIGRATION_FILE.exec(e.name)!; return { version: m[1], name: m[2] } })
+
+test("live inventory fixture is well-formed: 33 unique versions, names only (no statements, no connection details)", () => {
+  assert.equal(liveInventory.length, 33)
+  assert.equal(new Set(liveInventory.map(r => r.version)).size, 33)
+  assert.deepEqual(liveInventory.map(r => r.version), [...liveInventory.map(r => r.version)].sort())
+  const raw = readFileSync(join(REHEARSAL, "live-history-inventory.json"), "utf8")
+  assert.doesNotMatch(raw, /postgres(ql)?:\/\/|password|secret|token|supabase\.co|statements"/i)
+})
+
+test("every live version has a local forward file, and the only local version the live history lacks is the intended pending migration", () => {
+  const live = new Set(liveInventory.map(r => r.version)), local = new Set(localForward.map(r => r.version))
+  assert.deepEqual([...live].filter(v => !local.has(v)), [], "live-only versions: the CLI would refuse to push")
+  assert.deepEqual([...local].filter(v => !live.has(v)), PENDING_INTENDED, "local-only versions == exactly the intended pending migration")
+})
+
+test("the intended pending migration is newer than every live version (so it is not out-of-order)", () => {
+  const newestLive = liveInventory.map(r => BigInt(r.version)).reduce((a, b) => (a > b ? a : b))
+  for (const v of PENDING_INTENDED) assert.ok(BigInt(v) > newestLive, `${v} > ${newestLive}`)
+})
+
+test("20261025: the repository carries the LIVE version 20261025102650; the old draft version 20261025000001 is gone", () => {
+  const f = "20261025102650_refix_storage_resume_employer_applicant"
+  assert.ok(list(MIGRATIONS).some(e => e.name === `${f}.sql`))
+  assert.ok(list(ROLLBACKS).some(e => e.name === `${f}.down.sql`))
+  for (const dir of [MIGRATIONS, ROLLBACKS]) assert.ok(!list(dir).some(e => e.name.startsWith("20261025000001")), `no 20261025000001 left in ${dir}`)
+  assert.deepEqual(liveInventory.find(r => r.version === "20261025102650"), { version: "20261025102650", name: "refix_storage_resume_employer_applicant" })
+})
+
+test("20261025102650: the applied SQL is pinned (executable SQL equals what the live history recorded)", () => {
+  const text = readFileSync(join(MIGRATIONS, "20261025102650_refix_storage_resume_employer_applicant.sql"), "utf8").replace(/\r\n/g, "\n")
+  // Byte-exact body: from the first CREATE OR REPLACE FUNCTION to the end of the file. The header above it may be reworded; this may not.
+  const start = text.search(/^CREATE OR REPLACE FUNCTION/m) // line-anchored: the header comment also mentions the phrase
+  assert.ok(start > 0)
+  const body = text.slice(start)
+  assert.equal(createHash("sha256").update(body).digest("hex"), "a35254db2c058fe196e07fee33c09bbf27b22938c4ef4b3c9ab8e60263054af4")
+  // Executable SQL with comments, whitespace and ';' removed, hashed the same way the live row was (md5, 583 chars).
+  const exec = text.replace(/--[^\n]*/g, "").replace(/[\s;]/g, "")
+  assert.equal(exec.length, 583)
+  assert.equal(createHash("md5").update(exec).digest("hex"), "3e1719a145c35a948f9f988d7525292c")
+  assert.match(body, /e\.verified = true/); assert.match(body, /admin_review_status IN \('approved','shared'\)/)
+})
+
+test("history names: only the 9 audited rollback-recorded versions differ from the local name, and only by a `.down` suffix", () => {
+  const local = new Map(localForward.map(r => [r.version, r.name]))
+  const differing = liveInventory.filter(r => local.get(r.version) !== r.name)
+  assert.deepEqual(differing.map(r => r.version), [
+    "20260610000001", "20260616000001", "20260616000002", "20260616000003", "20260706000001",
+    "20260930000001", "20260930000002", "20260930000003", "20261001000001",
+  ])
+  for (const r of differing) assert.equal(r.name, `${local.get(r.version)}.down`, r.version)
+})
+
+test("docs/MIGRATION_HISTORY.md records the alignment and the separately-tracked synthetic_jobs_visible issue", () => {
+  const doc = readFileSync(join(process.cwd(), "docs", "MIGRATION_HISTORY.md"), "utf8")
+  for (const needle of ["20261025102650", "20261025000001", "synthetic_jobs_visible", "20260929000003", "migration repair"]) assert.ok(doc.includes(needle), needle)
+  assert.doesNotMatch(doc, /postgres(ql)?:\/\/|eyJ[A-Za-z0-9_-]{20,}|sb_secret_|service_role key/i)
+})
+
 /* ------------------------------ the checker itself ------------------------------ */
 
 const F = (name: string, isDirectory = false) => ({ name, isDirectory })

@@ -1,4 +1,16 @@
--- SECURITY FIX (not yet applied to production — approval required before running).
+-- SECURITY FIX — ALREADY APPLIED to production; recorded in the live migration history as
+-- version 20261025102650 (`refix_storage_resume_employer_applicant`).
+--
+-- VERSION ALIGNMENT. This file was drafted as 20261025000001 and was applied under the
+-- version 20261025102650. It now carries the live version so that the local migration list
+-- and the live history agree and `supabase db push` has no unmatched version in either
+-- direction. A read-only audit confirmed that the executable SQL recorded live is IDENTICAL
+-- to the SQL below (comments and whitespace aside). Only this header and the filename were
+-- changed; the SQL from `CREATE OR REPLACE FUNCTION` to the end of the file is byte-for-byte
+-- what it was. Do NOT edit that SQL: it is applied.
+--
+-- The FINDING below describes the state BEFORE this migration was applied: "live",
+-- "currently" and "today" refer to 2026-10-25, before the fix.
 --
 -- FINDING (2026-10-25, read-only audit — no data was written to reach this
 -- conclusion, only SELECTs against pg_policies / pg_proc / the migration
