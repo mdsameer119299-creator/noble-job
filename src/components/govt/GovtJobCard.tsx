@@ -1,5 +1,6 @@
 'use client'
 import type{GovtJob}from'@/types/govtJob'
+import{displayVacancies}from'@/lib/govt/vacancyFigure'
 interface GovtJobCardProps{job:GovtJob;onClick:(j:GovtJob)=>void}
 export function GovtJobCard({job,onClick}:GovtJobCardProps){
   return(
@@ -15,7 +16,7 @@ export function GovtJobCard({job,onClick}:GovtJobCardProps){
         </div>
       </div>
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
-        {[{l:'👤 '+job.vacancies+' Vacancies'},{l:'📍 '+job.location},{l:'📅 Last: '+job.last_date},{l:'💰 '+job.salary}].filter(t=>t.l&&!t.l.includes('undefined')).map((t,i)=>(
+        {[{l:displayVacancies(job)?'👤 '+displayVacancies(job)+' Vacancies':''},{l:'📍 '+job.location},{l:'📅 Last: '+job.last_date},{l:'💰 '+job.salary}].filter(t=>t.l&&!t.l.includes('undefined')).map((t,i)=>(
           <span key={i} style={{background:'#f0f4ff',color:'#374151',padding:'4px 10px',borderRadius:18,fontSize:12,fontWeight:600}}>{t.l}</span>
         ))}
       </div>

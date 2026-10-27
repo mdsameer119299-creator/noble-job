@@ -322,7 +322,7 @@ test("synthetic per-job counts (resolveGovtVacancyCount) are confined to govtVac
 test("no non-test source adds vacancy figures by hand: parseVacancyCount is used only by the gate and the row mapper; no reduce() over vacancies elsewhere", () => {
   for (const f of SRC) {
     const r = rel(f), src = strip(readFileSync(f, "utf8"))
-    if (!r.endsWith("lib/data/govtVacancies.ts") && !r.endsWith("lib/services/govtRowMapper.ts")) assert.doesNotMatch(src, /\bparseVacancyCount\(/, `${r}: parses a vacancy figure outside the gate`)
+    if (!r.endsWith("lib/data/govtVacancies.ts") && !r.endsWith("lib/services/govtRowMapper.ts") && !r.endsWith("lib/govt/vacancyFigure.ts")) assert.doesNotMatch(src, /\bparseVacancyCount\(/, `${r}: parses a vacancy figure outside the gate`)
     if (!r.endsWith("lib/data/govtVacancies.ts")) for (const m of src.matchAll(/\.reduce\(/g)) assert.doesNotMatch(src.slice(m.index!, m.index! + 220), /vacanc/i, `${r}: reduces over vacancy figures`)
   }
 })

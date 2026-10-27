@@ -20,6 +20,8 @@ import { JobActionBar } from "@/components/jobs/JobActionBar"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { isRealDisplayValue } from "@/lib/jobs/renderable"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
+import { govtDetailMetaText, govtHeroChips, govtQuickFacts, govtShowsVacancyDetails } from "@/lib/govt/detailFacts"
 
 /** Non-empty, non-placeholder ("undefined", "N/A", "TBA", …) text worth showing. */
 const has = (v: unknown): boolean => isRealDisplayValue(v)
@@ -45,18 +47,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       noIndex: true,
     })
   }
-  // Only real values are interpolated — never "undefined" / "TBA" placeholders.
-  const descParts = [
-    `${job.org} ${job.title}:`,
-    has(job.vacancies) ? `${job.vacancies} vacancies${has(job.post) ? ` for ${job.post}` : ""}.` : has(job.post) ? `Post: ${job.post}.` : "",
-    has(job.qualification) ? `Qualification: ${job.qualification}.` : "",
-    has(job.lastDate) ? `Last date: ${job.lastDate}.` : "",
-    "Check eligibility, salary, age limit, fee & apply online.",
-  ].filter(Boolean)
-  const desc = descParts.join(" ")
+  // Title / description come from govtDetailMetaText: only real values, never a withheld or placeholder vacancy figure.
+  const { title, description } = govtDetailMetaText(job)
   return buildPageMetadata({
-    title: has(job.vacancies) ? `${job.title} — ${job.vacancies} Posts` : job.title,
-    description: desc.slice(0, 300),
+    title,
+    description,
     path: `/jobs/govt/${job.slug || job.id}`,
     keywords: [job.org, job.post, job.title, "government jobs", "sarkari naukri", job.qualification, ...(job.categoryTags || [])].filter(has) as string[],
     ogType: "article",
@@ -91,18 +86,9 @@ export default async function GovtJobDetailPage({ params }: Props) {
 
   const links = buildGovtJobLinkButtons(job)
   const isExpired = job.status === "expired" || isGovtJobExpired(job.lastDate)
+  const vac = displayVacancies(job)
 
-  const quickFacts = [
-    { l: "Organisation", v: job.org },
-    { l: "Post Name", v: job.post },
-    { l: "Total Vacancies", v: job.vacancies },
-    { l: "Qualification", v: job.qualification },
-    { l: "Age Limit", v: job.ageRange },
-    { l: "Application Fee", v: job.fee && job.fee !== "0" ? `₹${job.fee.replace(/[^\d]/g, "")}` : "Nil / Exempted" },
-    { l: "Salary", v: job.salary },
-    { l: "Job Location", v: job.location },
-    { l: "Last Date", v: job.lastDate },
-  ].filter(f => has(f.v))
+  const quickFacts = govtQuickFacts(job)
 
   return (
     <div style={{ background: "#f8faff", minHeight: "100vh" }}>
@@ -122,12 +108,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
           <div style={{ display: "inline-block", background: "rgba(255,255,255,.15)", padding: "4px 12px", borderRadius: 18, fontSize: 12, color: "#e0e8ff", fontWeight: 700, marginBottom: 10 }}>{job.org}</div>
           <h1 style={{ fontFamily: "Playfair Display,serif", fontSize: "clamp(24px,3vw,34px)", fontWeight: 900, color: "#fff", marginBottom: 10, lineHeight: 1.2 }}>{job.title}</h1>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {[
-              has(job.vacancies) ? `👤 ${job.vacancies} Vacancies` : "",
-              has(job.lastDate) ? `📅 Last Date: ${job.lastDate}` : "",
-              has(job.qualification) ? `🎓 ${job.qualification}` : "",
-              has(job.location) ? `📍 ${job.location}` : "",
-            ].filter(Boolean).map((t, i) => (
+            {govtHeroChips(job).map((t, i) => (
               <span key={i} style={{ background: "rgba(255,255,255,.15)", padding: "5px 13px", borderRadius: 16, fontSize: 12.5, color: "#fff", fontWeight: 600 }}>{t}</span>
             ))}
           </div>
@@ -161,7 +142,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
               </div>
             </Section>
 
-            {(job.vacancyBreakup?.length || (has(job.vacancies) && has(job.post))) && (
+            {govtShowsVacancyDetails(job) && (
             <Section id="vacancy-details" title="Vacancy Details" icon="👥">
               {job.vacancyBreakup?.length ? (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
@@ -184,7 +165,7 @@ export default async function GovtJobDetailPage({ params }: Props) {
                 </table>
               ) : (
                 <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>
-                  A total of <strong>{job.vacancies}</strong> vacancies are notified for the post of <strong>{job.post}</strong>.
+                  A total of <strong>{vac}</strong> vacancies are notified for the post of <strong>{job.post}</strong>.
                   Refer to the official notification for the category-wise (UR/OBC/SC/ST/EWS) break-up.
                 </p>
               )}

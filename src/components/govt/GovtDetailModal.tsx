@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal'
 import type { GovtJob } from '@/types/govtJob'
 import { buildGovtJobLinkButtons } from '@/lib/services/govtOfficialLinks'
 import { GovtHowToApply } from '@/components/govt/GovtHowToApply'
+import { displayVacancies } from '@/lib/govt/vacancyFigure'
 
 interface GovtDetailModalProps {
   job: GovtJob | null
@@ -18,7 +19,7 @@ export function GovtDetailModal({ job, open, onClose }: GovtDetailModalProps) {
   const rows = [
     { l: 'Organisation', v: job.org },
     { l: 'Post', v: job.post },
-    { l: 'Vacancies', v: job.vacancies },
+    { l: 'Vacancies', v: displayVacancies(job) },
     { l: 'Qualification', v: job.qualification },
     { l: 'Age Range', v: job.ageRange || job.age_range },
     { l: 'Application Fee', v: job.fee },
@@ -39,7 +40,7 @@ export function GovtDetailModal({ job, open, onClose }: GovtDetailModalProps) {
         <div style={{ display: 'inline-block', background: 'rgba(255,255,255,.15)', padding: '3px 12px', borderRadius: 18, fontSize: 12, color: '#e0e8ff', fontWeight: 600, marginBottom: 10 }}>{job.org}</div>
         <h2 style={{ fontFamily: 'Playfair Display,serif', fontSize: 22, fontWeight: 900, color: '#fff', marginBottom: 6 }}>{job.title}</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[{ l: '👤 ' + job.vacancies + ' Vacancies' }, { l: '📅 Last Date: ' + (job.lastDate || job.last_date) }, { l: '💰 ' + job.salary }].map((t, i) => (
+          {[{ l: displayVacancies(job) ? '👤 ' + displayVacancies(job) + ' Vacancies' : '' }, { l: '📅 Last Date: ' + (job.lastDate || job.last_date) }, { l: '💰 ' + job.salary }].filter(t => t.l).map((t, i) => (
             <span key={i} style={{ background: 'rgba(255,255,255,.15)', padding: '4px 12px', borderRadius: 16, fontSize: 12.5, color: '#fff', fontWeight: 600 }}>{t.l}</span>
           ))}
         </div>

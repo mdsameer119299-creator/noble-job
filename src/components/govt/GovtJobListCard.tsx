@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { GovtJob } from "@/types/govtJob"
 import { isRealDisplayValue } from "@/lib/jobs/renderable"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 const real = (v: unknown): v is string => isRealDisplayValue(v)
 
@@ -22,7 +23,7 @@ export function GovtJobListCard({ job }: { job: GovtJob }) {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           {[
-            real(job.vacancies) ? `👤 ${job.vacancies} Vacancies` : "",
+            displayVacancies(job) ? `👤 ${displayVacancies(job)} Vacancies` : "",
             real(job.location) ? `📍 ${job.location}` : "",
             real(job.lastDate) ? `📅 Last: ${job.lastDate}` : "",
             real(job.salary) ? `💰 ${job.salary}` : "",
