@@ -18,7 +18,6 @@ import { GovtHowToApply } from "@/components/govt/GovtHowToApply"
 import { GovtApplyLinkButton } from "@/components/govt/GovtApplyLinkButton"
 import { JobActionBar } from "@/components/jobs/JobActionBar"
 import { buildGovtJobLinkButtons } from "@/lib/services/govtOfficialLinks"
-import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { isRealDisplayValue } from "@/lib/jobs/renderable"
 import { displayVacancies } from "@/lib/govt/vacancyFigure"
 import { govtDetailMetaText, govtHeroChips, govtQuickFacts, govtShowsVacancyDetails } from "@/lib/govt/detailFacts"
@@ -85,7 +84,8 @@ export default async function GovtJobDetailPage({ params }: Props) {
   const stateLabel = job.stateSlug ? getStateBySlug(job.stateSlug)?.label : undefined
 
   const links = buildGovtJobLinkButtons(job)
-  const isExpired = job.status === "expired" || isGovtJobExpired(job.lastDate)
+  // NOTE: expired rows never reach this page — isServableGovtJob (= isActiveGovtJob && isRenderableJob)
+  // is the gate in getGovtJobBySlug; expired records return null → 404 above.
   const vac = displayVacancies(job)
 
   const quickFacts = govtQuickFacts(job)
@@ -119,17 +119,6 @@ export default async function GovtJobDetailPage({ params }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 24, alignItems: "flex-start" }} className="max-lg:!grid-cols-1">
           {/* Main */}
           <div>
-            {isExpired && (
-              <div style={{ background: "#fef3c7", border: "1.5px solid #fcd34d", borderRadius: 14, padding: "18px 22px", marginBottom: 16 }}>
-                <div style={{ fontFamily: "Playfair Display,serif", fontWeight: 900, color: "#92400e", fontSize: 18, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span>⛔</span> Applications Closed
-                </div>
-                <p style={{ color: "#78350f", fontSize: 14.5, lineHeight: 1.7, margin: 0 }}>
-                  This recruitment has expired. The information is being maintained for reference purposes.
-                  See <strong>Related Active Government Jobs</strong> below for current openings.
-                </p>
-              </div>
-            )}
             <Section id="overview" title="Overview" icon="📋">
               {has(job.overview) && <p style={{ color: "#374151", fontSize: 14.5, lineHeight: 1.75 }}>{job.overview}</p>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginTop: 16 }}>

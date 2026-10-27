@@ -21,7 +21,7 @@ import { applyVacancyDisplayGate } from "@/lib/govt/vacancyFigure"
 import type { GovtJob } from "@/types/govtJob"
 
 export function mapRow(row: Record<string, unknown>): GovtJob {
-  const r = row as unknown as GovtJob & { last_date?: string; age_range?: string }
+  const r = row as unknown as GovtJob & { last_date?: string; age_range?: string; vacancy_breakup?: GovtJob["vacancyBreakup"] }
   const mapped = applyGovtVacancies({
     ...r,
     // Captured BEFORE applyGovtVacancies can synthesize a display count.
@@ -30,6 +30,9 @@ export function mapRow(row: Record<string, unknown>): GovtJob {
     last_date: r.last_date ?? r.lastDate,
     ageRange: r.ageRange ?? r.age_range,
     age_range: r.age_range ?? r.ageRange,
+    // Normalize snake_case DB column so the vacancy display gate can inspect and
+    // scrub every break-up sub-total, not just the aggregate figure.
+    vacancyBreakup: r.vacancyBreakup ?? r.vacancy_breakup,
     // Record-integrity columns (absent on an unmigrated database → undefined).
     recordType: isGovtRecordType(r.record_type) ? r.record_type : undefined,
     sourcePublishedAt: r.source_published_at ?? undefined,

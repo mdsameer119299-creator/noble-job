@@ -320,6 +320,53 @@ test("applyVacancyDisplayGate: clean job → unchanged", () => {
 /* 7. mapRow + enrichGovtJob pipeline                                  */
 /* ================================================================== */
 
+/**
+ * Issue 2 regression: the DB column is `vacancy_breakup` (snake_case). mapRow must normalize it
+ * to `vacancyBreakup` BEFORE calling applyVacancyDisplayGate, so the gate can scrub sub-totals
+ * (17,526 and 25,038) from prose — not merely because `vacancyBreakup` was undefined from the start.
+ *
+ * This test uses a raw DB-shaped row that has ONLY `vacancy_breakup` (no `vacancyBreakup`).
+ */
+test("mapRow: snake_case DB row with vacancy_breakup [17526,25038] → vacancyBreakup cleared, sub-totals suppressed", () => {
+  // Simulate exactly what Supabase returns: snake_case field, no camelCase counterpart.
+  const dbRow: Record<string, unknown> = {
+    id: "jnu:jnu-rc-75-2026",
+    source_id: "jnu",
+    org: "Jawaharlal Nehru University (JNU)",
+    title: "JNU Recruitment 2026 — Teaching Posts",
+    post: "teachers and other equivalent cadres at any level. (ii)",
+    vacancies: "42,564",
+    // Deliberately snake_case only — no vacancyBreakup field.
+    vacancy_breakup: [
+      { post: "Group A", total: "17,526", eligibility: "PhD" },
+      { post: "Group B", total: "25,038", eligibility: "Master's Degree" },
+    ],
+    record_type: "notification",
+    status: "active",
+    tab: "latest",
+    last_date: "TBA",
+    // Prose uses vacancy/posts words so the scrubber can detect and remove them.
+    overview: "A total of 42,564 vacancies are notified. 17,526 posts in Group A are available. 25,038 posts in Group B are available.",
+    article: "17,526 vacancies in Group A and 25,038 vacancies in Group B. Refer notification.",
+    faqs: [{ q: "How many vacancies?", a: "A total of 42,564 vacancies are notified by JNU." }],
+  }
+  const job = mapRow(dbRow)
+  // vacancyBreakup must be an empty array (cleared by gate), not undefined.
+  // Before the normalization fix, mapRow did not map vacancy_breakup → vacancyBreakup, so the
+  // gate saw vacancyBreakup=undefined and set it to [] without scrubbing sub-totals from prose.
+  assert.ok(Array.isArray(job.vacancyBreakup), "vacancyBreakup should be an array after gate")
+  assert.equal(job.vacancyBreakup!.length, 0, "vacancyBreakup must be cleared (no displayable breakdown)")
+  // Main figure suppressed
+  assert.equal(job.vacancies, "Not Specified")
+  assert.equal(job.vacanciesStated, undefined)
+  // Sub-totals must not appear in prose — gate must have scrubbed them via normalized vacancyBreakup.
+  // (scrubFigureSentences removes sentences that contain a figure AND a vacancy/posts word.)
+  const allText = [job.overview, job.article, ...(job.faqs || []).map((f: {a:string}) => f.a)].join(" ")
+  assert.ok(!allText.includes("17,526"), "sub-total 17,526 must be scrubbed from prose")
+  assert.ok(!allText.includes("25,038"), "sub-total 25,038 must be scrubbed from prose")
+  assert.ok(!allText.includes("42,564"), "main figure 42,564 must be scrubbed from prose")
+})
+
 test("mapRow pipeline: JNU RC/75/2026 — no 42,564 / 17,526 / 25,038 in any field", () => {
   const job = mapRow(jnuRow)
   const enriched = enrichGovtJob(job as never, { synthesizeVacancies: false })
