@@ -25,6 +25,7 @@ import { isMissingColumnError } from "@/lib/supabase/columnErrors"
 import { resolveGovtPool, type GovtPoolSnapshot, type GovtPoolResult } from "@/lib/services/govtPoolResolver"
 import { mapRow } from "@/lib/services/govtRowMapper"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { isRouteBlocked } from "@/lib/govt/vacancyFigure"
 import { isRenderableJob } from "@/lib/jobs/renderable"
 import type { GovtJob } from "@/types/govtJob"
 
@@ -34,8 +35,14 @@ import type { GovtJob } from "@/types/govtJob"
  * "Untitled Notification" and friends are placeholders). Incomplete rows stay in
  * the database; they are just never listed, counted, related, sitemapped or
  * opened — every govt consumer reads through this one predicate.
+ *
+ * Additionally, rows whose REVIEWED_NOTICES entry carries blockRoute:true are
+ * excluded from ALL routes (listings, counts, sitemap, detail) regardless of
+ * active/approved/published status. These are low-quality scraped records whose
+ * stored content does not meet the bar for public display.
  */
 export function isServableGovtJob(job: GovtJob): boolean {
+  if (isRouteBlocked(job.id)) return false
   return isActiveGovtJob(job) && isRenderableJob(job as never, "govt")
 }
 

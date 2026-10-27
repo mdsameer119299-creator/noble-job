@@ -11,6 +11,11 @@
  *   • DRDO RAC Advt 152 is stored with 2 vacancies. The official advertisement could not be read by the audit tooling
  *     (the site disallows automated fetches) and the public Advt 152 schedule page states no count, so the figure is
  *     UNCONFIRMED — and it is never invented or replaced.
+ *   • Three JNU Guest Faculty advts (RC/GF/2026-01, RC/GF/02/2026, RC/GF/2026-03/SSIS) share the slug for the main
+ *     JNU 2026 listing. Their closing dates cannot be verified from the stored data (last_date=TBA), their post fields
+ *     are obvious scraped fragments, and their overview text contains the phrase "Not Specified vacancies" generated
+ *     by an earlier ingestion. These records are blocked from the detail route via blockRoute:true so the slug
+ *     correctly returns 404 rather than rendering three stale, content-poor notifications.
  * The homepage/hub aggregate was already withheld (govtVacancies.ts `vacancyVerdict`); this module closes the
  * per-record routes: title, metadata, hero chip, quick facts, vacancy table, stored overview / article / FAQ text,
  * JobPosting description and the cards.
@@ -40,6 +45,13 @@ export interface ReviewedNotice {
    * empty) — a real stored date is never overridden.
    */
   closingDate?: string
+  /**
+   * When true: this record must not be served on its detail route regardless of its active/expiry status.
+   * Used for records whose stored content is too low-quality to be useful (scraped-fragment post, no vacancy
+   * figure, no verified closing date) and whose route would otherwise render stale placeholder content.
+   * isServableGovtJob checks this flag; the route returns 404.
+   */
+  blockRoute?: true
 }
 
 export const REVIEWED_NOTICES: Readonly<Record<string, ReviewedNotice>> = {
@@ -60,6 +72,41 @@ export const REVIEWED_NOTICES: Readonly<Record<string, ReviewedNotice>> = {
       "The advertisement PDF could not be read (the site disallows automated fetches) and the public Advt 152 schedule page states no vacancy count; " +
       "the stored figure of 2 is therefore unconfirmed and is not shown. No replacement figure is offered.",
   },
+  // Three JNU Guest Faculty advts whose stored rows have scraped-fragment post fields, "Not Specified" vacancies,
+  // and last_date=TBA. Their closing dates cannot be confirmed from available sources; the records are
+  // content-poor and must not render a detail page. All three share the slug for the main JNU 2026 listing,
+  // causing the route to return placeholder content instead of 404.
+  "jnu:jnu-advt-of-guest-faculty-rc-gf-2026-03-ssis": {
+    checkedOn: "2026-10-28",
+    notice: "https://www.jnu.ac.in/recruitment",
+    figure: "not-stated",
+    finding:
+      "JNU Advt RC/GF/2026-03/SSIS (Guest Faculty) — the stored post field is an obvious ingestion fragment " +
+      "(\"teachers and other equivalent cadres at any level. (ii)\") and the vacancy count is not stated. " +
+      "The closing date could not be confirmed from available sources (last_date=TBA in DB). " +
+      "This record shares a slug with two other stale GF rows and renders no useful content; the detail route is blocked.",
+    blockRoute: true,
+  },
+  "jnu:jnu-advtnorc-gf-2026-01": {
+    checkedOn: "2026-10-28",
+    notice: "https://www.jnu.ac.in/recruitment",
+    figure: "not-stated",
+    finding:
+      "JNU Advt No RC/GF/2026-01 (Guest Faculty) — the stored post field is an obvious ingestion fragment and the " +
+      "vacancy count is not stated. The closing date could not be confirmed (last_date=TBA in DB). " +
+      "This record shares a slug with two other stale GF rows and renders no useful content; the detail route is blocked.",
+    blockRoute: true,
+  },
+  "jnu:jnu-jnu-advtno-rc-gf-02-2026": {
+    checkedOn: "2026-10-28",
+    notice: "https://www.jnu.ac.in/recruitment",
+    figure: "not-stated",
+    finding:
+      "JNU Advt No RC/GF/02/2026 (Guest Faculty) — the stored post field is an obvious ingestion fragment and the " +
+      "vacancy count is not stated. The closing date could not be confirmed (last_date=TBA in DB). " +
+      "This record shares a slug with two other stale GF rows and renders no useful content; the detail route is blocked.",
+    blockRoute: true,
+  },
 }
 
 type FigureLike = { id?: string; vacancies?: string; post?: string }
@@ -72,6 +119,19 @@ export function vacancySuppression(job: FigureLike): SuppressionReason | null {
   if (job.id && Object.prototype.hasOwnProperty.call(REVIEWED_NOTICES, job.id)) return "reviewed-notice"
   if (isObviousScrapedFragment(job.post)) return "scraped-fragment"
   return null
+}
+
+/**
+ * True when a reviewed notice explicitly blocks the detail route for this record.
+ * Called by `isServableGovtJob` — a blocked record is removed from all routes even
+ * when it is otherwise active and approved.
+ */
+export function isRouteBlocked(id: string | undefined): boolean {
+  if (!id) return false
+  const notice = Object.prototype.hasOwnProperty.call(REVIEWED_NOTICES, id)
+    ? REVIEWED_NOTICES[id]
+    : undefined
+  return notice?.blockRoute === true
 }
 
 /**
@@ -167,16 +227,62 @@ export function withoutVacancyFigure<T extends Scrubbable>(job: T): T {
 }
 
 /**
+ * Scrub stored overview/article/FAQ text that contains the literal phrase "Not Specified vacancies" — a phrase
+ * generated by an earlier ingestion when a vacancy figure was already absent. This phrase is misleading (it implies
+ * a known-but-unlisted number) and must be replaced by neutral wording.
+ *
+ * The substitution: the whole sentence containing "Not Specified vacancies" (or its variants with "posts",
+ * "positions", etc.) is removed and — when the surrounding context implies a count was expected — a neutral
+ * pointer is inserted in its place.
+ */
+const NOT_SPECIFIED_FIGURE_RE = /A total of Not Specified (?:vacancies|posts?|openings?|positions?|seats?) (?:are|were|is) (?:available|notified|announced)[^.!?]*/gi
+const NOT_SPECIFIED_NEUTRAL = "Refer to the official notification for the number of vacancies"
+
+/** Remove every "A total of Not Specified vacancies are available…" sentence from stored text. */
+export function scrubNotSpecifiedPhrase(text: string): string {
+  return text
+    .replace(NOT_SPECIFIED_FIGURE_RE, NOT_SPECIFIED_NEUTRAL)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+/**
  * The display gate applied once, where a stored row becomes a GovtJob: suppress an unsupported figure and fill a
  * placeholder closing date from a reviewed notice. Pure; returns the same object when nothing applies.
+ *
+ * Also scrubs the phrase "Not Specified vacancies" from stored text — this phrase was generated by an older ingestion
+ * pass and must not appear in any rendered page (it implies a count when none is stated).
  */
 export function applyVacancyDisplayGate<
   T extends Scrubbable & { id?: string; post?: string; lastDate?: string; last_date?: string },
 >(job: T): T {
   let out: T = job
   if (vacancySuppression(job)) out = withoutVacancyFigure(out)
-  const stored = job.lastDate ?? job.last_date
-  const date = reviewedClosingDate(job.id, stored)
+  // Scrub "Not Specified vacancies" from stored free text regardless of whether a figure was suppressed.
+  // This phrase was produced by an earlier ingestion pass and is present in rows whose vacancies field was
+  // already "Not Specified" at storage time, so withoutVacancyFigure never runs for them.
+  const patch: Partial<Scrubbable> = {}
+  if (typeof out.overview === "string" && NOT_SPECIFIED_FIGURE_RE.test(out.overview)) {
+    NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+    patch.overview = scrubNotSpecifiedPhrase(out.overview) || undefined
+  }
+  NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+  if (typeof out.article === "string" && NOT_SPECIFIED_FIGURE_RE.test(out.article)) {
+    NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+    patch.article = scrubNotSpecifiedPhrase(out.article) || undefined
+  }
+  NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+  if (out.faqs?.length) {
+    const scrubbedFaqs = out.faqs.map(f => {
+      const aHit = NOT_SPECIFIED_FIGURE_RE.test(f.a); NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+      const qHit = NOT_SPECIFIED_FIGURE_RE.test(f.q); NOT_SPECIFIED_FIGURE_RE.lastIndex = 0
+      return (aHit || qHit) ? { q: f.q, a: NO_FIGURE_ANSWER } : f
+    })
+    if (scrubbedFaqs.some((f, i) => f !== out.faqs![i])) patch.faqs = scrubbedFaqs
+  }
+  if (Object.keys(patch).length) out = { ...out, ...patch }
+  const stored = out.lastDate ?? out.last_date
+  const date = reviewedClosingDate(out.id, stored)
   if (date && date !== stored) out = { ...out, lastDate: date, last_date: date }
   return out
 }

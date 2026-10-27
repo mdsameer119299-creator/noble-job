@@ -27,11 +27,21 @@ import {
   scrubFigureSentences,
   withoutVacancyFigure,
   applyVacancyDisplayGate,
+  scrubNotSpecifiedPhrase,
+  isRouteBlocked,
   REVIEWED_NOTICES,
 } from "./vacancyFigure"
+// govtStatsSource uses react.cache() at module level (Next.js runtime only).
+// Re-implement isServableGovtJob directly for the test environment.
+import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
+import { isRenderableJob } from "@/lib/jobs/renderable"
+function isServableGovtJob(job: { id?: string; status?: string; lastDate?: string; [k: string]: unknown }): boolean {
+  if (isRouteBlocked(job.id)) return false
+  return isActiveGovtJob(job as never) && isRenderableJob(job as never, "govt")
+}
 import { govtDetailMetaText, govtHeroChips, govtQuickFacts, govtShowsVacancyDetails } from "./detailFacts"
 import { generateGovtArticle } from "@/lib/services/govtArticle"
-import { isActiveGovtJob, isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
+import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { buildGovtFactsDescription } from "@/lib/seo/jobPostingDescription"
 
 let passed = 0
@@ -78,6 +88,41 @@ const drdoRow = {
   tab: "latest",
   last_date: "TBA",
   source_published_at: null,
+}
+
+/**
+ * JNU Guest Faculty rows — actual DB rows from production.
+ * These share the slug jawaharlal-nehru-university-jnu-recruitment-2026,
+ * have scraped-fragment post fields, "Not Specified" vacancies, and last_date=TBA.
+ * They must be blocked from the detail route via REVIEWED_NOTICES[id].blockRoute=true.
+ */
+const jnuGfRow1: Record<string, unknown> = {
+  id: "jnu:jnu-advt-of-guest-faculty-rc-gf-2026-03-ssis",
+  source_id: "jnu",
+  org: "Jawaharlal Nehru University (JNU)",
+  slug: "jawaharlal-nehru-university-jnu-recruitment-2026",
+  title: "JNU Recruitment 2026",
+  post: "teachers and other equivalent cadres at any level. (ii)",
+  vacancies: "Not Specified",
+  vacancy_breakup: [],
+  record_type: "notification",
+  status: "active",
+  review_status: "approved",
+  published: true,
+  last_date: "TBA",
+  // Stored overview produced by older ingestion — contains "Not Specified vacancies"
+  overview: "Jawaharlal Nehru University (JNU) has released an official notification for JNU Recruitment 2026. A total of Not Specified vacancies are available for the post of teachers and other equivalent cadres at any level. (ii). Eligible and interested candidates can apply online before TBA.",
+  article: "Jawaharlal Nehru University (JNU) has released an official notification for JNU Recruitment 2026. A total of Not Specified vacancies are available for the post of teachers and other equivalent cadres at any level. (ii). Eligible and interested candidates can apply online before TBA.",
+}
+const jnuGfRow2: Record<string, unknown> = {
+  ...jnuGfRow1,
+  id: "jnu:jnu-advtnorc-gf-2026-01",
+  slug: "jawaharlal-nehru-university-jnu-recruitment-2026",
+}
+const jnuGfRow3: Record<string, unknown> = {
+  ...jnuGfRow1,
+  id: "jnu:jnu-jnu-advtno-rc-gf-02-2026",
+  slug: "jawaharlal-nehru-university-jnu-recruitment-2026",
 }
 
 /** A clean, unaffected job with a real figure. */
@@ -634,6 +679,160 @@ runCardTests().then(() => {
   test("REVIEWED_NOTICES: JNU has closingDate, DRDO does not", () => {
     assert.equal(REVIEWED_NOTICES["jnu:jnu-rc-75-2026"].closingDate, "15 Jun 2026")
     assert.equal(REVIEWED_NOTICES["drdo-rac:drdo-rac-152"].closingDate, undefined)
+  })
+
+  /* ================================================================== */
+  /* 14. JNU GF route-block regression (PR #54 preview regression)       */
+  /* ================================================================== */
+
+  test("isRouteBlocked: three JNU GF rows are blocked", () => {
+    assert.equal(isRouteBlocked("jnu:jnu-advt-of-guest-faculty-rc-gf-2026-03-ssis"), true)
+    assert.equal(isRouteBlocked("jnu:jnu-advtnorc-gf-2026-01"), true)
+    assert.equal(isRouteBlocked("jnu:jnu-jnu-advtno-rc-gf-02-2026"), true)
+  })
+
+  test("isRouteBlocked: JNU RC/75/2026 is NOT blocked (it has a reviewed closingDate)", () => {
+    assert.equal(isRouteBlocked("jnu:jnu-rc-75-2026"), false)
+  })
+
+  test("isRouteBlocked: DRDO RAC 152 is NOT blocked (unconfirmed figure, no blockRoute flag)", () => {
+    assert.equal(isRouteBlocked("drdo-rac:drdo-rac-152"), false)
+  })
+
+  test("isRouteBlocked: clean job ID is not blocked", () => {
+    assert.equal(isRouteBlocked("ssc:ssc-gd-2026"), false)
+    assert.equal(isRouteBlocked(undefined), false)
+  })
+
+  test("isServableGovtJob: JNU GF rows return false (blockRoute)", () => {
+    for (const row of [jnuGfRow1, jnuGfRow2, jnuGfRow3]) {
+      const job = mapRow(row)
+      assert.equal(isServableGovtJob(job as never), false,
+        `expected isServableGovtJob=false for ${row.id}`)
+    }
+  })
+
+  test("isServableGovtJob: clean job is NOT blocked and IS active (not expired)", () => {
+    // The minimal cleanRow fixture omits officialUrl so isRenderableJob returns false
+    // (missing-provenance) — that is expected for a stripped test fixture.
+    // What matters here is that the blockRoute gate does NOT fire for this job.
+    const job = mapRow(cleanRow as unknown as Record<string, unknown>)
+    assert.equal(isRouteBlocked(job.id), false, "clean job must not be blockRoute-flagged")
+    assert.equal(isActiveGovtJob(job as never), true, "clean job must be active (future lastDate)")
+  })
+
+  /* ================================================================== */
+  /* 15. "Not Specified vacancies" phrase scrubbing                      */
+  /* ================================================================== */
+
+  test("scrubNotSpecifiedPhrase: removes 'A total of Not Specified vacancies are available' sentence", () => {
+    const text = "JNU has released a notification. A total of Not Specified vacancies are available for the post of teachers. Apply before TBA."
+    const out = scrubNotSpecifiedPhrase(text)
+    assert.ok(!out.includes("Not Specified vacancies"), `phrase still present: ${out}`)
+    assert.ok(out.includes("Refer to the official notification"), `neutral replacement missing: ${out}`)
+    assert.ok(out.includes("JNU has released"), "preceding sentence should be kept")
+    assert.ok(out.includes("Apply before TBA"), "following sentence should be kept")
+  })
+
+  test("scrubNotSpecifiedPhrase: removes 'Not Specified posts are available' variant", () => {
+    const text = "A total of Not Specified posts are available for this recruitment."
+    const out = scrubNotSpecifiedPhrase(text)
+    assert.ok(!out.includes("Not Specified posts"), `still present: ${out}`)
+  })
+
+  test("scrubNotSpecifiedPhrase: leaves text without the phrase unchanged", () => {
+    const text = "A total of 42,564 vacancies are available."
+    assert.equal(scrubNotSpecifiedPhrase(text), text)
+  })
+
+  test("applyVacancyDisplayGate: scrubs stored 'Not Specified vacancies' from GF row overview", () => {
+    const job = mapRow(jnuGfRow1)
+    assert.ok(!(job.overview ?? "").includes("Not Specified vacancies"),
+      `overview still contains 'Not Specified vacancies': ${job.overview}`)
+    // Neutral replacement present or sentence removed
+    const overviewText = job.overview ?? ""
+    const hasBadPhrase = /Not Specified vacancies/i.test(overviewText)
+    assert.ok(!hasBadPhrase, "phrase must be removed by applyVacancyDisplayGate")
+  })
+
+  test("applyVacancyDisplayGate: scrubs stored 'Not Specified vacancies' from GF row article", () => {
+    const job = mapRow(jnuGfRow1)
+    assert.ok(!(job.article ?? "").includes("Not Specified vacancies"),
+      `article still contains 'Not Specified vacancies': ${(job.article ?? "").slice(0, 200)}`)
+  })
+
+  /* ================================================================== */
+  /* 16. JNU RC/75/2026 full pipeline — reviewed closing date + expiry  */
+  /* ================================================================== */
+
+  test("JNU RC/75/2026: applyVacancyDisplayGate sets lastDate to '15 Jun 2026'", () => {
+    const job = mapRow(jnuRow as unknown as Record<string, unknown>)
+    assert.equal(job.lastDate, "15 Jun 2026", `lastDate should be reviewed closing date, got: ${job.lastDate}`)
+  })
+
+  test("JNU RC/75/2026: after gate, isGovtJobExpired returns true (date is past)", () => {
+    const job = mapRow(jnuRow as unknown as Record<string, unknown>)
+    const { isGovtJobExpired } = require("../utils/govtJobExpiry")
+    assert.equal(isGovtJobExpired(job.lastDate), true,
+      `expected expired for lastDate=${job.lastDate}`)
+  })
+
+  test("JNU RC/75/2026: isServableGovtJob returns false (expired after date applied)", () => {
+    const job = mapRow(jnuRow as unknown as Record<string, unknown>)
+    const enriched = enrichGovtJob(job as never, { synthesizeVacancies: false })
+    assert.equal(isServableGovtJob(enriched as never), false,
+      "JNU RC/75/2026 should not be servable (expired notification)")
+  })
+
+  test("JNU RC/75/2026: mapRow suppresses 42,564, 17,526, and 25,038 from overview", () => {
+    const job = mapRow(jnuRow as unknown as Record<string, unknown>)
+    const allText = [job.overview, job.article, ...(job.faqs ?? []).map((f: {a:string}) => f.a)].join(" ")
+    assert.ok(!allText.includes("42,564"), "42,564 must be scrubbed from prose")
+    assert.ok(!allText.includes("17,526"), "17,526 must be scrubbed from prose")
+    assert.ok(!allText.includes("25,038"), "25,038 must be scrubbed from prose")
+  })
+
+  test("JNU RC/75/2026: vacancyBreakup cleared after gate", () => {
+    const job = mapRow(jnuRow as unknown as Record<string, unknown>)
+    assert.ok(Array.isArray(job.vacancyBreakup), "vacancyBreakup should be array")
+    assert.equal(job.vacancyBreakup!.length, 0, "vacancyBreakup must be cleared")
+  })
+
+  /* ================================================================== */
+  /* 17. DRDO RAC 152 — unconfirmed figure stays suppressed             */
+  /* ================================================================== */
+
+  test("DRDO RAC 152: NOT blocked and IS active (isServableGovtJob-equivalent checks)", () => {
+    // The minimal drdoRow fixture omits officialUrl so full isServableGovtJob returns false
+    // (missing-provenance on test fixture only). The blockRoute and expiry gates still apply.
+    const job = mapRow(drdoRow as unknown as Record<string, unknown>)
+    assert.equal(isRouteBlocked(job.id), false, "DRDO must not be blockRoute-flagged")
+    assert.equal(isActiveGovtJob(job as never), true, "DRDO must be active (TBA date is never expired)")
+  })
+
+  test("DRDO RAC 152: displayVacancies returns undefined (figure unconfirmed)", () => {
+    const job = mapRow(drdoRow as unknown as Record<string, unknown>)
+    assert.equal(displayVacancies(job), undefined, "DRDO figure must be suppressed")
+  })
+
+  test("DRDO RAC 152: isRouteBlocked returns false", () => {
+    assert.equal(isRouteBlocked("drdo-rac:drdo-rac-152"), false)
+  })
+
+  /* ================================================================== */
+  /* 18. Clean job — unaffected by all new gates                        */
+  /* ================================================================== */
+
+  test("Clean job: isRouteBlocked false, active, figure displays (fixture lacks officialUrl so full isServableGovtJob not tested here)", () => {
+    const job = mapRow(cleanRow as unknown as Record<string, unknown>)
+    assert.equal(isRouteBlocked(job.id), false)
+    assert.equal(isActiveGovtJob(job as never), true)
+    assert.equal(displayVacancies(job), "26,146")
+  })
+
+  test("Clean job: no 'Not Specified vacancies' phrase in overview", () => {
+    const job = mapRow(cleanRow as unknown as Record<string, unknown>)
+    assert.ok(!(job.overview ?? "").includes("Not Specified vacancies"))
   })
 
   /* Done */
