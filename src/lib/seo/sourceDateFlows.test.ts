@@ -236,7 +236,7 @@ test("migration: additive, nullable, no default, no backfill, no destructive sta
   for (const m of sql.matchAll(/COMMENT ON COLUMN[^\n]*\n\s*IS '([\s\S]*?)';/g)) assert.ok(!m[1].includes("'"), "unescaped apostrophe in a COMMENT literal")
 })
 test("migration down script drops only the column it added, and nothing else", () => {
-  const down = read("supabase/migrations/20260727000003_job_source_posted_at.down.sql").replace(/^\s*--.*$/gm, "")
+  const down = read("supabase/rollbacks/20260727000003_job_source_posted_at.down.sql").replace(/^\s*--.*$/gm, "")
   assert.equal((down.match(/DROP COLUMN IF EXISTS source_posted_at/g) ?? []).length, 3)
   assert.doesNotMatch(down.replace(/DROP COLUMN IF EXISTS source_posted_at/g, ""), /\bDROP\b|DELETE|TRUNCATE/i)
 })

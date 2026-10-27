@@ -53,8 +53,10 @@
 --     session_replication_role = replica; a restore that loads rows with verified_* needs the triggers
 --     disabled. Service-role application code is bound by the triggers like any other writer.
 --
--- ADDITIVE in effect · IDEMPOTENT (CREATE OR REPLACE) · REVERSIBLE (see the .down.sql, which restores
--- the 20260727000001 function bodies). No row is read, changed or deleted.
+-- ADDITIVE in effect · IDEMPOTENT (CREATE OR REPLACE) · REVERSIBLE (supabase/rollbacks/
+-- 20261026000001_govt_jobs_verification_integrity.down.sql restores the 20260727000001 function bodies; rollbacks
+-- live OUTSIDE this folder because the Supabase CLI would read a .down.sql here as a second migration with the same
+-- version). No row is read, changed or deleted.
 -- ============================================================================
 
 BEGIN;

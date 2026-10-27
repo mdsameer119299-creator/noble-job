@@ -357,9 +357,9 @@ const READ_ONLY_TOUCHES = [
   "src/lib/services/govtRowMapper.ts",         // row → GovtJob (read)
   "src/lib/data/govtVacancies.ts",             // the gate + the contract text
   "supabase/migrations/20260727000001_govt_jobs_record_integrity.sql",
-  "supabase/migrations/20260727000001_govt_jobs_record_integrity.down.sql",
+  "supabase/rollbacks/20260727000001_govt_jobs_record_integrity.down.sql",
   "supabase/migrations/20261026000001_govt_jobs_verification_integrity.sql",       // the trigger that ENFORCES the contract
-  "supabase/migrations/20261026000001_govt_jobs_verification_integrity.down.sql",
+  "supabase/rollbacks/20261026000001_govt_jobs_verification_integrity.down.sql",
   "supabase/scratch-scenarios/govt_jobs_verification_integrity.sql",                           // scratch-database scenarios (refuses any other DB)
 ]
 /** Code that is ALLOWED to write verified_by / verified_at. Empty today; an entry must be an admin-gated route. */
@@ -597,7 +597,7 @@ test("a mixed ingestion batch: unchanged verified row keeps its verification, th
 
 const MIG_V1 = "supabase/migrations/20260727000001_govt_jobs_record_integrity.sql"
 const MIG_V2 = "supabase/migrations/20261026000001_govt_jobs_verification_integrity.sql"
-const MIG_V2_DOWN = "supabase/migrations/20261026000001_govt_jobs_verification_integrity.down.sql"
+const MIG_V2_DOWN = "supabase/rollbacks/20261026000001_govt_jobs_verification_integrity.down.sql"
 const SCENARIOS = "supabase/scratch-scenarios/govt_jobs_verification_integrity.sql"
 const norm = (t: string) => t.replace(/\r/g, "")
 const fnBody = (sql: string, name: string): string => {

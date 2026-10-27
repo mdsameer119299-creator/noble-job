@@ -13,7 +13,7 @@
 --   any failure aborts with FAIL. The same scenarios are asserted statically in src/lib/data/govtVacancyEvidence.test.ts.
 --
 --   Order: (A) the already-applied 20260727000001 behaviour, demonstrating the gaps; (B) after the forward migration
---   20261026000001; (C) after its .down.sql the old behaviour is back.
+--   20261026000001; (C) after its rollback (supabase/rollbacks/…down.sql) the old behaviour is back.
 -- ============================================================================
 \set ON_ERROR_STOP on
 
@@ -160,7 +160,7 @@ UPDATE govt_jobs SET vacancies = '9000' WHERE id = 'b11';
 SELECT pg_temp.ok(pg_temp.cc('b11') > pg_temp.va('b11'), 'B11 an edit is stamped strictly after even a forward-dated verified_at');
 
 -- ============================ C. rollback restores the 20260727000001 behaviour ============================
-\i supabase/migrations/20261026000001_govt_jobs_verification_integrity.down.sql
+\i supabase/rollbacks/20261026000001_govt_jobs_verification_integrity.down.sql
 SELECT pg_temp.seed('c1');
 UPDATE govt_jobs SET vacancies = '9000', content_changed_at = '2020-01-01+00' WHERE id = 'c1';
 SELECT pg_temp.ok(pg_temp.cc('c1') = '2020-01-01+00', 'C1 after the down migration the old behaviour is back (supplied value wins)');
