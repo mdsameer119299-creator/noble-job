@@ -8,7 +8,11 @@
  * CITY_CATEGORY_MIN_JOBS) rather than shipped as a thin page — same principle
  * already used for empty govt category/qualification URLs in sitemap.ts.
  */
-import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import {
+  getGenuineOpenJobs,
+  filterSnapshotForCityCategory,
+  type GenuineOpenJobsSnapshot,
+} from "@/lib/seo/genuineJobs"
 import { CITY_CATEGORY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
 import { PRIVATE_CATEGORIES, BLUE_COLLAR_CATEGORIES } from "@/lib/data/jobInventory"
@@ -184,4 +188,24 @@ export async function getQualifyingCategorySlugsForCity(city: MinimalCity): Prom
     }),
   )
   return results.filter(r => r.qualifies).map(r => categoryToSlug(r.label))
+}
+
+/**
+ * Category slugs (for a given city) that clear CITY_CATEGORY_MIN_JOBS, derived
+ * from a pre-loaded shared snapshot instead of running one Supabase query per
+ * combination. Used by the sitemap to eliminate the ~304-query fan-out.
+ *
+ * Results are identical to getQualifyingCategorySlugsForCity() because:
+ *   • The snapshot is filtered by isIndexable() — same gate as getGenuineOpenJobs()
+ *   • Location matching uses the same case-insensitive substring check as the DB's ilike
+ *   • Category matching uses exact string equality — same as the DB's eq()
+ */
+export function getQualifyingCategorySlugsForCityFromSnapshot(
+  city: MinimalCity,
+  snapshot: GenuineOpenJobsSnapshot,
+): string[] {
+  return CITY_CATEGORY_LIST.filter(label => {
+    const matching = filterSnapshotForCityCategory(snapshot, city.locationQuery, label, CITY_CATEGORY_MIN_JOBS)
+    return matching.length >= CITY_CATEGORY_MIN_JOBS
+  }).map(categoryToSlug)
 }

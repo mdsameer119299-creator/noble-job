@@ -4,12 +4,13 @@ import { getActiveGovtRowsStrict } from "@/lib/services/govtStatsSource"
 import { getGovtJobsFiltered, getGovtContent } from "@/lib/services/govtJobService"
 import { CATEGORY_SLUGS, CITY_SLUGS } from "@/lib/seo/landing"
 import { CITY_LANDINGS } from "@/lib/data/landingCities"
-import { getQualifyingCategorySlugsForCity } from "@/lib/seo/cityCategoryLanding"
+import { getQualifyingCategorySlugsForCityFromSnapshot } from "@/lib/seo/cityCategoryLanding"
 import {
   TAIL_CITIES,
-  getQualifyingTailCitySlugs,
-  getQualifyingCategorySlugsForTailCity,
+  getQualifyingTailCitySlugsFromSnapshot,
+  getQualifyingCategorySlugsForTailCityFromSnapshot,
 } from "@/lib/seo/tailCityLanding"
+import { getGenuineOpenJobsSnapshot } from "@/lib/seo/genuineJobs"
 import { ARTICLE_SLUGS, getArticle } from "@/lib/seo/articles"
 import { siteUrl } from "@/lib/seo/constants"
 import { isIndexable } from "@/lib/jobs/provenance"
@@ -24,7 +25,7 @@ import {
   type SitemapEntry,
   type SitemapJobBoard,
 } from "@/lib/seo/sitemapPolicy"
-import { readOrThrow, isBuildPhase } from "@/lib/seo/sitemapReadGuard"
+import { readOrThrow } from "@/lib/seo/sitemapReadGuard"
 import type { GovtJob } from "@/types/govtJob"
 
 // Cache the generated sitemap for 1 hour. Its contents change at most hourly
@@ -110,55 +111,65 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...CITY_SLUGS.map(slug => ({ url: `${base}/${slug}`, changeFrequency: "daily" as const, priority: 0.85 })),
   ]
 
-  // City x category pages — only combos that clear the GENUINE-job threshold (the
-  // same function the pages themselves use, so sitemap and page cannot disagree).
-  // Wrapped in readOrThrow: the ~304 qualifying checks each query Supabase, which
-  // is unavailable during `next build` and can timeout on Vercel's 60 s export limit.
-  const cityCategoryRoutes: SitemapEntry[] = await readOrThrow(
-    async () => (
-      await Promise.all(
-        CITY_LANDINGS.map(async city => {
-          const slugs = await getQualifyingCategorySlugsForCity(city)
-          return slugs.map(categorySlug => ({
-            url: `${base}/${city.slug}/${categorySlug}`,
-            changeFrequency: "weekly" as const,
-            priority: 0.6,
-          }))
-        }),
-      )
-    ).flat(),
-    [],
-    "city×category pages",
+  // ── Private-job snapshot (one DB call) ──────────────────────────────────────
+  // City×category and tail-city×category qualifying checks used to run ~1,396
+  // individual Supabase queries per ISR regeneration — the same fan-out that
+  // caused BUILD_UTILS_SPAWN_1 in the build phase. The snapshot loads all genuine
+  // open private-board jobs in a single bounded query; eligibility is then derived
+  // in memory from the shared pool.
+  //
+  // If the snapshot fetch fails at runtime, readOrThrow re-throws and ISR keeps the
+  // previously generated sitemap rather than publishing one with these sections empty.
+  // During build phase, readOrThrow returns the null sentinel immediately and all
+  // three derived sections return [].
+  const privateSnapshot = await readOrThrow(
+    () => getGenuineOpenJobsSnapshot(),
+    null,
+    "private-jobs snapshot",
   )
 
+  if (privateSnapshot?.capped) {
+    console.warn(
+      `[sitemap] private-jobs snapshot hit the cap (${privateSnapshot.jobs.length} rows). ` +
+      `Some city/category combinations may be missing. ` +
+      `Raise SITEMAP_SNAPSHOT_LIMIT (current default: 3000) if this is unexpected.`,
+    )
+  }
+
+  // City x category pages — only combos that clear the GENUINE-job threshold (the
+  // same function the pages themselves use, so sitemap and page cannot disagree).
+  // Derived from the shared snapshot: 0 extra DB calls instead of ~304.
+  const cityCategoryRoutes: SitemapEntry[] = privateSnapshot
+    ? CITY_LANDINGS.flatMap(city => {
+        const slugs = getQualifyingCategorySlugsForCityFromSnapshot(city, privateSnapshot)
+        return slugs.map(categorySlug => ({
+          url: `${base}/${city.slug}/${categorySlug}`,
+          changeFrequency: "weekly" as const,
+          priority: 0.6,
+        }))
+      })
+    : []
+
   // Tail-city hubs and tail-city x category pages — same genuine-only gate.
-  // Same build-time guard: ~1,064 qualifying checks would timeout during export.
-  const qualifyingTailCitySlugs = await readOrThrow(
-    () => getQualifyingTailCitySlugs(),
-    [] as string[],
-    "tail-city qualifying slugs",
-  )
+  // Derived from the shared snapshot: 0 extra DB calls instead of ~1,092.
+  const qualifyingTailCitySlugs: string[] = privateSnapshot
+    ? getQualifyingTailCitySlugsFromSnapshot(privateSnapshot)
+    : []
   const tailCityRoutes: SitemapEntry[] = qualifyingTailCitySlugs.map(slug => ({
     url: `${base}/jobs-in/${slug}`,
     changeFrequency: "daily" as const,
     priority: 0.75,
   }))
-  const tailCityCategoryRoutes: SitemapEntry[] = await readOrThrow(
-    async () => (
-      await Promise.all(
-        TAIL_CITIES.map(async city => {
-          const slugs = await getQualifyingCategorySlugsForTailCity(city)
-          return slugs.map(categorySlug => ({
-            url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
-            changeFrequency: "weekly" as const,
-            priority: 0.55,
-          }))
-        }),
-      )
-    ).flat(),
-    [],
-    "tail-city×category pages",
-  )
+  const tailCityCategoryRoutes: SitemapEntry[] = privateSnapshot
+    ? TAIL_CITIES.flatMap(city => {
+        const slugs = getQualifyingCategorySlugsForTailCityFromSnapshot(city, privateSnapshot)
+        return slugs.map(categorySlug => ({
+          url: `${base}/jobs-in/${city.slug}/${categorySlug}`,
+          changeFrequency: "weekly" as const,
+          priority: 0.55,
+        }))
+      })
+    : []
 
   // Guides — the article's own published / modified dates.
   const articleDates = ARTICLE_SLUGS.map(slug => {
