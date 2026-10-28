@@ -184,14 +184,20 @@ export interface SnapshotPage {
  * duplicate/skipped rows across page boundaries when multiple jobs share the
  * same posted_at timestamp.
  *
- * @param offset  Zero-based row offset (use 0, MAX_POOL_ROWS, 2×MAX_POOL_ROWS …)
- * @param pageSize  Rows to request — must be ≤ MAX_POOL_ROWS
+ * `syntheticVisible` is passed in from the caller rather than fetched here so
+ * the admin_settings query runs exactly once per snapshot pass, not once per
+ * page.  The caller (getGenuineOpenJobsSnapshot) resolves it before the loop.
+ *
+ * @param offset           Zero-based row offset (0, MAX_POOL_ROWS, 2×MAX_POOL_ROWS …)
+ * @param pageSize         Rows to request — must be ≤ MAX_POOL_ROWS
+ * @param syntheticVisible Whether synthetic jobs are currently visible (resolved once by caller)
  * @returns  SnapshotPage with both the filtered jobs and the raw Supabase row count.
  * @throws  QueryTimeoutError on timeout; Error on any Supabase/network error.
  */
 export async function getPrivateJobsForSnapshot(
   offset: number,
   pageSize: number,
+  syntheticVisible: boolean,
 ): Promise<SnapshotPage> {
   if (!isSupabaseConfigured()) {
     throw new Error("[jobService:snapshot] Supabase is not configured — cannot build sitemap snapshot")
@@ -216,7 +222,6 @@ export async function getPrivateJobsForSnapshot(
   }
 
   const rawRowCount = (data ?? []).length
-  const syntheticVisible = await isSyntheticJobsVisible()
   const jobs = applySyntheticVisibility(
     filterRenderable(
       (data ?? []).map(row => mapPrivateJobRow(row as Record<string, unknown>)),

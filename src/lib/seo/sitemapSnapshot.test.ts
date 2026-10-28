@@ -20,6 +20,8 @@ import {
   filterSnapshotForCityCategory,
   filterSnapshotForCity,
   SITEMAP_SNAPSHOT_DEFAULT_LIMIT,
+  SNAPSHOT_MAX_RAW_ROWS,
+  SnapshotScanCapError,
   getGenuineOpenJobsSnapshot,
   type GenuineOpenJobsSnapshot,
 } from "./genuineJobs"
@@ -589,6 +591,173 @@ test("partial raw page detection: rawRowCount=0 correctly identifies empty DB", 
   assert.equal(result.jobs.length, 0)
   assert.ok(!result.capped, "Empty DB should not be capped")
   assert.equal(result.fetchedTotal, 0)
+})
+
+/* ── Section 13: workload guard — raw-scan cap & synthetic-visibility hoist */
+
+test("workload guard: long non-indexable sequence — scanner continues collecting genuine jobs", async () => {
+  // 2 full pages of renderable-but-non-indexable rows (provenance=SYNTHETIC),
+  // followed by 1 partial page of genuine EMPLOYER rows.
+  // The scanner must keep paginating and collect the genuine jobs on page 3.
+  const PAGE = MAX_POOL_ROWS
+  let callCount = 0
+
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    callCount++
+    if (offset === 0 || offset === PAGE) {
+      // Full pages of synthetic (non-indexable) rows
+      return {
+        jobs: Array.from({ length: pageSize }, (_, i) =>
+          base(`synth-${offset}-${i}`, { provenance: "SYNTHETIC" }),
+        ),
+        rawRowCount: pageSize,
+      }
+    }
+    // Page 3: small batch of genuine EMPLOYER rows — DB exhausted after this
+    return {
+      jobs: Array.from({ length: 5 }, (_, i) => base(`real-${i}`)),
+      rawRowCount: 5,
+    }
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.equal(callCount, 3, "Must fetch all 3 pages to find genuine jobs")
+  assert.equal(result.jobs.length, 5, "All 5 genuine EMPLOYER jobs must be collected")
+  assert.ok(!result.capped, "capped=false — DB was exhausted")
+  assert.equal(result.fetchedTotal, PAGE * 2 + 5, "fetchedTotal counts all raw rows including non-indexable")
+})
+
+test("workload guard: raw-scan cap — throws SnapshotScanCapError when fetchedRawTotal >= SNAPSHOT_MAX_RAW_ROWS", async () => {
+  // Each page fills MAX_POOL_ROWS raw rows, all non-indexable (SYNTHETIC),
+  // so the loop never collects any genuine jobs and keeps paging.
+  // After SNAPSHOT_MAX_RAW_ROWS / MAX_POOL_ROWS pages the cap must be breached.
+  const PAGE = MAX_POOL_ROWS
+  const pagesUntilCap = Math.ceil(SNAPSHOT_MAX_RAW_ROWS / PAGE) // 30 pages
+
+  const mockFetch: SnapshotPageFetcher = async (_offset, pageSize) => ({
+    jobs: Array.from({ length: pageSize }, (_, i) =>
+      base(`synth-${_offset}-${i}`, { provenance: "SYNTHETIC" }),
+    ),
+    rawRowCount: pageSize,
+  })
+
+  await assert.rejects(
+    () => getGenuineOpenJobsSnapshot(mockFetch),
+    (err: unknown) => {
+      assert.ok(err instanceof SnapshotScanCapError, `Expected SnapshotScanCapError, got ${(err as Error).name}`)
+      assert.ok(
+        (err as SnapshotScanCapError).message.includes(String(SNAPSHOT_MAX_RAW_ROWS)),
+        "Error message must include the cap value",
+      )
+      return true
+    },
+    `After ${pagesUntilCap} pages of synthetic rows the cap must be breached`,
+  )
+})
+
+test("workload guard: cap exhaustion before genuine-job limit — throws, does NOT return partial snapshot", async () => {
+  // Mix: first 29 pages are non-indexable (SYNTHETIC), 29,000 raw rows total.
+  // Page 30 adds 1,000 more raw rows → fetchedRawTotal crosses 30,000.
+  // The cap check fires at the START of the loop iteration (before the fetch),
+  // so no partial genuine jobs are ever returned.
+  const PAGE = MAX_POOL_ROWS
+  let callCount = 0
+
+  const mockFetch: SnapshotPageFetcher = async (_offset, pageSize) => {
+    callCount++
+    // All pages return synthetic (non-indexable) full pages
+    return {
+      jobs: Array.from({ length: pageSize }, (_, i) =>
+        base(`synth-${_offset}-${i}`, { provenance: "SYNTHETIC" }),
+      ),
+      rawRowCount: pageSize,
+    }
+  }
+
+  let threw: unknown
+  try {
+    await getGenuineOpenJobsSnapshot(mockFetch)
+  } catch (err) {
+    threw = err
+  }
+
+  assert.ok(threw instanceof SnapshotScanCapError, "Must throw SnapshotScanCapError — not return partial data")
+  // Partial genuine list must never be silently returned
+  assert.ok(threw !== null && threw !== undefined, "Error must be propagated, not swallowed")
+})
+
+test("workload guard: complete snapshot — all genuine jobs collected before cap, no throw", async () => {
+  // 2 pages, each with 500 genuine EMPLOYER rows.  fetchedTotal = 2,000 << 30,000.
+  // Must complete normally without throwing.
+  const PAGE = MAX_POOL_ROWS
+
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    if (offset === 0) {
+      return {
+        jobs: Array.from({ length: 500 }, (_, i) => base(`real-p1-${i}`)),
+        rawRowCount: pageSize, // full raw page
+      }
+    }
+    return {
+      jobs: Array.from({ length: 500 }, (_, i) => base(`real-p2-${i}`)),
+      rawRowCount: 500, // partial raw page → DB exhausted
+    }
+  }
+
+  let result: GenuineOpenJobsSnapshot | undefined
+  await assert.doesNotReject(async () => {
+    result = await getGenuineOpenJobsSnapshot(mockFetch)
+  }, "Complete snapshot within raw-scan cap must not throw")
+
+  assert.ok(result !== undefined)
+  assert.equal(result!.jobs.length, 1000, "All 1,000 genuine jobs collected")
+  assert.ok(!result!.capped, "capped=false — DB exhausted before limit")
+  assert.ok(
+    result!.fetchedTotal < SNAPSHOT_MAX_RAW_ROWS,
+    `fetchedTotal (${result!.fetchedTotal}) must be < cap (${SNAPSHOT_MAX_RAW_ROWS})`,
+  )
+})
+
+test("workload guard: incomplete snapshot throws rather than returning partial data (cap scenario)", async () => {
+  // 3 genuine jobs collected over 2 full pages dominated by non-indexable rows,
+  // then the cap is reached on page 30.  Must throw SnapshotScanCapError, not return
+  // the 3 genuine jobs as if the snapshot were complete.
+  const PAGE = MAX_POOL_ROWS
+  let callCount = 0
+
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    callCount++
+    const isFirstPage = offset === 0
+    if (isFirstPage) {
+      // First page: 3 genuine jobs buried in 997 synthetic rows
+      return {
+        jobs: [
+          ...Array.from({ length: 3 }, (_, i) => base(`real-${i}`)),
+          ...Array.from({ length: 997 }, (_, i) => base(`synth-0-${i}`, { provenance: "SYNTHETIC" })),
+        ],
+        rawRowCount: pageSize,
+      }
+    }
+    // All subsequent pages: 1,000 synthetic rows (non-indexable), full pages
+    return {
+      jobs: Array.from({ length: pageSize }, (_, i) =>
+        base(`synth-${offset}-${i}`, { provenance: "SYNTHETIC" }),
+      ),
+      rawRowCount: pageSize,
+    }
+  }
+
+  await assert.rejects(
+    () => getGenuineOpenJobsSnapshot(mockFetch),
+    (err: unknown) => {
+      assert.ok(
+        err instanceof SnapshotScanCapError,
+        `Must throw SnapshotScanCapError (not return 3 partial genuine jobs), got: ${(err as Error).name}`,
+      )
+      return true
+    },
+    "When cap is reached before DB exhaustion or genuine-job limit, must fail closed",
+  )
 })
 
 /* ─────────────────────────────────────────────────────────────────────── */

@@ -23,6 +23,7 @@
  */
 import { getJobs, getPrivateJobsForSnapshot, MAX_POOL_ROWS } from "@/lib/services/jobService"
 import type { SnapshotPage } from "@/lib/services/jobService"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import { isIndexable } from "@/lib/jobs/provenance"
 import type { Job, JobFilter } from "@/types/job"
 
@@ -48,6 +49,40 @@ export async function getGenuineOpenJobs(filter: JobFilter): Promise<Job[]> {
  * Configurable: SITEMAP_SNAPSHOT_LIMIT env var.
  */
 export const SITEMAP_SNAPSHOT_DEFAULT_LIMIT = 3000
+
+/**
+ * Hard ceiling on the number of raw DB rows the snapshot loop may scan,
+ * regardless of how many genuine jobs have been collected.
+ *
+ * Without this limit a DB whose active set is dominated by renderable-but-
+ * non-indexable rows would allow the loop to page indefinitely (scanning
+ * 1,000 raw rows per page) until it either collects SITEMAP_SNAPSHOT_DEFAULT_LIMIT
+ * genuine jobs or exhausts the entire table — potentially reading tens of
+ * thousands of rows and taking tens of seconds.
+ *
+ * Set to 10× the default genuine-job limit.  Breaching this cap is treated
+ * as a failure: the loop throws SnapshotScanCapError so readOrThrow() preserves
+ * the previously-served sitemap rather than returning a partial/stale one.
+ */
+export const SNAPSHOT_MAX_RAW_ROWS = 30_000
+
+/**
+ * Thrown when the snapshot loop has scanned more than SNAPSHOT_MAX_RAW_ROWS
+ * raw rows without finishing the snapshot (either reaching DB exhaustion or
+ * collecting the full genuine-job target).
+ *
+ * This is a FAIL-CLOSED signal.  The caller (readOrThrow) must NOT return a
+ * partial snapshot as if it were complete — it must re-throw so ISR keeps the
+ * previously-served sitemap.
+ */
+export class SnapshotScanCapError extends Error {
+  constructor(rawScanned: number, cap: number) {
+    super(
+      `[snapshot] raw-scan cap of ${cap} rows reached after scanning ${rawScanned} rows — snapshot incomplete`,
+    )
+    this.name = "SnapshotScanCapError"
+  }
+}
 
 function snapshotLimitFromEnv(): number {
   const n = Number(process.env.SITEMAP_SNAPSHOT_LIMIT)
@@ -81,6 +116,10 @@ export interface GenuineOpenJobsSnapshot {
  *
  * The real implementation is getPrivateJobsForSnapshot from jobService.ts.
  * Tests pass a mock to avoid a live Supabase connection.
+ *
+ * Note: the default fetcher in getGenuineOpenJobsSnapshot wraps
+ * getPrivateJobsForSnapshot with the synthetic-visibility flag resolved once
+ * before the loop, so test mocks do NOT need to accept a third argument.
  */
 export type SnapshotPageFetcher = (offset: number, pageSize: number) => Promise<SnapshotPage>
 
@@ -109,10 +148,24 @@ export type SnapshotPageFetcher = (offset: number, pageSize: number) => Promise<
  *                   Pass a mock in tests to avoid a live database connection.
  */
 export async function getGenuineOpenJobsSnapshot(
-  fetchPage: SnapshotPageFetcher = getPrivateJobsForSnapshot,
+  fetchPage?: SnapshotPageFetcher,
 ): Promise<GenuineOpenJobsSnapshot> {
   const limit = snapshotLimitFromEnv()
   const pageSize = MAX_POOL_ROWS // 1,000 — the hard ceiling per Supabase query
+  const rawScanCap = SNAPSHOT_MAX_RAW_ROWS // 30,000 — absolute raw-row ceiling
+
+  // Resolve synthetic-visibility ONCE before the loop so admin_settings is
+  // read exactly once per snapshot pass, not once per page (1,000 rows each).
+  // The resolved boolean is forwarded to getPrivateJobsForSnapshot via the
+  // default closure below; test mocks receive no third argument.
+  const syntheticVisible = fetchPage === undefined
+    ? await isSyntheticJobsVisible()
+    : false // unused — fetchPage is a test mock that handles visibility itself
+
+  // Build the default page fetcher (real Supabase call) that carries the
+  // pre-resolved synthetic-visibility flag into each page request.
+  const realFetchPage: SnapshotPageFetcher = fetchPage
+    ?? ((offset, ps) => getPrivateJobsForSnapshot(offset, ps, syntheticVisible))
 
   let fetchedRawTotal = 0
   const genuine: Job[] = []
@@ -120,12 +173,20 @@ export async function getGenuineOpenJobsSnapshot(
   let dbExhausted = false
 
   while (genuine.length < limit) {
+    // Workload guard: fail closed before issuing another DB page if we have
+    // already scanned more raw rows than the hard ceiling allows.
+    // A partial snapshot must NEVER be returned as complete — throw so that
+    // readOrThrow() preserves the previously-served sitemap instead.
+    if (fetchedRawTotal >= rawScanCap) {
+      throw new SnapshotScanCapError(fetchedRawTotal, rawScanCap)
+    }
+
     // Fetch one page — throws on timeout, DB error, or misconfiguration.
     // Returns {jobs, rawRowCount}: rawRowCount is data.length BEFORE in-memory
     // filtering so we detect end-of-data correctly even when some rows are
     // filtered out (e.g. 1,000 raw rows → 700 renderable jobs is still a FULL
     // page — do NOT stop here).
-    const { jobs: pageJobs, rawRowCount } = await fetchPage(offset, pageSize)
+    const { jobs: pageJobs, rawRowCount } = await realFetchPage(offset, pageSize)
     fetchedRawTotal += rawRowCount
 
     for (const job of pageJobs) {
