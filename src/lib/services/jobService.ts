@@ -14,8 +14,11 @@ import type { Job, JobFilter, JobSearchResult } from "@/types/job"
  * Upper bound on rows read per list request. The renderable filter runs in memory
  * so that `total`, `totalPages`, `counts` and the page rows all describe the SAME
  * set. Genuine inventory is expected to remain well below this cap.
+ *
+ * Exported so the sitemap snapshot reader can paginate in exactly this page size
+ * and detect end-of-data (page returned < MAX_POOL_ROWS rows).
  */
-const MAX_POOL_ROWS = 1000
+export const MAX_POOL_ROWS = 1000
 
 async function getSupabaseClient() {
   const { createClient } = await import("@/lib/supabase/server")
@@ -149,6 +152,53 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     }
     return isProductionEnvironment() ? { jobs: [], total: 0, page, totalPages: 0, counts: { all: 0, live: 0, verified: 0, archived: 0 } } : localResult()
   }
+}
+
+/**
+ * Fetch one page of active private-board jobs for the sitemap snapshot reader.
+ *
+ * Unlike getJobs(), this function NEVER returns a fallback on failure — it throws
+ * so the snapshot reader can detect a partial/failed read and let readOrThrow()
+ * abort ISR regeneration, preserving the previously-served sitemap.
+ *
+ * @param offset  Zero-based row offset (use 0, MAX_POOL_ROWS, 2×MAX_POOL_ROWS …)
+ * @param pageSize  Rows to request — must be ≤ MAX_POOL_ROWS
+ * @returns  The raw mapped Job rows for this page (may be empty on the last page).
+ * @throws  QueryTimeoutError on timeout; Error on any Supabase/network error.
+ */
+export async function getPrivateJobsForSnapshot(
+  offset: number,
+  pageSize: number,
+): Promise<Job[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("[jobService:snapshot] Supabase is not configured — cannot build sitemap snapshot")
+  }
+  const sb = await getSupabaseClient()
+  if (!sb) {
+    throw new Error("[jobService:snapshot] Supabase client unavailable — cannot build sitemap snapshot")
+  }
+
+  const query = sb
+    .from("jobs")
+    .select("*")
+    .eq("status", "active")
+    .order("posted_at", { ascending: false })
+    .range(offset, offset + pageSize - 1)
+
+  const { data, error } = await withTimeout(query, 8000)
+
+  if (error) {
+    throw new Error(`[jobService:snapshot] DB error on page offset=${offset}: ${error.message}`)
+  }
+
+  const syntheticVisible = await isSyntheticJobsVisible()
+  return applySyntheticVisibility(
+    filterRenderable(
+      (data ?? []).map(row => mapPrivateJobRow(row as Record<string, unknown>)),
+      "private",
+    ),
+    syntheticVisible,
+  )
 }
 
 export async function getJobById(id: string): Promise<Job | null> {

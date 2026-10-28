@@ -8,9 +8,10 @@
  *   4. Snapshot eligibility is fail-closed: synthetic / closed rows never qualify
  *   5. Snapshot cap warning is correctly set when genuine rows >= limit
  *   6. readOrThrow returns null sentinel in build phase (0 extra DB calls)
- *   7. Bounded query count: the snapshot path runs exactly 1 DB call, not ~1,396
+ *   7. Bounded query count: snapshot uses MAX_POOL_ROWS-sized pages, not 1 giant call
+ *   8. getGenuineOpenJobsSnapshot: paginated reader, cap detection, error propagation
  *
- *   npm test -- sitemapSnapshot
+ *   npm run test:sitemap-snapshot
  */
 import assert from "node:assert/strict"
 import {
@@ -19,6 +20,7 @@ import {
   filterSnapshotForCityCategory,
   filterSnapshotForCity,
   SITEMAP_SNAPSHOT_DEFAULT_LIMIT,
+  getGenuineOpenJobsSnapshot,
   type GenuineOpenJobsSnapshot,
 } from "./genuineJobs"
 import { getQualifyingCategorySlugsForCityFromSnapshot } from "./cityCategoryLanding"
@@ -31,16 +33,26 @@ import { isBuildPhase, readOrThrow } from "./sitemapReadGuard"
 import { CITY_CATEGORY_MIN_GENUINE_JOBS } from "./indexThresholds"
 import type { Job } from "@/types/job"
 
+/* ── async-safe test harness ─────────────────────────────────────────────── */
+
 let passed = 0
 let failed = 0
-function test(name: string, fn: () => void) {
-  try {
-    fn()
-    passed++
-    console.log(`  PASS  ${name}`)
-  } catch (err) {
-    failed++
-    console.error(`  FAIL  ${name}\n        ${(err as Error).message.split("\n")[0]}`)
+const tests: Array<{ name: string; fn: () => void | Promise<void> }> = []
+
+function test(name: string, fn: () => void | Promise<void>) {
+  tests.push({ name, fn })
+}
+
+async function runAll() {
+  for (const { name, fn } of tests) {
+    try {
+      await fn()
+      passed++
+      console.log(`  PASS  ${name}`)
+    } catch (err) {
+      failed++
+      console.error(`  FAIL  ${name}\n        ${(err as Error).message.split("\n")[0]}`)
+    }
   }
 }
 
@@ -359,8 +371,143 @@ test("getQualifyingCategorySlugsForTailCityFromSnapshot: delegates to city snaps
   assert.ok(result.includes("it"))
 })
 
+/* ── Section 11: getGenuineOpenJobsSnapshot — paginated reader ─────────── */
+// These tests use the injectable `fetchPage` parameter of getGenuineOpenJobsSnapshot
+// to control what the paginated reader sees, without a live Supabase connection.
+// This avoids ES-module read-only binding problems with module-level mocking.
+
+import { MAX_POOL_ROWS } from "@/lib/services/jobService"
+import type { SnapshotPageFetcher } from "./genuineJobs"
+
+test("getGenuineOpenJobsSnapshot: single page (< MAX_POOL_ROWS rows) — capped=false, dbExhausted", async () => {
+  const jobs = Array.from({ length: 10 }, (_, i) =>
+    base(`j${i}`, { location: "Delhi", cat: "IT" }),
+  )
+  const mockFetch: SnapshotPageFetcher = async (_offset, _pageSize) => jobs
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.ok(!result.capped, "capped should be false — DB had fewer rows than limit")
+  assert.equal(result.jobs.length, 10)
+  assert.equal(result.fetchedTotal, 10)
+})
+
+test("getGenuineOpenJobsSnapshot: paginated — jobs beyond row 1,000 are included", async () => {
+  // Simulate DB with 1,050 total rows: two pages (1,000 + 50).
+  // The second page has a Kolkata job — it would have been missed by the old
+  // single-call approach (≤ MAX_POOL_ROWS = 1,000 rows).
+  const PAGE = MAX_POOL_ROWS
+  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`, { location: "Delhi", cat: "IT" }))
+  const page2 = Array.from({ length: 50 }, (_, i) => base(`p2-${i}`, { location: i === 5 ? "Kolkata" : "Mumbai", cat: "IT" }))
+
+  let callCount = 0
+  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
+    callCount++
+    if (offset === 0) return page1
+    if (offset === PAGE) return page2
+    return []
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.ok(callCount >= 2, `Expected >= 2 DB calls for pagination, got ${callCount}`)
+  assert.equal(result.fetchedTotal, PAGE + 50)
+  const kolkata = result.jobs.find(j => j.location === "Kolkata")
+  assert.ok(kolkata, "Job from page 2 (beyond row 1,000) must appear in snapshot")
+  assert.ok(!result.capped, "capped=false because DB was exhausted before limit")
+})
+
+test("getGenuineOpenJobsSnapshot: capped=true when genuine count hits limit before DB exhausted", async () => {
+  // Every page is full — DB appears infinite. The paginator must stop at the
+  // configured limit and report capped=true.
+  const PAGE = MAX_POOL_ROWS
+  const limit = SITEMAP_SNAPSHOT_DEFAULT_LIMIT // 3000
+
+  let callCount = 0
+  const mockFetch: SnapshotPageFetcher = async (_offset, pageSize) => {
+    callCount++
+    return Array.from({ length: pageSize }, (_, i) => base(`p${callCount}-${i}`))
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.ok(result.capped, "capped should be true — DB had more rows than the limit")
+  assert.equal(result.jobs.length, limit)
+  const expectedMinPages = Math.ceil(limit / PAGE)
+  assert.ok(callCount >= expectedMinPages, `Expected >= ${expectedMinPages} pages, got ${callCount}`)
+})
+
+test("getGenuineOpenJobsSnapshot: capped=false when last page is exactly MAX_POOL_ROWS but no more data follows", async () => {
+  // Edge case: DB has exactly 2×MAX_POOL_ROWS rows, all qualifying.
+  // The last full page is followed by an empty page (end-of-data signal).
+  const PAGE = MAX_POOL_ROWS
+  const totalRows = PAGE * 2 // 2,000 — less than the 3,000 limit
+
+  let callCount = 0
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    callCount++
+    if (offset < totalRows) return Array.from({ length: pageSize }, (_, i) => base(`p${callCount}-${i}`))
+    return []
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.ok(!result.capped, "capped should be false — DB was exhausted, limit not reached")
+  assert.equal(result.jobs.length, totalRows)
+})
+
+test("getGenuineOpenJobsSnapshot: throws when fetcher throws on first page", async () => {
+  const mockFetch: SnapshotPageFetcher = async () => {
+    throw new Error("DB timeout on snapshot page")
+  }
+  await assert.rejects(
+    () => getGenuineOpenJobsSnapshot(mockFetch),
+    /DB timeout on snapshot page/,
+    "Error from DB must propagate — not swallowed",
+  )
+})
+
+test("getGenuineOpenJobsSnapshot: throws when second page fails (partial read rejected)", async () => {
+  const PAGE = MAX_POOL_ROWS
+  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`))
+  let callCount = 0
+
+  const mockFetch: SnapshotPageFetcher = async (offset) => {
+    callCount++
+    if (offset === 0) return page1
+    throw new Error("Network timeout on page 2")
+  }
+
+  await assert.rejects(
+    () => getGenuineOpenJobsSnapshot(mockFetch),
+    /Network timeout on page 2/,
+    "Error on second page must propagate — partial snapshot must not be returned",
+  )
+})
+
+test("getGenuineOpenJobsSnapshot: qualifying jobs beyond first 1,000 rows appear in snapshot", async () => {
+  // Regression: old single-call approach silently capped at MAX_POOL_ROWS rows,
+  // so Chennai jobs that appear only on page 2 would have been missed.
+  const PAGE = MAX_POOL_ROWS
+  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`, { location: "Mumbai" }))
+  const page2 = Array.from({ length: 30 }, (_, i) =>
+    base(`p2-${i}`, { location: i < 10 ? "Chennai" : "Bangalore" }),
+  )
+
+  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
+    if (offset === 0) return page1
+    if (offset === PAGE) return page2
+    return []
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  const chennaiJobs = result.jobs.filter(j => j.location === "Chennai")
+  assert.equal(
+    chennaiJobs.length,
+    10,
+    `Expected 10 Chennai jobs from page 2; got ${chennaiJobs.length} — pagination regression`,
+  )
+})
+
 /* ─────────────────────────────────────────────────────────────────────── */
 
 console.log("\n── sitemap snapshot tests ────────────────────")
-console.log(`  ${passed + failed} tests run, ${passed} passed, ${failed} failed`)
-if (failed > 0) process.exit(1)
+runAll().then(() => {
+  console.log(`  ${passed + failed} tests run, ${passed} passed, ${failed} failed`)
+  if (failed > 0) process.exit(1)
+})
