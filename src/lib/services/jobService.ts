@@ -155,21 +155,44 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
 }
 
 /**
+ * The result of one page fetch for the sitemap snapshot reader. Preserves the
+ * raw Supabase row count so the paginator can detect end-of-data correctly —
+ * `rawRowCount` reflects the number of rows the DB returned BEFORE in-memory
+ * mapping/filtering, which is the only reliable signal that a page boundary has
+ * been reached.
+ */
+export interface SnapshotPage {
+  /** Mapped, filtered, renderable Job rows for this page. */
+  jobs: Job[]
+  /**
+   * The number of raw rows returned by Supabase for this page request, i.e.
+   * `data.length` BEFORE `filterRenderable` / `applySyntheticVisibility`.
+   * Use this (not `jobs.length`) to detect end-of-data: when rawRowCount <
+   * pageSize the DB has no more rows regardless of how many passed the filter.
+   */
+  rawRowCount: number
+}
+
+/**
  * Fetch one page of active private-board jobs for the sitemap snapshot reader.
  *
  * Unlike getJobs(), this function NEVER returns a fallback on failure — it throws
  * so the snapshot reader can detect a partial/failed read and let readOrThrow()
  * abort ISR regeneration, preserving the previously-served sitemap.
  *
+ * Ordering: posted_at DESC, id ASC — the secondary sort on id eliminates
+ * duplicate/skipped rows across page boundaries when multiple jobs share the
+ * same posted_at timestamp.
+ *
  * @param offset  Zero-based row offset (use 0, MAX_POOL_ROWS, 2×MAX_POOL_ROWS …)
  * @param pageSize  Rows to request — must be ≤ MAX_POOL_ROWS
- * @returns  The raw mapped Job rows for this page (may be empty on the last page).
+ * @returns  SnapshotPage with both the filtered jobs and the raw Supabase row count.
  * @throws  QueryTimeoutError on timeout; Error on any Supabase/network error.
  */
 export async function getPrivateJobsForSnapshot(
   offset: number,
   pageSize: number,
-): Promise<Job[]> {
+): Promise<SnapshotPage> {
   if (!isSupabaseConfigured()) {
     throw new Error("[jobService:snapshot] Supabase is not configured — cannot build sitemap snapshot")
   }
@@ -183,6 +206,7 @@ export async function getPrivateJobsForSnapshot(
     .select("*")
     .eq("status", "active")
     .order("posted_at", { ascending: false })
+    .order("id", { ascending: true })
     .range(offset, offset + pageSize - 1)
 
   const { data, error } = await withTimeout(query, 8000)
@@ -191,14 +215,17 @@ export async function getPrivateJobsForSnapshot(
     throw new Error(`[jobService:snapshot] DB error on page offset=${offset}: ${error.message}`)
   }
 
+  const rawRowCount = (data ?? []).length
   const syntheticVisible = await isSyntheticJobsVisible()
-  return applySyntheticVisibility(
+  const jobs = applySyntheticVisibility(
     filterRenderable(
       (data ?? []).map(row => mapPrivateJobRow(row as Record<string, unknown>)),
       "private",
     ),
     syntheticVisible,
   )
+
+  return { jobs, rawRowCount }
 }
 
 export async function getJobById(id: string): Promise<Job | null> {

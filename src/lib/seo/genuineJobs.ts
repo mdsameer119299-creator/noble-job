@@ -22,6 +22,7 @@
  * so eligibility decisions match what the live pages show.
  */
 import { getJobs, getPrivateJobsForSnapshot, MAX_POOL_ROWS } from "@/lib/services/jobService"
+import type { SnapshotPage } from "@/lib/services/jobService"
 import { isIndexable } from "@/lib/jobs/provenance"
 import type { Job, JobFilter } from "@/types/job"
 
@@ -68,13 +69,20 @@ export interface GenuineOpenJobsSnapshot {
 
 /**
  * Type for the per-page fetcher used by getGenuineOpenJobsSnapshot. Accepts an
- * offset and page size and returns that page of active private-board jobs. Must
- * throw on any DB or network failure (no silent fallback).
+ * offset and page size and returns a SnapshotPage containing both the filtered
+ * jobs and the raw Supabase row count (before in-memory filtering).
+ *
+ * IMPORTANT: `rawRowCount` — not `jobs.length` — must be used to detect
+ * end-of-data. A full DB page may yield fewer than `pageSize` jobs after
+ * filtering (e.g. 1,000 raw rows → 700 renderable jobs), so using `jobs.length`
+ * would cause the loop to stop early and silently miss valid rows on later pages.
+ *
+ * Must throw on any DB or network failure (no silent fallback).
  *
  * The real implementation is getPrivateJobsForSnapshot from jobService.ts.
  * Tests pass a mock to avoid a live Supabase connection.
  */
-export type SnapshotPageFetcher = (offset: number, pageSize: number) => Promise<Job[]>
+export type SnapshotPageFetcher = (offset: number, pageSize: number) => Promise<SnapshotPage>
 
 /**
  * Load a bounded snapshot of ALL genuine open private-board jobs, paginating in
@@ -106,39 +114,49 @@ export async function getGenuineOpenJobsSnapshot(
   const limit = snapshotLimitFromEnv()
   const pageSize = MAX_POOL_ROWS // 1,000 — the hard ceiling per Supabase query
 
-  const allRaw: Job[] = []
+  let fetchedRawTotal = 0
   const genuine: Job[] = []
   let offset = 0
   let dbExhausted = false
 
   while (genuine.length < limit) {
-    // Fetch one page — throws on timeout, DB error, or misconfiguration
-    const page = await fetchPage(offset, pageSize)
-    allRaw.push(...page)
+    // Fetch one page — throws on timeout, DB error, or misconfiguration.
+    // Returns {jobs, rawRowCount}: rawRowCount is data.length BEFORE in-memory
+    // filtering so we detect end-of-data correctly even when some rows are
+    // filtered out (e.g. 1,000 raw rows → 700 renderable jobs is still a FULL
+    // page — do NOT stop here).
+    const { jobs: pageJobs, rawRowCount } = await fetchPage(offset, pageSize)
+    fetchedRawTotal += rawRowCount
 
-    for (const job of page) {
+    for (const job of pageJobs) {
       if (isIndexable(job)) {
         genuine.push(job)
         if (genuine.length >= limit) break
       }
     }
 
-    if (page.length < pageSize) {
-      // Last page — DB has no more rows
+    if (rawRowCount < pageSize) {
+      // The DB returned fewer rows than requested — this page is the last one.
+      // Use rawRowCount, NOT jobs.length: a full DB page may produce fewer
+      // filtered jobs than pageSize without being the final page.
       dbExhausted = true
       break
     }
 
-    offset += pageSize
+    // Advance by the number of raw rows read, not by filtered job count,
+    // so the DB offset matches the actual rows consumed.
+    offset += rawRowCount
   }
 
-  // capped = we hit the genuine-job limit while the DB still had more rows
+  // capped = we hit the genuine-job limit while the DB still had more rows.
+  // If we hit the limit exactly on a full raw page (rawRowCount === pageSize),
+  // we conservatively report capped=true unless exhaustion was already established.
   const capped = genuine.length >= limit && !dbExhausted
 
   return {
     jobs: genuine.slice(0, limit),
     capped,
-    fetchedTotal: allRaw.length,
+    fetchedTotal: fetchedRawTotal,
   }
 }
 

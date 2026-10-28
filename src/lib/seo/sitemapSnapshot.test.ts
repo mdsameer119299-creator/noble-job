@@ -379,11 +379,15 @@ test("getQualifyingCategorySlugsForTailCityFromSnapshot: delegates to city snaps
 import { MAX_POOL_ROWS } from "@/lib/services/jobService"
 import type { SnapshotPageFetcher } from "./genuineJobs"
 
+/* helper: build a SnapshotPage mock where all `count` rows are renderable */
+const mkPage = (count: number, idPrefix: string, over: Partial<Job> = {}) => ({
+  jobs: Array.from({ length: count }, (_, i) => base(`${idPrefix}-${i}`, over)),
+  rawRowCount: count,
+})
+
 test("getGenuineOpenJobsSnapshot: single page (< MAX_POOL_ROWS rows) — capped=false, dbExhausted", async () => {
-  const jobs = Array.from({ length: 10 }, (_, i) =>
-    base(`j${i}`, { location: "Delhi", cat: "IT" }),
-  )
-  const mockFetch: SnapshotPageFetcher = async (_offset, _pageSize) => jobs
+  const mockFetch: SnapshotPageFetcher = async (_offset, _pageSize) =>
+    mkPage(10, "j", { location: "Delhi", cat: "IT" })
   const result = await getGenuineOpenJobsSnapshot(mockFetch)
   assert.ok(!result.capped, "capped should be false — DB had fewer rows than limit")
   assert.equal(result.jobs.length, 10)
@@ -395,15 +399,18 @@ test("getGenuineOpenJobsSnapshot: paginated — jobs beyond row 1,000 are includ
   // The second page has a Kolkata job — it would have been missed by the old
   // single-call approach (≤ MAX_POOL_ROWS = 1,000 rows).
   const PAGE = MAX_POOL_ROWS
-  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`, { location: "Delhi", cat: "IT" }))
-  const page2 = Array.from({ length: 50 }, (_, i) => base(`p2-${i}`, { location: i === 5 ? "Kolkata" : "Mumbai", cat: "IT" }))
 
   let callCount = 0
-  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
     callCount++
-    if (offset === 0) return page1
-    if (offset === PAGE) return page2
-    return []
+    if (offset === 0) return mkPage(pageSize, "p1", { location: "Delhi", cat: "IT" })
+    if (offset === PAGE) {
+      const jobs = Array.from({ length: 50 }, (_, i) =>
+        base(`p2-${i}`, { location: i === 5 ? "Kolkata" : "Mumbai", cat: "IT" }),
+      )
+      return { jobs, rawRowCount: 50 }
+    }
+    return { jobs: [], rawRowCount: 0 }
   }
 
   const result = await getGenuineOpenJobsSnapshot(mockFetch)
@@ -423,7 +430,7 @@ test("getGenuineOpenJobsSnapshot: capped=true when genuine count hits limit befo
   let callCount = 0
   const mockFetch: SnapshotPageFetcher = async (_offset, pageSize) => {
     callCount++
-    return Array.from({ length: pageSize }, (_, i) => base(`p${callCount}-${i}`))
+    return mkPage(pageSize, `p${callCount}`)
   }
 
   const result = await getGenuineOpenJobsSnapshot(mockFetch)
@@ -442,8 +449,8 @@ test("getGenuineOpenJobsSnapshot: capped=false when last page is exactly MAX_POO
   let callCount = 0
   const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
     callCount++
-    if (offset < totalRows) return Array.from({ length: pageSize }, (_, i) => base(`p${callCount}-${i}`))
-    return []
+    if (offset < totalRows) return mkPage(pageSize, `p${callCount}`)
+    return { jobs: [], rawRowCount: 0 }
   }
 
   const result = await getGenuineOpenJobsSnapshot(mockFetch)
@@ -464,12 +471,11 @@ test("getGenuineOpenJobsSnapshot: throws when fetcher throws on first page", asy
 
 test("getGenuineOpenJobsSnapshot: throws when second page fails (partial read rejected)", async () => {
   const PAGE = MAX_POOL_ROWS
-  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`))
   let callCount = 0
 
   const mockFetch: SnapshotPageFetcher = async (offset) => {
     callCount++
-    if (offset === 0) return page1
+    if (offset === 0) return mkPage(PAGE, "p1")
     throw new Error("Network timeout on page 2")
   }
 
@@ -484,15 +490,16 @@ test("getGenuineOpenJobsSnapshot: qualifying jobs beyond first 1,000 rows appear
   // Regression: old single-call approach silently capped at MAX_POOL_ROWS rows,
   // so Chennai jobs that appear only on page 2 would have been missed.
   const PAGE = MAX_POOL_ROWS
-  const page1 = Array.from({ length: PAGE }, (_, i) => base(`p1-${i}`, { location: "Mumbai" }))
-  const page2 = Array.from({ length: 30 }, (_, i) =>
-    base(`p2-${i}`, { location: i < 10 ? "Chennai" : "Bangalore" }),
-  )
 
-  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
-    if (offset === 0) return page1
-    if (offset === PAGE) return page2
-    return []
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    if (offset === 0) return mkPage(pageSize, "p1", { location: "Mumbai" })
+    if (offset === PAGE) {
+      const jobs = Array.from({ length: 30 }, (_, i) =>
+        base(`p2-${i}`, { location: i < 10 ? "Chennai" : "Bangalore" }),
+      )
+      return { jobs, rawRowCount: 30 }
+    }
+    return { jobs: [], rawRowCount: 0 }
   }
 
   const result = await getGenuineOpenJobsSnapshot(mockFetch)
@@ -502,6 +509,86 @@ test("getGenuineOpenJobsSnapshot: qualifying jobs beyond first 1,000 rows appear
     10,
     `Expected 10 Chennai jobs from page 2; got ${chennaiJobs.length} — pagination regression`,
   )
+})
+
+/* ── Section 12: rawRowCount-based termination (the filter-gap regression) ─ */
+// The critical correctness fix: page.rawRowCount < pageSize means DB exhausted,
+// not page.jobs.length < pageSize. A full raw page may yield fewer filtered jobs.
+
+test("rawRowCount regression: full raw page with filtered-out rows does NOT stop pagination early", async () => {
+  // Simulate: page 1 has 1,000 raw rows but only 700 pass filterRenderable.
+  // Old code: 700 < 1,000 → stops (bug). New code: rawRowCount=1,000 → continues.
+  // Page 2 has 20 raw rows (end of DB), 15 of which are valid Kolkata jobs.
+  const PAGE = MAX_POOL_ROWS
+
+  let callCount = 0
+  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
+    callCount++
+    if (offset === 0) {
+      // 700 renderable + 300 filtered-out (represented as rawRowCount=1000)
+      return {
+        jobs: Array.from({ length: 700 }, (_, i) => base(`p1-${i}`, { location: "Delhi" })),
+        rawRowCount: PAGE, // full raw page — must NOT trigger early stop
+      }
+    }
+    if (offset === PAGE) {
+      // End of DB — 20 raw rows, 15 are Kolkata jobs
+      return {
+        jobs: Array.from({ length: 15 }, (_, i) => base(`p2-${i}`, { location: "Kolkata" })),
+        rawRowCount: 20, // partial raw page → DB exhausted
+      }
+    }
+    return { jobs: [], rawRowCount: 0 }
+  }
+
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.ok(callCount >= 2, `Expected >= 2 fetches (got ${callCount}) — first page is a full raw page`)
+  const kolkata = result.jobs.filter(j => j.location === "Kolkata")
+  assert.equal(kolkata.length, 15, "Kolkata jobs from page 2 must appear despite page 1 having fewer filtered jobs than rawRowCount")
+  assert.ok(!result.capped, "capped=false — DB was exhausted before limit")
+  assert.equal(result.fetchedTotal, PAGE + 20, "fetchedTotal must count raw rows, not filtered jobs")
+})
+
+test("rawRowCount regression: fetchedTotal counts raw rows, not filtered jobs", async () => {
+  // 2 pages: page1 has 1,000 raw / 500 filtered, page2 has 50 raw / 40 filtered
+  const PAGE = MAX_POOL_ROWS
+  const mockFetch: SnapshotPageFetcher = async (offset, _pageSize) => {
+    if (offset === 0) return { jobs: Array.from({ length: 500 }, (_, i) => base(`p1-${i}`)), rawRowCount: PAGE }
+    if (offset === PAGE) return { jobs: Array.from({ length: 40 }, (_, i) => base(`p2-${i}`)), rawRowCount: 50 }
+    return { jobs: [], rawRowCount: 0 }
+  }
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.equal(result.fetchedTotal, PAGE + 50, "fetchedTotal should be 1050 raw rows, not 540 filtered jobs")
+})
+
+test("duplicate posted_at values: offset advances by rawRowCount to avoid gaps", async () => {
+  // When many jobs share the same posted_at, the DB must use a tie-breaker (id ASC).
+  // The paginator must advance offset by rawRowCount (not jobs.length) so no rows
+  // are re-read or skipped at page boundaries.
+  const PAGE = MAX_POOL_ROWS
+  const seenOffsets: number[] = []
+
+  const mockFetch: SnapshotPageFetcher = async (offset, pageSize) => {
+    seenOffsets.push(offset)
+    if (offset === 0) return mkPage(pageSize, "p1") // full page
+    return { jobs: [], rawRowCount: 0 }               // no more data
+  }
+
+  await getGenuineOpenJobsSnapshot(mockFetch)
+  // After one full page (offset=0, rawRowCount=PAGE), next call must be at PAGE
+  assert.equal(seenOffsets[0], 0, "First fetch must start at offset 0")
+  if (seenOffsets.length > 1) {
+    assert.equal(seenOffsets[1], PAGE, `Second fetch offset must be ${PAGE} (rawRowCount-based), got ${seenOffsets[1]}`)
+  }
+})
+
+test("partial raw page detection: rawRowCount=0 correctly identifies empty DB", async () => {
+  // Empty DB: first page returns no rows at all.
+  const mockFetch: SnapshotPageFetcher = async () => ({ jobs: [], rawRowCount: 0 })
+  const result = await getGenuineOpenJobsSnapshot(mockFetch)
+  assert.equal(result.jobs.length, 0)
+  assert.ok(!result.capped, "Empty DB should not be capped")
+  assert.equal(result.fetchedTotal, 0)
 })
 
 /* ─────────────────────────────────────────────────────────────────────── */
