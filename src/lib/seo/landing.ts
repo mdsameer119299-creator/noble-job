@@ -12,6 +12,7 @@ import { joinReal, isRealDisplayValue, displayValue } from "@/lib/jobs/renderabl
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 const CATEGORY_BY_SLUG = new Map(CATEGORY_LANDINGS.map(c => [c.slug, c]))
 const CITY_BY_SLUG = new Map(CITY_LANDINGS.map(c => [c.slug, c]))
@@ -76,7 +77,7 @@ const govtCard = (j: { slug?: string; id: string; title: string; org: string; va
   href: `/jobs/govt/${j.slug || j.id}`,
   title: j.title,
   company: j.org,
-  meta: joinReal(isRealDisplayValue(j.vacancies) ? `${j.vacancies} posts` : undefined, j.qualification),
+  meta: joinReal(displayVacancies(j) ? `${displayVacancies(j)} posts` : undefined, j.qualification),
   badge: displayValue(j.badge),
 })
 const privateCard = (j: Job): LandingJobCard => ({

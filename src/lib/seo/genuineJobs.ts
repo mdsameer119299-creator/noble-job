@@ -3,8 +3,27 @@
  * currently-open rows (provenance gate). Location gates, the counts printed on
  * those pages and their job lists all come from this one function, so a page
  * never advertises N openings while listing demo rows.
+ *
+ * SITEMAP SNAPSHOT
+ * ────────────────
+ * The sitemap used to call getGenuineOpenJobs() once per city×category and once
+ * per tail-city combination — up to 1,396 Supabase queries in a single ISR
+ * regeneration pass. That would recreate the same 60 s timeout that caused
+ * BUILD_UTILS_SPAWN_1 in the build phase.
+ *
+ * getGenuineOpenJobsSnapshot() loads all genuine open private-board jobs in one
+ * bounded query. The sitemap then derives city/category eligibility in memory
+ * from that shared pool, dropping the query count from ~1,396 to 1.
+ *
+ * The snapshot approach must replicate the SAME provenance gate that
+ * getGenuineOpenJobs() applies — isIndexable() — so the sitemap cannot list a
+ * URL whose page would 404. It also replicates the DB's location and category
+ * filters (case-insensitive substring for location, exact string for category)
+ * so eligibility decisions match what the live pages show.
  */
-import { getJobs } from "@/lib/services/jobService"
+import { getJobs, getPrivateJobsForSnapshot, MAX_POOL_ROWS } from "@/lib/services/jobService"
+import type { SnapshotPage } from "@/lib/services/jobService"
+import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
 import { isIndexable } from "@/lib/jobs/provenance"
 import type { Job, JobFilter } from "@/types/job"
 
@@ -16,4 +35,243 @@ export async function getGenuineOpenJobs(filter: JobFilter): Promise<Job[]> {
   const want = filter.limit ?? 20
   const r = await getJobs({ ...filter, limit: Math.max(want * 4, 60) })
   return r.jobs.filter(isIndexable).slice(0, want)
+}
+
+/**
+ * The maximum number of genuine open private-board jobs the sitemap snapshot
+ * fetches in one call. The sitemap only needs to know whether each city/category
+ * combination clears a small threshold (CITY_CATEGORY_MIN_GENUINE_JOBS = 3 by
+ * default) — it does NOT need every job in the country. Cap at 3,000 rows:
+ *   • big enough to cover all real combinations that should qualify
+ *   • small enough that one Supabase call stays well under 60 s
+ *   • explicit so over-fetching is easy to spot and retune via env var
+ *
+ * Configurable: SITEMAP_SNAPSHOT_LIMIT env var.
+ */
+export const SITEMAP_SNAPSHOT_DEFAULT_LIMIT = 3000
+
+/**
+ * Hard ceiling on the number of raw DB rows the snapshot loop may scan,
+ * regardless of how many genuine jobs have been collected.
+ *
+ * Without this limit a DB whose active set is dominated by renderable-but-
+ * non-indexable rows would allow the loop to page indefinitely (scanning
+ * 1,000 raw rows per page) until it either collects SITEMAP_SNAPSHOT_DEFAULT_LIMIT
+ * genuine jobs or exhausts the entire table — potentially reading tens of
+ * thousands of rows and taking tens of seconds.
+ *
+ * Set to 10× the default genuine-job limit.  Breaching this cap is treated
+ * as a failure: the loop throws SnapshotScanCapError so readOrThrow() preserves
+ * the previously-served sitemap rather than returning a partial/stale one.
+ */
+export const SNAPSHOT_MAX_RAW_ROWS = 30_000
+
+/**
+ * Thrown when the snapshot loop has scanned more than SNAPSHOT_MAX_RAW_ROWS
+ * raw rows without finishing the snapshot (either reaching DB exhaustion or
+ * collecting the full genuine-job target).
+ *
+ * This is a FAIL-CLOSED signal.  The caller (readOrThrow) must NOT return a
+ * partial snapshot as if it were complete — it must re-throw so ISR keeps the
+ * previously-served sitemap.
+ */
+export class SnapshotScanCapError extends Error {
+  constructor(rawScanned: number, cap: number) {
+    super(
+      `[snapshot] raw-scan cap of ${cap} rows reached after scanning ${rawScanned} rows — snapshot incomplete`,
+    )
+    this.name = "SnapshotScanCapError"
+  }
+}
+
+function snapshotLimitFromEnv(): number {
+  const n = Number(process.env.SITEMAP_SNAPSHOT_LIMIT)
+  return Number.isInteger(n) && n > 0 ? n : SITEMAP_SNAPSHOT_DEFAULT_LIMIT
+}
+
+export interface GenuineOpenJobsSnapshot {
+  /** All genuine open private-board jobs in the snapshot (up to the limit). */
+  jobs: Job[]
+  /**
+   * True when the snapshot hit the cap — some tail combinations may have been
+   * missed. The sitemap logs a warning but continues; the previously-served
+   * sitemap is preferred over failing ISR entirely.
+   */
+  capped: boolean
+  /** How many rows were fetched from the database before isIndexable filtering. */
+  fetchedTotal: number
+}
+
+/**
+ * Type for the per-page fetcher used by getGenuineOpenJobsSnapshot. Accepts an
+ * offset and page size and returns a SnapshotPage containing both the filtered
+ * jobs and the raw Supabase row count (before in-memory filtering).
+ *
+ * IMPORTANT: `rawRowCount` — not `jobs.length` — must be used to detect
+ * end-of-data. A full DB page may yield fewer than `pageSize` jobs after
+ * filtering (e.g. 1,000 raw rows → 700 renderable jobs), so using `jobs.length`
+ * would cause the loop to stop early and silently miss valid rows on later pages.
+ *
+ * Must throw on any DB or network failure (no silent fallback).
+ *
+ * The real implementation is getPrivateJobsForSnapshot from jobService.ts.
+ * Tests pass a mock to avoid a live Supabase connection.
+ *
+ * Note: the default fetcher in getGenuineOpenJobsSnapshot wraps
+ * getPrivateJobsForSnapshot with the synthetic-visibility flag resolved once
+ * before the loop, so test mocks do NOT need to accept a third argument.
+ */
+export type SnapshotPageFetcher = (offset: number, pageSize: number) => Promise<SnapshotPage>
+
+/**
+ * Load a bounded snapshot of ALL genuine open private-board jobs, paginating in
+ * batches of MAX_POOL_ROWS (1,000) until either the cap is reached or the DB
+ * returns a partial page (end of data). Used by the sitemap to avoid ~1,396
+ * per-combination queries.
+ *
+ * IMPORTANT: this fetches private-board jobs only (board = "private"). WFH /
+ * abroad board job detail URLs are independently guarded by readSitemapJobRows()
+ * inside readOrThrow(), which returns empty [] during build phase. The city ×
+ * category and tail-city hubs only surface private-board jobs on their pages, so
+ * they only need the private snapshot.
+ *
+ * Error behaviour: `fetchPage` (defaulting to getPrivateJobsForSnapshot) THROWS
+ * on any DB / timeout failure rather than returning a fallback. This lets
+ * readOrThrow() detect the failure and abort ISR regeneration so the
+ * previously-served sitemap is kept instead of one that is falsely complete.
+ *
+ * Cap detection: a page that is shorter than MAX_POOL_ROWS means the DB has no
+ * more rows — `capped` is set only when we stopped because the genuine-job count
+ * reached the configured limit BEFORE the DB was exhausted.
+ *
+ * @param fetchPage  Injectable page fetcher — defaults to the real Supabase call.
+ *                   Pass a mock in tests to avoid a live database connection.
+ */
+export async function getGenuineOpenJobsSnapshot(
+  fetchPage?: SnapshotPageFetcher,
+): Promise<GenuineOpenJobsSnapshot> {
+  const limit = snapshotLimitFromEnv()
+  const pageSize = MAX_POOL_ROWS // 1,000 — the hard ceiling per Supabase query
+  const rawScanCap = SNAPSHOT_MAX_RAW_ROWS // 30,000 — absolute raw-row ceiling
+
+  // Resolve synthetic-visibility ONCE before the loop so admin_settings is
+  // read exactly once per snapshot pass, not once per page (1,000 rows each).
+  // The resolved boolean is forwarded to getPrivateJobsForSnapshot via the
+  // default closure below; test mocks receive no third argument.
+  const syntheticVisible = fetchPage === undefined
+    ? await isSyntheticJobsVisible()
+    : false // unused — fetchPage is a test mock that handles visibility itself
+
+  // Build the default page fetcher (real Supabase call) that carries the
+  // pre-resolved synthetic-visibility flag into each page request.
+  const realFetchPage: SnapshotPageFetcher = fetchPage
+    ?? ((offset, ps) => getPrivateJobsForSnapshot(offset, ps, syntheticVisible))
+
+  let fetchedRawTotal = 0
+  const genuine: Job[] = []
+  let offset = 0
+  let dbExhausted = false
+
+  while (genuine.length < limit) {
+    // Workload guard: fail closed before issuing another DB page if we have
+    // already scanned more raw rows than the hard ceiling allows.
+    // A partial snapshot must NEVER be returned as complete — throw so that
+    // readOrThrow() preserves the previously-served sitemap instead.
+    if (fetchedRawTotal >= rawScanCap) {
+      throw new SnapshotScanCapError(fetchedRawTotal, rawScanCap)
+    }
+
+    // Fetch one page — throws on timeout, DB error, or misconfiguration.
+    // Returns {jobs, rawRowCount}: rawRowCount is data.length BEFORE in-memory
+    // filtering so we detect end-of-data correctly even when some rows are
+    // filtered out (e.g. 1,000 raw rows → 700 renderable jobs is still a FULL
+    // page — do NOT stop here).
+    const { jobs: pageJobs, rawRowCount } = await realFetchPage(offset, pageSize)
+    fetchedRawTotal += rawRowCount
+
+    for (const job of pageJobs) {
+      if (isIndexable(job)) {
+        genuine.push(job)
+        if (genuine.length >= limit) break
+      }
+    }
+
+    if (rawRowCount < pageSize) {
+      // The DB returned fewer rows than requested — this page is the last one.
+      // Use rawRowCount, NOT jobs.length: a full DB page may produce fewer
+      // filtered jobs than pageSize without being the final page.
+      dbExhausted = true
+      break
+    }
+
+    // Advance by the number of raw rows read, not by filtered job count,
+    // so the DB offset matches the actual rows consumed.
+    offset += rawRowCount
+  }
+
+  // capped = we hit the genuine-job limit while the DB still had more rows.
+  // If we hit the limit exactly on a full raw page (rawRowCount === pageSize),
+  // we conservatively report capped=true unless exhaustion was already established.
+  const capped = genuine.length >= limit && !dbExhausted
+
+  return {
+    jobs: genuine.slice(0, limit),
+    capped,
+    fetchedTotal: fetchedRawTotal,
+  }
+}
+
+/**
+ * In-memory location filter — replicates the DB's `ilike("location", "%query%")`.
+ * Case-insensitive substring match, same as Supabase's ilike with % wildcards.
+ */
+export function matchesLocation(job: Job, locationQuery: string): boolean {
+  return job.location.toLowerCase().includes(locationQuery.toLowerCase())
+}
+
+/**
+ * In-memory category filter — replicates the DB's `eq("category", label)`.
+ * Exact match on the job's `cat` field (which stores the category label string).
+ */
+export function matchesCategory(job: Job, categoryLabel: string): boolean {
+  return job.cat === categoryLabel
+}
+
+/**
+ * Filter the snapshot to jobs matching both a city location query and a category
+ * label. Returns at most `limit` results (slice for the min-count gate).
+ */
+export function filterSnapshotForCityCategory(
+  snapshot: GenuineOpenJobsSnapshot,
+  locationQuery: string,
+  categoryLabel: string,
+  limit: number,
+): Job[] {
+  const out: Job[] = []
+  for (const j of snapshot.jobs) {
+    if (matchesLocation(j, locationQuery) && matchesCategory(j, categoryLabel)) {
+      out.push(j)
+      if (out.length >= limit) break
+    }
+  }
+  return out
+}
+
+/**
+ * Filter the snapshot to jobs matching a city location query (any category).
+ * Returns at most `limit` results.
+ */
+export function filterSnapshotForCity(
+  snapshot: GenuineOpenJobsSnapshot,
+  locationQuery: string,
+  limit: number,
+): Job[] {
+  const out: Job[] = []
+  for (const j of snapshot.jobs) {
+    if (matchesLocation(j, locationQuery)) {
+      out.push(j)
+      if (out.length >= limit) break
+    }
+  }
+  return out
 }

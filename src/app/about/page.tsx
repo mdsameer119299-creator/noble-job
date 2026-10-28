@@ -25,7 +25,7 @@ export default function AboutPage() {
             About Noble Job
           </h1>
           <p style={{ color: '#94a3b8', fontSize: 17, lineHeight: 1.75, maxWidth: 620, margin: '0 auto 28px' }}>
-            Noble Job is India&apos;s premier job portal, built by NCC Foundation to connect talented professionals with their dream careers — for free, forever.
+            Noble Job is a job portal built by NCC Foundation to connect job seekers with government, private, work-from-home and international listings — free for job seekers.
           </p>
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/jobs/private" style={{ background: '#f07020', color: '#fff', padding: '12px 28px', borderRadius: 10, fontWeight: 800, fontSize: 15, textDecoration: 'none' }}>Browse Jobs</Link>
@@ -45,7 +45,7 @@ export default function AboutPage() {
               Noble Job was founded with a singular purpose: to make quality employment accessible to every Indian — regardless of background, location or economic status. We believe every talented individual deserves a fair shot at a great career.
             </p>
             <p style={{ color: '#374151', fontSize: 15, lineHeight: 1.8 }}>
-              As an initiative of <strong>NCC Foundation</strong>, we operate on a strict no-fee-from-candidates policy. We earn from verified employers only, ensuring our interests always align with the job seeker.
+              As an initiative of <strong>NCC Foundation</strong>, we operate on a strict no-fee-from-candidates policy.
             </p>
           </div>
           <div style={{ background: 'linear-gradient(135deg,#1847d4,#0d1f4e)', borderRadius: 20, padding: '36px', textAlign: 'center', color: '#fff' }}>
@@ -62,10 +62,10 @@ export default function AboutPage() {
           </div>
           <div className="grid-resp-3" style={{ display: 'grid', gap: 20 }}>
             {[
-              { icon: '🛡️', title: 'Zero Fake Jobs', desc: 'Every listing passes our 40-point anti-scam filter. We partner only with verified employers and official company career pages.' },
-              { icon: '💰', title: 'Always Free for Candidates', desc: 'Noble Job has never charged a job seeker and never will. This is written into our founding charter.' },
-              { icon: '🤝', title: 'Trusted by 2,500+ Employers', desc: 'From TCS and Infosys to local SMEs, our employer network spans every major industry in India.' },
-              { icon: '🌍', title: 'Pan-India Reach', desc: 'Jobs across 800+ cities — from metro hubs like Delhi and Bangalore to Tier 2/3 cities and rural India.' },
+              { icon: '🛡️', title: 'Honest Trust Labels', desc: 'A Verified label appears only on jobs posted by employers we have verified. Jobs from external sources link to the original application page, so you can confirm the details first-hand.' },
+              { icon: '💰', title: 'Always Free for Candidates', desc: 'Noble Job is free for job seekers. We never ask candidates to pay to view or apply for jobs.' },
+              { icon: '🤝', title: 'Employers & Official Sources', desc: 'Listings come from employers who post on Noble Job, official government notifications and external job feeds.' },
+              { icon: '🌍', title: 'Four Job Boards', desc: 'Government, private, work-from-home and abroad listings, each with its own board and filters.' },
               { icon: '🤖', title: 'AI-Powered Matching', desc: 'Our AI engine matches candidates to the right jobs based on skills, experience and location preferences.' },
               { icon: '📊', title: 'Transparency First', desc: 'We publish our anti-scam policy, fee structure and contact details openly. No hidden charges, ever.' },
             ].map((v, i) => (
@@ -82,7 +82,7 @@ export default function AboutPage() {
         <div style={{ background: 'linear-gradient(135deg,#0d1f4e,#1847d4)', borderRadius: 20, padding: '40px', marginBottom: 48 }}>
           <h2 style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, color: '#fff', fontSize: 28, textAlign: 'center', marginBottom: 32 }}>Noble Job by Numbers</h2>
           <div className="grid-resp-4" style={{ display: 'grid', gap: 20 }}>
-            {[{n:'80,000+',l:'Jobs Posted',i:'💼'},{n:'2,500+',l:'Verified Employers',i:'🏢'},{n:'50,000+',l:'Candidates Placed',i:'✅'},{n:'800+',l:'Cities Covered',i:'🗺️'}].map((s,i)=>(
+            {[{n:'4',l:'Job Boards',i:'💼'},{n:'Free',l:'For All Candidates',i:'🆓'},{n:'Daily',l:'Govt Source Checks',i:'🔄'},{n:'Original',l:'Source Links',i:'🔗'}].map((s,i)=>(
               <div key={i} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>{s.i}</div>
                 <div style={{ fontFamily: 'Playfair Display,serif', fontSize: 32, fontWeight: 900, color: '#fbbf24' }}>{s.n}</div>

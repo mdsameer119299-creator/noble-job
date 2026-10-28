@@ -6,6 +6,8 @@ import { getPrivateJobsFeaturedLocal } from "@/lib/services/jobLocal"
 import { getLivePrivateJobs, getLiveWfhJobs, getLiveAbroadJobs } from "@/lib/services/liveJobOpportunities"
 import { getHimalayasJobsForDisplay } from "@/lib/services/himalayasCache"
 import { toLiveExternalJobs } from "@/lib/jobs/clientRecords"
+import { onlyLinkableCards } from "@/lib/jobs/featuredCardLink"
+import { featuredCardTrust } from "@/lib/jobs/featuredCardBadge"
 import { mapPrivateJobRow } from "@/lib/services/jobMapper"
 import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
@@ -58,6 +60,18 @@ export interface FeaturedJobCard {
   location: string
   salary?: string
   color?: string
+  /**
+   * The job's own application URL. For an aggregator card (Himalayas id / AGGREGATED provenance) this is
+   * the ONLY place the card may link to — see `featuredCardLink()`; a card without a valid one is dropped.
+   */
+  apply_url?: string
+  /** Resolved provenance (EMPLOYER / AGGREGATED / CURATED / OFFICIAL …). AGGREGATED cards link out, never to an internal page. */
+  provenance?: string
+  /**
+   * Evidence-based: `isEmployerVerified(job)` on the source row. The only thing that may earn the "Verified"
+   * badge — never derived from the link, the id shape, or a bare provenance label. See featuredCardBadge.ts.
+   */
+  employerVerified?: boolean
 }
 
 const privateActionable = (rows: unknown[]): Job[] =>
@@ -165,15 +179,21 @@ export async function getFeaturedJobsMix(total = 6): Promise<FeaturedJobCard[]> 
 
   const privateCards: FeaturedJobCard[] = privateJobs.map(j => ({
     board: "private", id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
+    apply_url: j.applyUrl || j.apply_url, ...featuredCardTrust(j),
   }))
   const wfhCards: FeaturedJobCard[] = wfhJobs.map(j => ({
     board: "wfh", id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
+    apply_url: j.apply_url, ...featuredCardTrust(j),
   }))
   const abroadCards: FeaturedJobCard[] = abroadJobs.map(j => ({
     board: "abroad", id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary), color: "#7c3aed",
+    apply_url: j.apply_url, ...featuredCardTrust(j),
   }))
 
-  const lists = [privateCards, wfhCards, abroadCards]
+  // A card that cannot be linked safely (an aggregator job without a valid external URL, an invalid id)
+  // is dropped HERE, before mixing, so the other boards can still fill the section — never an internal
+  // fallback link and never an invented destination. See featuredCardLink.ts.
+  const lists = [privateCards, wfhCards, abroadCards].map(onlyLinkableCards)
   const mixed: FeaturedJobCard[] = []
   for (let i = 0; mixed.length < total && lists.some(l => l.length > i); i++) {
     for (const l of lists) {
@@ -200,6 +220,7 @@ export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promis
     const live = await getPrivateLivePool(limit)
     const liveCards = live.map(j => ({
       board, id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
+      apply_url: j.applyUrl || j.apply_url, ...featuredCardTrust(j),
     }))
     if (useLocalInventoryOnly()) return liveCards.slice(0, limit)
     const dbCards = await getLatestPrivateDbCards(limit + live.length)
@@ -210,6 +231,7 @@ export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promis
     const live = await getLiveWfhJobs()
     const liveCards = live.map(j => ({
       board, id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
+      apply_url: j.apply_url, ...featuredCardTrust(j),
     }))
     if (useLocalInventoryOnly()) return liveCards.slice(0, limit)
     const dbCards = await getLatestBoardDbCards("wfh", limit + live.length)
@@ -220,6 +242,7 @@ export async function getLatestJobCards(board: FeaturedBoard, limit = 4): Promis
   const live = await getLiveAbroadJobs()
   const liveCards = live.map(j => ({
     board, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, salary: displayValue(j.salary), color: "#7c3aed",
+    apply_url: j.apply_url, ...featuredCardTrust(j),
   }))
   if (useLocalInventoryOnly()) return liveCards.slice(0, limit)
   const dbCards = await getLatestBoardDbCards("abroad", limit + live.length)
@@ -240,6 +263,7 @@ async function getLatestPrivateDbCards(limit: number): Promise<FeaturedJobCard[]
     const rows = (data || []) as unknown[]
     return privateListable(rows).slice(0, limit).map(j => ({
       board: "private" as const, id: j.id, title: j.title, company: j.company, location: j.location, salary: displayValue(j.salary), color: j.color,
+      apply_url: j.applyUrl || j.apply_url, ...featuredCardTrust(j),
     }))
   } catch {
     return []
@@ -262,10 +286,12 @@ async function getLatestBoardDbCards(board: "wfh" | "abroad", limit: number): Pr
     if (board === "wfh") {
       return filterListable(rows as unknown as WfhJob[], "wfh").slice(0, limit).map(j => ({
         board: "wfh" as const, id: j.id, title: j.title, company: j.company, location: "Remote", salary: displayValue(j.salary), color: j.color,
+        apply_url: j.apply_url, ...featuredCardTrust(j),
       }))
     }
     return filterListable(rows as unknown as AbroadJob[], "abroad").slice(0, limit).map(j => ({
       board: "abroad" as const, id: j.id, title: j.title, company: j.company, location: displayValue(j.location) || j.country, color: "#7c3aed",
+      apply_url: j.apply_url, ...featuredCardTrust(j),
     }))
   } catch {
     return []

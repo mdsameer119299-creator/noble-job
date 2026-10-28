@@ -14,8 +14,11 @@ import type { Job, JobFilter, JobSearchResult } from "@/types/job"
  * Upper bound on rows read per list request. The renderable filter runs in memory
  * so that `total`, `totalPages`, `counts` and the page rows all describe the SAME
  * set. Genuine inventory is expected to remain well below this cap.
+ *
+ * Exported so the sitemap snapshot reader can paginate in exactly this page size
+ * and detect end-of-data (page returned < MAX_POOL_ROWS rows).
  */
-const MAX_POOL_ROWS = 1000
+export const MAX_POOL_ROWS = 1000
 
 async function getSupabaseClient() {
   const { createClient } = await import("@/lib/supabase/server")
@@ -149,6 +152,97 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
     }
     return isProductionEnvironment() ? { jobs: [], total: 0, page, totalPages: 0, counts: { all: 0, live: 0, verified: 0, archived: 0 } } : localResult()
   }
+}
+
+/**
+ * The result of one page fetch for the sitemap snapshot reader. Preserves the
+ * raw Supabase row count so the paginator can detect end-of-data correctly —
+ * `rawRowCount` reflects the number of rows the DB returned BEFORE in-memory
+ * mapping/filtering, which is the only reliable signal that a page boundary has
+ * been reached.
+ */
+export interface SnapshotPage {
+  /** Mapped, filtered, renderable Job rows for this page. */
+  jobs: Job[]
+  /**
+   * The number of raw rows returned by Supabase for this page request, i.e.
+   * `data.length` BEFORE `filterRenderable` / `applySyntheticVisibility`.
+   * Use this (not `jobs.length`) to detect end-of-data: when rawRowCount <
+   * pageSize the DB has no more rows regardless of how many passed the filter.
+   */
+  rawRowCount: number
+}
+
+/**
+ * Fetch one page of active private-board jobs for the sitemap snapshot reader.
+ *
+ * Unlike getJobs(), this function NEVER returns a fallback on failure — it throws
+ * so the snapshot reader can detect a partial/failed read and let readOrThrow()
+ * abort ISR regeneration, preserving the previously-served sitemap.
+ *
+ * Uses supabaseAdmin (service-role, cookie-less) instead of the cookie-based
+ * server client so this function works during ISR background regeneration, where
+ * cookies() is unavailable.  The snapshot is a server-side background operation
+ * that never acts on behalf of a user session — it has no need for a cookie jar.
+ * This follows the established pattern in readSitemapJobRows() (sitemapJobs.ts)
+ * and loadActiveGovtRows() (govtStatsSource.ts).
+ *
+ * RLS note: supabaseAdmin bypasses Row Level Security.  The query selects only
+ * status='active' rows and the result is run through filterRenderable(),
+ * applySyntheticVisibility(), and — in the caller — isIndexable(), which together
+ * ensure only eligible public job records reach the sitemap.
+ *
+ * Ordering: posted_at DESC, id ASC — the secondary sort on id eliminates
+ * duplicate/skipped rows across page boundaries when multiple jobs share the
+ * same posted_at timestamp.
+ *
+ * `syntheticVisible` is passed in from the caller rather than fetched here so
+ * the admin_settings query runs exactly once per snapshot pass, not once per
+ * page.  The caller (getGenuineOpenJobsSnapshot) resolves it before the loop.
+ *
+ * @param offset           Zero-based row offset (0, MAX_POOL_ROWS, 2×MAX_POOL_ROWS …)
+ * @param pageSize         Rows to request — must be ≤ MAX_POOL_ROWS
+ * @param syntheticVisible Whether synthetic jobs are currently visible (resolved once by caller)
+ * @returns  SnapshotPage with both the filtered jobs and the raw Supabase row count.
+ * @throws  QueryTimeoutError on timeout; Error on any Supabase/network error.
+ */
+export async function getPrivateJobsForSnapshot(
+  offset: number,
+  pageSize: number,
+  syntheticVisible: boolean,
+): Promise<SnapshotPage> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("[jobService:snapshot] Supabase is not configured — cannot build sitemap snapshot")
+  }
+  // Use the service-role admin client — it does not require a cookie/request
+  // context and therefore works during ISR background regeneration.
+  const { supabaseAdmin } = await import("@/lib/supabase/admin")
+  const sb = supabaseAdmin
+
+  const query = sb
+    .from("jobs")
+    .select("*")
+    .eq("status", "active")
+    .order("posted_at", { ascending: false })
+    .order("id", { ascending: true })
+    .range(offset, offset + pageSize - 1)
+
+  const { data, error } = await withTimeout(query, 8000)
+
+  if (error) {
+    throw new Error(`[jobService:snapshot] DB error on page offset=${offset}: ${error.message}`)
+  }
+
+  const rawRowCount = (data ?? []).length
+  const jobs = applySyntheticVisibility(
+    filterRenderable(
+      (data ?? []).map(row => mapPrivateJobRow(row as Record<string, unknown>)),
+      "private",
+    ),
+    syntheticVisible,
+  )
+
+  return { jobs, rawRowCount }
 }
 
 export async function getJobById(id: string): Promise<Job | null> {

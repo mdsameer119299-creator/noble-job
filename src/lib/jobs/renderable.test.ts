@@ -430,7 +430,12 @@ test("the DB list path filters BEFORE counting (in-memory pool) — no raw SQL c
   assert.match(svc, /counts:\s*countByStatus\(combined\)/)
   // WFH / abroad DB paths filter too.
   assert.match(read("src/lib/services/wfhJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as WfhJob\[\], "wfh"\)/)
-  assert.match(read("src/lib/services/abroadJobService.ts"), /filterRenderable\(\(data \|\| \[\]\) as unknown as AbroadJob\[\], "abroad"\)/)
+  // Abroad: the rows read in range() batches are gated as one complete set; the SQL `count` is used only to know
+  // when the batches are exhausted and is never what a card or list total displays (those derive from the gated rows).
+  const abroad = read("src/lib/services/abroadJobService.ts")
+  assert.match(abroad, /filterRenderable\(rows, "abroad"\)/)
+  assert.match(abroad, /total:\s*all\.length/)
+  assert.doesNotMatch(abroad.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1"), /total\s*[:=]\s*count\b|jobs:\s*count\b/, "the SQL count is never surfaced as a total")
 })
 
 test("API count / stats never use a raw `status = active` row count", () => {
@@ -540,8 +545,12 @@ test("client WFH / abroad / govt list filters drop incomplete rows", () => {
 
 test("client components: every list is re-checked, errors are an ERROR state (never an empty 'no jobs' or a fake job)", () => {
   const live = read("src/components/jobs/LiveJobsList.tsx")
-  assert.match(live, /toListingJobs\(/)
-  assert.match(live, /toLiveExternalJobs\(/)
+  // The re-check lives in the shared merge (the SAME code the server page uses to render the
+  // first page): the component must go through it, and it must still validate BOTH sources.
+  assert.match(live, /mergePrivateListing\(/)
+  const merge = read("src/lib/jobs/mergePrivateListing.ts")
+  assert.match(merge, /toListingJobs\(/)
+  assert.match(merge, /toLiveExternalJobs\(/)
   assert.doesNotMatch(live, /String\(raw\./, "no String(undefined) mapping")
   assert.doesNotMatch(live, /'#'|'Competitive'|'Recent'|\?\? true/, "no placeholder defaults")
   assert.match(live, /role="alert"/, "a failed load has its own intentional error state")
@@ -560,7 +569,9 @@ test("cards never print 'undefined' / 'null' / filler chips and never claim an u
   assert.match(card, /isActionableJob\(job, 'private'\)/, "Apply Now only for an actionable job")
   const wfh = read("src/components/wfh/WfhJobCard.tsx")
   assert.doesNotMatch(wfh, /'🏠 ' \+ job\.type|`👤 \$\{job\.applicants\} applicants · Verified`/)
-  assert.match(wfh, /hasVerifiedTrust\(job\)/)
+  // 'Verified' needs the strictest predicate (employer-owned + verification evidence) — hasVerifiedTrust alone would also bless an aggregated row.
+  assert.match(wfh, /isEmployerVerified\(job\)/)
+  assert.doesNotMatch(wfh, /hasVerifiedTrust\(job\)/)
   assert.doesNotMatch(read("src/components/jobs/JobDetailModal.tsx"), /\|\| '#'/, "no '#' apply link")
   assert.match(read("src/lib/utils/formatters.ts"), /Number\.isNaN\(date\.getTime\(\)\)\) return ""/, "formatDate never returns 'Invalid Date'")
 })

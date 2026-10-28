@@ -1,0 +1,138 @@
+{
+  "_about": "Version/name inventory of the live supabase_migrations.schema_migrations table, captured read-only on 2026-10-28 (33 rows). Versions and names only: no statements, no connection details. Used to rehearse `supabase db push --dry-run` against a disposable database and to pin that the local migration list lines up with the live history.",
+  "captured": "2026-10-28",
+  "rows": [
+    {
+      "version": "20250603000001",
+      "name": "initial_schema"
+    },
+    {
+      "version": "20250603000002",
+      "name": "rls_policies"
+    },
+    {
+      "version": "20250603000003",
+      "name": "indexes"
+    },
+    {
+      "version": "20250603000004",
+      "name": "functions"
+    },
+    {
+      "version": "20250603000005",
+      "name": "triggers"
+    },
+    {
+      "version": "20250603000006",
+      "name": "rls_complete"
+    },
+    {
+      "version": "20250603000007",
+      "name": "storage_resumes"
+    },
+    {
+      "version": "20250603000008",
+      "name": "signup_trigger_fix"
+    },
+    {
+      "version": "20250603000009",
+      "name": "storage_rls_helpers"
+    },
+    {
+      "version": "20260610000001",
+      "name": "govt_jobs_reconcile.down"
+    },
+    {
+      "version": "20260611000001",
+      "name": "ingest_runs"
+    },
+    {
+      "version": "20260616000001",
+      "name": "applications_board_reconcile.down"
+    },
+    {
+      "version": "20260616000002",
+      "name": "jobs_job_status.down"
+    },
+    {
+      "version": "20260616000003",
+      "name": "auth_failures.down"
+    },
+    {
+      "version": "20260706000001",
+      "name": "jobs_status_lifecycle.down"
+    },
+    {
+      "version": "20260707000001",
+      "name": "jobs_provenance"
+    },
+    {
+      "version": "20260709000001",
+      "name": "analytics_events"
+    },
+    {
+      "version": "20260723000001",
+      "name": "job_reports"
+    },
+    {
+      "version": "20260724000001",
+      "name": "wfh_abroad_employer_ownership"
+    },
+    {
+      "version": "20260725000001",
+      "name": "wfh_abroad_featured"
+    },
+    {
+      "version": "20260726000001",
+      "name": "job_views_count"
+    },
+    {
+      "version": "20260726000002",
+      "name": "resume_access_log"
+    },
+    {
+      "version": "20260727000001",
+      "name": "govt_jobs_record_integrity"
+    },
+    {
+      "version": "20260727000002",
+      "name": "job_lifecycle_foundation"
+    },
+    {
+      "version": "20260727000003",
+      "name": "job_source_posted_at"
+    },
+    {
+      "version": "20260929000001",
+      "name": "application_admin_review_gate"
+    },
+    {
+      "version": "20260929000002",
+      "name": "application_admin_review_rls"
+    },
+    {
+      "version": "20260929000003",
+      "name": "disable_public_synthetic_inventory"
+    },
+    {
+      "version": "20260930000001",
+      "name": "wfh_source_and_applicant_country.down"
+    },
+    {
+      "version": "20260930000002",
+      "name": "fix_candidate_applications_rls_recursion.down"
+    },
+    {
+      "version": "20260930000003",
+      "name": "freeze_moderation_columns.down"
+    },
+    {
+      "version": "20261001000001",
+      "name": "fix_users_role_escalation.down"
+    },
+    {
+      "version": "20261025102650",
+      "name": "refix_storage_resume_employer_applicant"
+    }
+  ]
+}

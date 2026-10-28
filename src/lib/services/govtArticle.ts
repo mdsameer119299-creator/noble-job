@@ -10,6 +10,7 @@
  */
 import type { GovtJob, GovtImportantDate, GovtFaq } from "@/types/govtJob"
 import { resolveGovtJobLinks, isPostApplicationTab } from "@/lib/services/govtOfficialLinks"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 /** Label for the primary action on this record's tab — matches govtOfficialLinks' primaryForTab. */
 function stageNoun(job: Partial<GovtJob>): "result" | "admit card" | "answer key" | null {
@@ -152,7 +153,10 @@ function buildFaqs(job: Partial<GovtJob>): GovtFaq[] {
 
   return [
     ...leadFaqs,
-    { q: `How many vacancies ${stage ? "were" : "are"} ${stage ? "notified" : "available"}?`, a: `A total of ${job.vacancies || "multiple"} vacancies ${stage ? "were" : "are"} notified by ${job.org || "the recruiting body"}.` },
+    { q: `How many vacancies ${stage ? "were" : "are"} ${stage ? "notified" : "available"}?`, a: displayVacancies(job as GovtJob) !== undefined
+        ? `A total of ${displayVacancies(job as GovtJob)} vacancies ${stage ? "were" : "are"} notified by ${job.org || "the recruiting body"}.`
+        // No stated count (TBA / Not Specified / withheld as unsupported): never print "A total of Not Specified vacancies".
+        : `The number of vacancies is not stated on this page. Please refer to the official notification published by ${job.org || "the recruiting body"}.` },
     { q: `What is the educational qualification required?`, a: `Candidates must possess ${job.qualification || "the qualification specified in the official notification"} from a recognised board/university.` },
     { q: `What is the application fee?`, a: `The application fee is ${job.fee && job.fee !== "0" ? `₹${job.fee.replace(/[^\d]/g, "")} for General/OBC candidates` : "nil / exempted"}. SC/ST/PwBD and female candidates are usually exempted.` },
     { q: `Is there an age limit?`, a: `Yes, the age limit is ${job.ageRange || "as specified in the notification"}. Age relaxation applies as per government rules.` },
@@ -182,17 +186,22 @@ export function getGovtHowToApplySteps(job: Partial<GovtJob>): string[] {
 export function generateGovtArticle(job: Partial<GovtJob>): GeneratedArticle {
   const org = job.org || "The recruiting organisation"
   const title = job.title || "Government Recruitment"
-  const vac = job.vacancies || "various"
+  const vac = displayVacancies(job as GovtJob)
+  const hasCount = vac !== undefined
   const post = job.post || "various posts"
   const qual = job.qualification || "the prescribed qualification"
 
   const stage = stageNoun(job)
   const overview = stage
     ? `${org} has published the ${stage} for ${title}. ` +
-      `A total of ${vac} vacancies were notified for the post of ${post}. ` +
+      (hasCount
+        ? `A total of ${vac} vacancies were notified for the post of ${post}. `
+        : `Refer to the official notification for the number of vacancies for the post of ${post}. `) +
       `Check the official source below for the current ${stage} status — this stage comes after applications for this notification have already closed.`
     : `${org} has released an official notification for ${title}. ` +
-      `A total of ${vac} vacancies are available for the post of ${post}. ` +
+      (hasCount
+        ? `A total of ${vac} vacancies are available for the post of ${post}. `
+        : `Refer to the official notification for the number of vacancies for the post of ${post}. `) +
       `Eligible and interested candidates can apply online before ${job.lastDate || "the last date"}. ` +
       `Read the complete details on eligibility, age limit, application fee, selection process and important dates below before applying.`
 

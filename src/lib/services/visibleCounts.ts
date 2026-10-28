@@ -20,10 +20,10 @@
  */
 import { getJobs } from "@/lib/services/jobService"
 import { getWfhJobsPaginated } from "@/lib/services/wfhJobService"
-import { getAbroadJobsPaginated } from "@/lib/services/abroadJobService"
+import { getAbroadJobsPaginated, getAbroadCountryCounts } from "@/lib/services/abroadJobService"
 import { ABROAD_COUNTRY_TARGETS } from "@/lib/data/jobInventory"
-import { getAbroadJobsPaginatedLocal } from "@/lib/services/abroadJobLocal"
-import { isSyntheticJobsVisible } from "@/lib/jobs/syntheticVisibility"
+import { withLiveListingCounts } from "@/lib/jobs/mergePrivateListing"
+import { isSupabaseConfigured } from "@/lib/supabase/config"
 import type { JobFilter } from "@/types/job"
 import type { WfhJobFilters } from "@/lib/services/wfhJobLocal"
 import type { AbroadJobFilters } from "@/lib/services/abroadJobLocal"
@@ -53,6 +53,27 @@ export async function getPrivateVisibleCounts(filter: JobFilter = {}): Promise<S
   }
 }
 
+/**
+ * Status counts of the Private board exactly as its UNFILTERED list presents them: the employer-table
+ * counts (`getPrivateVisibleCounts`) PLUS the live third-party jobs the list merges in on page 1
+ * (`mergePrivateListing`, fed by the same `getHimalayasJobsForDisplay(100)` read the page uses).
+ * Without the live part, the hero said "0 Roles to Explore" while the list showed those jobs.
+ * A live-cache failure degrades to the employer counts only (as the page degrades to no live jobs).
+ */
+export async function getPrivateListingCounts(): Promise<StatusCounts> {
+  const base = await getPrivateVisibleCounts()
+  // The live cache is a database-backed source: without a configured database (unit tests, CI, a bare
+  // local checkout) there is no cache to read and no live HTTP fallback is attempted from a COUNT, so the
+  // number stays deterministic and equal to the employer / local-inventory count.
+  if (!isSupabaseConfigured()) return base
+  try {
+    const { getHimalayasJobsForDisplay } = await import("@/lib/services/himalayasCache")
+    return withLiveListingCounts(base, await getHimalayasJobsForDisplay(100))
+  } catch {
+    return base
+  }
+}
+
 export async function getWfhVisibleCounts(filters: WfhJobFilters = {}): Promise<StatusCounts> {
   try {
     return (await getWfhJobsPaginated({ ...filters, page: 1, limit: 1 })).counts ?? ZERO
@@ -79,28 +100,20 @@ export interface VisibleBoardCounts {
 
 /** Counts of the three job boards exactly as their lists show them. */
 export async function getVisibleBoardCounts(): Promise<VisibleBoardCounts> {
-  const [p, w, a] = await Promise.all([getPrivateVisibleCounts(), getWfhVisibleCounts(), getAbroadVisibleCounts()])
+  const [p, w, a] = await Promise.all([getPrivateListingCounts(), getWfhVisibleCounts(), getAbroadVisibleCounts()])
   return { private: p, wfh: w, abroad: a, total: sum(p, w, a) }
 }
 
 /**
- * Per-country counts for the abroad country cards: the size of the list each card
- * opens (`?country=`), never the marketing target when a country has no visible jobs.
+ * Per-country counts for the abroad country cards: the size of the list each card opens
+ * (`?country=`), never the marketing target when a country has no visible jobs.
+ *
+ * ONE shared, paginated read of the Abroad pool (`getAbroadCountryCounts`), not one full list query per
+ * country: the stored rows come from the very loader `getAbroadJobsPaginated` uses — same active /
+ * renderable / provenance / synthetic-visibility / source rules — and are narrowed per country in
+ * memory with each source's own country filter. A read failure reports 0 for every card.
  */
 export async function getVisibleAbroadCountryCounts() {
-  // The abroad list service is local-inventory-only (abroadJobService.getAbroadJobsPaginated
-  // is exactly getAbroadJobsPaginatedLocal + the visibility switch), so one switch read
-  // serves all 16 countries and the numbers are the lists' own.
-  let visible = true
-  try {
-    visible = await isSyntheticJobsVisible()
-  } catch {
-    visible = true
-  }
-  return ABROAD_COUNTRY_TARGETS.map(c => ({
-    name: c.country,
-    flag: c.flag,
-    jobs: getAbroadJobsPaginatedLocal({ country: c.country, page: 1, limit: 1 }, visible).counts.all,
-    desc: c.desc,
-  }))
+  const counts = await getAbroadCountryCounts(ABROAD_COUNTRY_TARGETS.map(c => c.country))
+  return ABROAD_COUNTRY_TARGETS.map(c => ({ name: c.country, flag: c.flag, jobs: counts[c.country] ?? 0, desc: c.desc }))
 }

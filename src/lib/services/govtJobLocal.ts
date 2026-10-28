@@ -3,7 +3,7 @@
  * Used by /api/govt-jobs when Supabase is off or JOB_DATA_SOURCE=local.
  */
 import { GOVT_JOBS } from "@/lib/data/govtData"
-import { sumGovtVacancies } from "@/lib/data/govtVacancies"
+import { buildGovtStats } from "@/lib/govt/hubCounts"
 import { isGovtJobExpired } from "@/lib/utils/govtJobExpiry"
 import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import type { GovtJob, GovtJobTab } from "@/types/govtJob"
@@ -57,11 +57,6 @@ export function getGovtJobByIdLocal(idOrSlug: string): GovtJob | null {
 
 export function getGovtStatsLocal() {
   const source = GOVT_JOBS.filter(j => j.tab === "latest")
-  const jobs = source.length ? source : GOVT_JOBS
-  return {
-    totalVacancies: sumGovtVacancies(jobs),
-    departments: new Set(jobs.map(j => j.org)).size,
-    locations: new Set(jobs.map(j => j.location)).size,
-    totalExams: jobs.length,
-  }
+  // The in-memory seed carries no verified figures, so its vacancy total is withheld like any other unverified total.
+  return buildGovtStats(source.length ? source : GOVT_JOBS)
 }

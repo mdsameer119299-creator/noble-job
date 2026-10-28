@@ -15,7 +15,7 @@ export interface HeroTheme {
   anchor?: string
 }
 
-const GOVT_BULLETS = ["Daily Notifications", "SSC • UPSC • Railway • Banking • Defence"]
+const GOVT_BULLETS = ["Official Notifications", "SSC • UPSC • Railway • Banking • Defence"]
 
 export const CATEGORY_HERO_THEMES: Record<HeroVariant, HeroTheme> = {
   govt: {
@@ -36,8 +36,8 @@ export const CATEGORY_HERO_THEMES: Record<HeroVariant, HeroTheme> = {
     badge: "🏢 Private Sector Careers",
     title: "Find Your",
     titleAccent: "Dream Job",
-    description: "Corporate careers from India's most trusted employers — live openings, verified listings, and AI-matched roles.",
-    bullets: ["Live inventory counts", "Top employers hiring", "Verified listings daily"],
+    description: "Private-sector openings from employers and external job sources, plus AI-matched roles.",
+    bullets: ["Live inventory counts", "Employer and external-source listings"],
     primaryCta: { label: "Find Jobs", href: "#private-jobs" },
     secondaryCta: { label: "Upload Resume", href: "/auth?role=candidate&tab=register" },
     gradient: "linear-gradient(135deg, #0d1f4e 0%, #1847d4 55%, #2563eb 100%)",
@@ -50,8 +50,8 @@ export const CATEGORY_HERO_THEMES: Record<HeroVariant, HeroTheme> = {
     badge: "🏠 Remote Work Hub",
     title: "Work From Home",
     titleAccent: "Jobs",
-    description: "Verified remote roles from top Indian and global employers — flexible hours, zero commute, enterprise-grade listings.",
-    bullets: ["3,200+ Opportunities", "500+ Live Remote Jobs", "200+ Verified Companies"],
+    description: "Remote roles from Indian and global employers and external job sources — flexible hours, zero commute.",
+    bullets: ["Live inventory counts", "Employer and external-source listings"],
     primaryCta: { label: "Browse WFH Jobs", href: "#wfh-jobs" },
     secondaryCta: { label: "Upload CV", href: "/auth?role=candidate&tab=register" },
     gradient: "linear-gradient(135deg, #4c1d95 0%, #6d28d9 40%, #1847d4 100%)",

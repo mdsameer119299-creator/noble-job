@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { WfhJob } from '@/types/wfhJob'
 import { toRenderableWfhJobs } from '@/lib/jobs/clientRecords'
@@ -22,16 +22,25 @@ const STATUS_TABS = [
   { id: 'ARCHIVED_JOB', label: 'Archived' },
 ]
 
-export function WfhJobsPanel() {
+export interface InitialWfhData {
+  jobs: WfhJob[]
+  total: number
+  totalPages: number
+  counts: Counts
+  /** The page number the server rendered; the first client fetch is skipped only for this exact, unfiltered view. */
+  page: number
+}
+
+export function WfhJobsPanel({ initialData }: { initialData?: InitialWfhData } = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const [jobs, setJobs] = useState<WfhJob[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<WfhJob[]>(initialData?.jobs ?? [])
+  const [loading, setLoading] = useState(!initialData)
   const [failed, setFailed] = useState(false)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(1)
-  const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
+  const [total, setTotal] = useState(initialData?.total ?? 0)
+  const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
+  const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
   const [selected, setSelected] = useState<WfhJob | null>(null)
 
   const q = params.get('q') || ''
@@ -57,7 +66,17 @@ export function WfhJobsPanel() {
     setLocalQ(q)
   }, [q])
 
+  // The server already rendered this exact view (default filters, same page) — refetching on
+  // mount would only flash the real list back to "Loading…".
+  const serverRendered = useRef(!!initialData)
+  const isServerView =
+    !q && cat === 'all' && exp === 'all' && sort === 'latest' && (!status || status === 'all') && page === initialData?.page
+
   useEffect(() => {
+    if (serverRendered.current) {
+      serverRendered.current = false
+      if (isServerView) return
+    }
     setLoading(true)
     const sp = new URLSearchParams({ cat, exp, sort, page: String(page) })
     if (q) sp.set('q', q)

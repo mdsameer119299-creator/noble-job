@@ -1,5 +1,5 @@
 import { GOVT_CONTENT } from "@/lib/data/govtData"
-import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { buildGovtStats, listingVacanciesTotal } from "@/lib/govt/hubCounts"
 import { getCategoryBySlug } from "@/lib/config/govtTaxonomy"
 import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
 import { jobMatchesQualification } from "@/lib/services/govtQualificationMatch"
@@ -118,7 +118,7 @@ export async function getGovtJobsFiltered(filters: GovtJobFilters = {}): Promise
   return {
     items: list.slice((page - 1) * limit, page * limit),
     total: list.length,
-    vacanciesTotal: sumRealVacancies(list.filter(isVacancyBearingJob)),
+    vacanciesTotal: listingVacanciesTotal(list),
     page,
     totalPages: Math.ceil(list.length / limit) || 1,
     facets,
@@ -206,9 +206,5 @@ export async function getGovtContent(
 }
 
 export async function getGovtStats() {
-  const source = await getActiveGovtRows()
-  const totalVacancies = sumRealVacancies(source.filter(isVacancyBearingJob))
-  const departments = new Set(source.map(j => j.org)).size
-  const locations = new Set(source.map(j => j.location)).size
-  return { totalVacancies, departments, locations, totalExams: source.length }
+  return buildGovtStats(await getActiveGovtRows())
 }

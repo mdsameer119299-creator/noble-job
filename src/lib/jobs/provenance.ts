@@ -285,6 +285,11 @@ export function jobDetailHref(
   job: Classifiable & { id?: string | null },
 ): string | null {
   if (!job.id) return null
+  // The private detail route reads only the employer `jobs` table, so a live third-party (Himalayas)
+  // id has no detail page there — `/jobs/private/himalayas:<hash>` is a 404. Those jobs link to their
+  // own source URL instead (see privateCardLink). WFH / Abroad store Himalayas rows in their own
+  // tables, so their detail pages exist and are unaffected.
+  if (board === "private" && String(job.id).startsWith("himalayas:")) return null
   return isGenuine(job) ? `/jobs/${board}/${job.id}` : null
 }
 
@@ -296,4 +301,15 @@ export function jobDetailHref(
 export function hasVerifiedTrust(j: Classifiable): boolean {
   if (!isGenuine(j)) return false
   return j.jobStatus === "VERIFIED_JOB" || j.verified === true
+}
+
+/**
+ * May a card claim the job is posted by a VERIFIED EMPLOYER? Stricter than `hasVerifiedTrust`:
+ * besides genuine provenance + verification evidence (`jobStatus` VERIFIED_JOB / `verified`), the row
+ * must actually be EMPLOYER-owned. An aggregated, curated or official-source row that happens to carry
+ * a stale `verified` flag is still not "an employer we verified", and an internal link or a UUID id
+ * is never evidence of anything. Composes the existing predicates; relaxes none of them.
+ */
+export function isEmployerVerified(j: Classifiable): boolean {
+  return classifyProvenance(j) === "EMPLOYER" && hasVerifiedTrust(j)
 }

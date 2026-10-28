@@ -4,6 +4,7 @@
 import { renderableAbroadInventory } from "@/lib/data/renderableInventory"
 import { sortByStatus, countByStatus, paginate, type PaginatedResult } from "@/lib/data/inventoryPagination"
 import { applySyntheticVisibility } from "@/lib/jobs/syntheticVisibility"
+import { filterByCountry } from "@/lib/jobs/countryIdentity"
 import type { JobStatus } from "@/types/job"
 import type { AbroadJob } from "@/types/abroadJob"
 
@@ -25,7 +26,8 @@ function filterAbroadWithCounts(jobs: AbroadJob[], filters: AbroadJobFilters) {
       j => (j.title || "").toLowerCase().includes(term) || (j.company || "").toLowerCase().includes(term),
     )
   }
-  if (country) pre = pre.filter(j => (j.country || "").toLowerCase() === country.toLowerCase())
+  // Shared identity rule (aliases, whole-country tokens) — the same one the DB path and the counts use.
+  if (country) pre = filterByCountry(pre, country)
   if (category) pre = pre.filter(j => j.category === category)
   const counts = countByStatus(pre)
   let list =

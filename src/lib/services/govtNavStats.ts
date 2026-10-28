@@ -2,7 +2,7 @@
  * Live counts for govt browse grids & sub-page heroes (from GOVT_JOBS / GOVT_CONTENT).
  */
 import { GOVT_JOBS, GOVT_CONTENT } from "@/lib/data/govtData"
-import { sumGovtVacancies, sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
+import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
 import { isActiveGovtJob } from "@/lib/utils/govtJobExpiry"
 import { isCurrentGovtNotification } from "@/lib/govt/recordType"
 import {
@@ -78,7 +78,8 @@ function statsFromJobs(jobs: GovtJob[]): GovtNavStat {
   const active = jobs.filter(isActiveGovtJob)
   return {
     notifications: active.length,
-    vacancies: sumGovtVacancies(active.filter(isVacancyBearingJob)),
+    // Same evidence gate as every other aggregate: the in-memory seed has no verified figures, so no total.
+    vacancies: sumRealVacancies(active.filter(isVacancyBearingJob)),
   }
 }
 

@@ -54,9 +54,12 @@ export async function StatsStrip() {
 
   const items = [
     ...(catalogRoles > 0 ? [{ key: 'catalog', num: formatCounter(catalogRoles), label: 'Roles to Explore', icon: STAT_ICONS.jobs }] : []),
-    { key: 'live',      num: liveJobs > 0 ? formatCounter(liveJobs) : 'Daily',   label: 'Live Jobs',          icon: STAT_ICONS.companies  },
-    { key: 'govt',      num: 'Daily',                                            label: 'Govt Updates',       icon: STAT_ICONS.govt       },
-    { key: 'employers', num: employers > 0 ? formatCounter(employers) : 'Growing', label: 'Verified Employers', icon: STAT_ICONS.candidates },
+    // A count-backed item appears only when its count exists — never a word ("Daily", "Growing") standing in
+    // for a figure that is not there. "Verified Employers" is the DB count of employers flagged verified.
+    ...(liveJobs > 0 ? [{ key: 'live', num: formatCounter(liveJobs), label: 'Live Jobs', icon: STAT_ICONS.companies }] : []),
+    // "Daily" describes the scheduled source CHECK (vercel.json cron, one run per day), not a promise that new notices appear daily.
+    { key: 'govt',      num: 'Daily',                                            label: 'Govt Source Checks', icon: STAT_ICONS.govt       },
+    ...(employers > 0 ? [{ key: 'employers', num: formatCounter(employers), label: 'Verified Employers', icon: STAT_ICONS.candidates }] : []),
   ]
 
   return (

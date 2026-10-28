@@ -5,7 +5,8 @@ import type { Job } from '@/types/job'
 import { Badge } from '@/components/ui/Badge'
 import { JobStatusBadge } from '@/components/shared/JobStatusBadge'
 import { isActiveStatus, ARCHIVED_ALT_LABEL, nonGenuineListingLabel } from '@/lib/config/jobStrategy'
-import { classifyProvenance, isGenuine, jobDetailHref } from '@/lib/jobs/provenance'
+import { classifyProvenance, isGenuine } from '@/lib/jobs/provenance'
+import { privateCardLink } from '@/lib/jobs/privateCardLink'
 import { isActionableJob, displayValue } from '@/lib/jobs/renderable'
 import { formatSalary, formatDate } from '@/lib/utils/formatters'
 import { ApplicationModal } from './ApplicationModal'
@@ -13,6 +14,9 @@ import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { TruncatedLocationPill } from './TruncatedLocationPill'
 
 interface JobCardProps { job: Job; onSave?: (id: string) => void }
+
+const TITLE_STYLE = { fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' } as const
+const SECONDARY_CTA_STYLE = { background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' } as const
 
 export function JobCard({ job, onSave }: JobCardProps) {
   const initials = job.company?.slice(0, 2).toUpperCase() || 'NJ'
@@ -28,9 +32,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
   // source's own application page lives; an info-only record has no apply action at all.
   const apply = applyStateFor('private', job, job.company)
   const canApply = isActiveStatus(job.jobStatus) && !isSample && apply.kind === 'employer' && isActionableJob(job, 'private')
-  // Only genuine jobs get a crawlable internal link to their detail page; for
-  // synthetic/demo rows this is null so no dofollow discovery link is emitted.
-  const detailHref = jobDetailHref('private', job)
+  // Where the card links (privateCardLink): an employer-owned genuine job → its internal detail page;
+  // a live third-party (Himalayas) job → ONLY its own validated source URL in a new tab — it has no
+  // detail page here, so an internal path would be a 404; with no valid URL it is not linked at all;
+  // synthetic/demo rows get no detail link, so no dofollow discovery link is emitted.
+  const link = privateCardLink(job)
+  const detailHref = link.kind === 'internal' ? link.href : null
   // Non-genuine cards stay interactive via a "Similar Jobs" path to the (real,
   // indexable) category listing — never a link to a synthetic detail URL.
   const similarHref = `/jobs/private${job.cat ? `?category=${encodeURIComponent(job.cat)}` : ''}`
@@ -47,11 +54,17 @@ export function JobCard({ job, onSave }: JobCardProps) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <Link href={detailHref || similarHref}
-              style={{ fontFamily: 'Playfair Display,serif', fontWeight: 800, fontSize: 16, color: '#0d1f4e', textDecoration: 'none', lineHeight: 1.3, display: 'block' }}
-              className="hover:text-noble-blue">
-              {job.title}
-            </Link>
+            {link.kind === 'unavailable' ? (
+              <span style={TITLE_STYLE}>{job.title}</span>
+            ) : link.kind === 'external' ? (
+              <a href={link.href} target="_blank" rel="noopener noreferrer" style={TITLE_STYLE} className="hover:text-noble-blue">
+                {job.title}
+              </a>
+            ) : (
+              <Link href={detailHref || similarHref} style={TITLE_STYLE} className="hover:text-noble-blue">
+                {job.title}
+              </Link>
+            )}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
               {job.jobStatus && (
                 <JobStatusBadge
@@ -101,7 +114,8 @@ export function JobCard({ job, onSave }: JobCardProps) {
             : !genuine
               ? `📄 ${nonGenuineListingLabel(job)}`
               : [
-                  job.source === 'Himalayas (Verified Remote)' ? '🌐 Remote Verified' : '✅ ' + (displayValue(job.source) || 'Verified'),
+                  // An external-source card names its SOURCE; it never says "Verified" (that label is employer-evidence only).
+                  link.kind === 'external' || link.kind === 'unavailable' ? '🌐 via ' + (displayValue(job.source)?.replace(/\s*\((?:verified[^)]*)\)/i, '') || 'external source') : '✅ ' + (displayValue(job.source) || 'Listed'),
                   formatDate((job as any).posted_at || job.posted || ''),
                 ].filter(Boolean).join(' · ')}
         </span>
@@ -114,9 +128,12 @@ export function JobCard({ job, onSave }: JobCardProps) {
               style={{ background: applied ? '#15803d' : '#1847d4', color: '#fff', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, border: 'none', cursor: applied ? 'not-allowed' : 'pointer', display: 'inline-block' }}>
               {applied ? 'Applied ✓' : 'Apply Now →'}
             </button>
-          ) : (
-            <Link href={detailHref || similarHref}
-              style={{ background: '#f1f5f9', color: '#64748b', border: '1.5px solid #cbd5e1', padding: '8px 18px', borderRadius: 9, fontWeight: 800, fontSize: 13, textDecoration: 'none', display: 'inline-block' }}>
+          ) : link.kind === 'external' ? (
+            <a href={link.href} target="_blank" rel="noopener noreferrer" style={SECONDARY_CTA_STYLE}>
+              View on source ↗
+            </a>
+          ) : link.kind === 'unavailable' ? null : (
+            <Link href={detailHref || similarHref} style={SECONDARY_CTA_STYLE}>
               {detailHref ? 'View Details' : 'Similar Jobs →'}
             </Link>
           )}

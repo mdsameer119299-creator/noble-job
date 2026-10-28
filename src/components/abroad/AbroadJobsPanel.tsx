@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { AbroadJob } from '@/types/abroadJob'
 import { toRenderableAbroadJobs } from '@/lib/jobs/clientRecords'
+import { abroadViewFromParams, sameAbroadView, abroadTransition, shownAbroadView, type AbroadView } from '@/lib/jobs/abroadView'
 import { AbroadJobCard } from './AbroadJobCard'
 import { AbroadDetailModal } from './AbroadDetailModal'
 import { AbroadSearchBar } from './AbroadSearchBar'
@@ -21,33 +22,73 @@ const STATUS_TABS = [
   { id: 'ARCHIVED_JOB', label: 'Archived' },
 ]
 
-export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
+export interface InitialAbroadData {
+  jobs: AbroadJob[]
+  total: number
+  totalPages: number
+  counts: Counts
+  /** The page number the server rendered. */
+  page: number
+  /** The exact URL view (search, country, category, status, page) the server rendered; the first client fetch is skipped only when the client's URL view equals it. */
+  view?: AbroadView
+}
+
+export function AbroadJobsPanel({ countries, initialData }: { countries: CountryCount[]; initialData?: InitialAbroadData }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const [jobs, setJobs] = useState<AbroadJob[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<AbroadJob[]>(initialData?.jobs ?? [])
+  // The view the jobs / total / counts currently held in state belong to. Starts as the view the server rendered
+  // (undefined when there is no server data → pending until the first fetch lands).
+  const [loadedView, setLoadedView] = useState<AbroadView | undefined>(initialData?.view)
   const [failed, setFailed] = useState(false)
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(1)
-  const [counts, setCounts] = useState<Counts>({ all: 0, live: 0, verified: 0, archived: 0 })
+  const [total, setTotal] = useState(initialData?.total ?? 0)
+  const [totalPages, setTotalPages] = useState(initialData?.totalPages ?? 1)
+  const [counts, setCounts] = useState<Counts>(initialData?.counts ?? { all: 0, live: 0, verified: 0, archived: 0 })
   const [selected, setSelected] = useState<AbroadJob | null>(null)
 
-  const q = params.get('q') || ''
-  const country = params.get('country') || ''
-  const category = params.get('category') || ''
-  const status = params.get('status') || 'all'
-  const page = Number(params.get('page') || 1)
+  const view = abroadViewFromParams(params)
+  const { q, country, category, status, page } = view
+  // Derived each render: while the URL view differs from the loaded one nothing may present the old data as
+  // the new selection's (see abroadTransition) — no number from the previous result set, even for one frame.
+  //
+  // The URL itself only changes AFTER Next has rendered the new (dynamic) server page — seconds after the click —
+  // so the click's TARGET view is tracked too: from the click until the navigation commits, the target is what
+  // the panel is "showing", and the previous result set is already not presented as its answer.
+  const [isNavigating, startNavigation] = useTransition()
+  const [navTarget, setNavTarget] = useState<AbroadView | undefined>(undefined)
+  const shownView = shownAbroadView(view, navTarget, isNavigating)
+  const { listPending: loading, totalPending } = abroadTransition(shownView, loadedView)
 
   const setParam = useCallback((key: string, value: string) => {
     const p = new URLSearchParams(params.toString())
     if (value) p.set(key, value); else p.delete(key)
     if (key !== 'page') p.delete('page')
-    router.push(`${pathname}?${p}`, { scroll: false })
+    setNavTarget(abroadViewFromParams(p))
+    startNavigation(() => router.push(`${pathname}?${p}`, { scroll: false }))
   }, [router, pathname, params])
 
+  // The server already rendered THIS exact URL view (filters and page included, see abroadView.ts) —
+  // refetching on mount would only flash the real list back to "Loading…". Any other view (a filter or page
+  // change, or a server view that could not be rendered) fetches as before.
+  const serverRendered = useRef(!!initialData)
+  const isServerView = sameAbroadView(view, initialData?.view)
+
   useEffect(() => {
-    setLoading(true)
+    if (serverRendered.current) {
+      serverRendered.current = false
+      if (isServerView) return
+    }
+    // The navigation that brought us here already carried the server-rendered data for this exact view: use it
+    // instead of asking the API for the same thing again.
+    if (isServerView && initialData) {
+      setJobs(initialData.jobs); setTotal(initialData.total); setTotalPages(initialData.totalPages)
+      setCounts(initialData.counts); setFailed(false); setLoadedView(initialData.view)
+      return
+    }
+    // Responses can arrive out of order (UAE then UK quickly); only the latest request may write state.
+    let cancelled = false
+    const requested = view
     const sp = new URLSearchParams({ page: String(page) })
     if (q) sp.set('q', q)
     if (country) sp.set('country', country)
@@ -56,8 +97,9 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
     fetch(`/api/abroad-jobs?${sp}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
+        if (cancelled) return
         // A failed request is an ERROR state — never an empty list that reads as "no jobs".
-        if (!d) { setFailed(true); setJobs([]); setTotal(0); setTotalPages(1); return }
+        if (!d) { setFailed(true); setJobs([]); setTotal(0); setTotalPages(1); setLoadedView(requested); return }
         setFailed(false)
         // Re-check every record on the client; count === displayed jobs.
         const raw: unknown[] = Array.isArray(d.data) ? d.data : Array.isArray(d.jobs) ? d.jobs : []
@@ -67,9 +109,10 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
         setTotal(Math.max(0, (Number(d.total) || ok.length) - dropped))
         setTotalPages(Number(d.totalPages) || 1)
         if (d.counts) setCounts({ ...d.counts, all: Math.max(0, (d.counts.all ?? 0) - dropped) })
+        setLoadedView(requested)
       })
-      .catch(() => { setFailed(true); setJobs([]); setTotal(0) })
-      .finally(() => setLoading(false))
+      .catch(() => { if (!cancelled) { setFailed(true); setJobs([]); setTotal(0); setLoadedView(requested) } })
+    return () => { cancelled = true }
   }, [q, country, category, status, page])
 
   const countFor = (id: string) =>
@@ -94,7 +137,7 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
               }}>
               {t.label}
               <span style={{ fontSize: 11, fontWeight: 800, background: activeTab ? 'rgba(255,255,255,.2)' : '#e0f2fe', color: activeTab ? '#fff' : '#0369a1', padding: '1px 7px', borderRadius: 10 }}>
-                {countFor(t.id).toLocaleString('en-IN')}
+                {totalPending ? '…' : countFor(t.id).toLocaleString('en-IN')}
               </span>
             </button>
           )
@@ -105,8 +148,12 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
         <AbroadFilterSidebar country={country} onCountry={c => setParam('country', c)} />
         <div>
           {!failed && (
-            <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
-              Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs
+            <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }} aria-live="polite" data-total-state={totalPending ? 'loading' : 'ready'}>
+              {totalPending ? (
+                'Updating results…'
+              ) : (
+                <>Showing <strong style={{ color: '#0d1f4e' }}>{total.toLocaleString('en-IN')}</strong> international jobs</>
+              )}
             </p>
           )}
           {loading ? (
@@ -120,7 +167,7 @@ export function AbroadJobsPanel({ countries }: { countries: CountryCount[] }) {
               {jobs.map(j => <AbroadJobCard key={j.id} job={j} onClick={setSelected} />)}
             </div>
           )}
-          {totalPages > 1 && (
+          {!totalPending && totalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 24 }}>
               <button disabled={page <= 1} onClick={() => setParam('page', String(page - 1))}
                 style={{ padding: '8px 16px', borderRadius: 9, border: '1.5px solid #e2e8f0', background: '#fff', color: page <= 1 ? '#cbd5e1' : '#0369a1', fontWeight: 700, fontSize: 13, cursor: page <= 1 ? 'default' : 'pointer' }}>← Prev</button>

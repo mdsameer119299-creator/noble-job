@@ -9,10 +9,10 @@
  * (Live + Verified tabs) semantics. There is no substring heuristic ("it" matching
  * "hospitality"), no mixing of government vacancies into a private-jobs link, no invented
  * floor or multiplier, and a category with nothing to open shows no number at all.
- * Govt cards contribute real stated vacancies (sumRealVacancies over servable rows).
+ * Govt cards are counted in NOTIFICATIONS — the current-notification pool the destination lists (hubCounts.ts) — and are
+ * labelled as such: a vacancy total over every active row (61,352) is neither the size of the list nor a number of "roles".
  */
-import { sumRealVacancies, isVacancyBearingJob } from "@/lib/data/govtVacancies"
-import { jobMatchesCategorySlug } from "@/lib/services/govtNavStats"
+import { notificationCountFor } from "@/lib/govt/hubCounts"
 import { getActiveGovtRows } from "@/lib/services/govtStatsSource"
 import { getPrivateVisibleCounts, getWfhVisibleCounts, getAbroadVisibleCounts, type StatusCounts } from "@/lib/services/visibleCounts"
 import type {
@@ -23,7 +23,9 @@ import type {
 
 export interface CategoryMarketplaceStat {
   slug: CategoryIllustrationSlug
+  /** The card's number: open roles for job-board cards, current notifications for government cards (see `unit`). */
   vacancies: number
+  unit: "roles" | "notifications"
   badge?: CategoryBadge
 }
 
@@ -33,9 +35,11 @@ const BADGES: Partial<Record<CategoryIllustrationSlug, CategoryBadge>> = {
   banking: { emoji: "🆕", label: "Updated Today" },
 }
 
-function fmtRoles(n: number): string {
-  return `${n.toLocaleString("en-IN")} Roles to Explore`
+function fmtCount(n: number, unit: "roles" | "notifications"): string {
+  return `${n.toLocaleString("en-IN")} ${unit === "roles" ? "Roles to Explore" : n === 1 ? "Notification" : "Notifications"}`
 }
+
+const GOVT_CARDS = new Set<CategoryIllustrationSlug>(["government-jobs", "defence", "railway"])
 
 /** Open (Live + Verified tab) jobs of a list — exactly what its default tabs show. */
 const open = (c: StatusCounts): number => Math.max(0, c.live + c.verified)
@@ -43,10 +47,8 @@ const open = (c: StatusCounts): number => Math.max(0, c.live + c.verified)
 /** Single source of truth for all category card numbers. DB-first for govt. */
 export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplaceStat[]> {
   const pool = await getActiveGovtRows()
-  const govtVacancies = (categorySlug?: string): number => {
-    const jobs = categorySlug ? pool.filter(j => jobMatchesCategorySlug(j, categorySlug)) : pool
-    return sumRealVacancies(jobs.filter(isVacancyBearingJob))
-  }
+  // Notifications the card's destination lists: the same current-notification pool and category predicate.
+  const govtVacancies = (categorySlug?: string): number => notificationCountFor(pool, categorySlug)
   // Each private card links to /jobs/private?category=<label>; count that very list.
   const priv = async (category: string) => open(await getPrivateVisibleCounts({ category }))
 
@@ -81,6 +83,7 @@ export async function getCategoryMarketplaceStats(): Promise<CategoryMarketplace
 
   return stats.map(s => ({
     ...s,
+    unit: GOVT_CARDS.has(s.slug) ? ("notifications" as const) : ("roles" as const),
     badge: BADGES[s.slug],
   }))
 }
@@ -113,7 +116,7 @@ export async function buildPremiumCategoryCards(): Promise<(CategoryCardConfig &
     return {
       ...meta,
       // Nothing to open → no number (never "0 Roles to Explore", never a padded figure).
-      count: (stat?.vacancies ?? 0) > 0 ? fmtRoles(stat!.vacancies) : "",
+      count: (stat?.vacancies ?? 0) > 0 ? fmtCount(stat!.vacancies, stat!.unit) : "",
       badge: stat?.badge,
     }
   })

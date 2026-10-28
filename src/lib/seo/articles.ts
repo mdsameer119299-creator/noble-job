@@ -9,6 +9,7 @@ import { getWfhJobs } from "@/lib/services/wfhJobService"
 import { jobDetailHref } from "@/lib/jobs/provenance"
 import type { ArticleCluster, ArticleConfig, ArticleLink, ArticleView } from "@/lib/seo/articleTypes"
 import type { LandingJobCard } from "@/lib/seo/landingTypes"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 export const ALL_ARTICLES: ArticleConfig[] = [
   ...GOVERNMENT_ARTICLES,
@@ -158,7 +159,7 @@ export async function fetchArticleJobs(cfg: ArticleConfig): Promise<LandingJobCa
         href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
         title: g.title,
         company: g.org,
-        meta: [g.vacancies ? `${g.vacancies} posts` : null, g.qualification].filter(Boolean).join(" · "),
+        meta: [displayVacancies(g) ? `${displayVacancies(g)} posts` : null, g.qualification].filter(Boolean).join(" · "),
         badge: g.badge,
       }))
     }

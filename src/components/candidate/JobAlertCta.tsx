@@ -58,7 +58,7 @@ export function JobAlertCta({
   if (state === 'done') {
     return (
       <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 12, padding: '14px 16px', color: '#15803d', fontWeight: 700, fontSize: 13.5 }}>
-        ✓ You're subscribed. We'll email matching jobs daily.
+        ✓ Your job alert preferences are saved.
       </div>
     )
   }

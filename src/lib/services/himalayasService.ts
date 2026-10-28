@@ -25,6 +25,7 @@ import { createHash } from "crypto"
 import { isScam }          from "@/lib/utils/scamFilter"
 import { isIndiaEligible } from "@/lib/utils/geoFilter"
 import { mapCategory, mapSeniority, colorForCompany } from "@/lib/utils/jobMapper"
+import { formatSalaryRange } from "@/lib/jobs/salaryRange"
 
 const BASE = "https://himalayas.app/jobs/api"
 
@@ -142,11 +143,8 @@ export async function fetchHimalayasJobs(): Promise<HimalayasJob[]> {
 }
 
 function formatApiSalary(j: Record<string, unknown>): string {
-  const min = j.minSalary as number | undefined
-  const max = j.maxSalary as number | undefined
   const cur = (j.currency as string) || "USD"
-  if (!min && !max) return "Competitive"
   const fmt = (n: number) => cur === "USD" ? `$${Math.round(n / 1000)}K` : `₹${Math.round(n / 100000)}L`
-  if (min && max) return `${fmt(min)}-${fmt(max)}/yr`
-  return `${fmt(min || max!)}/yr`
+  // "" (unavailable) when there is no usable figure or it rounds to zero ("$0K-$0K/yr") — never filler.
+  return formatSalaryRange(j.minSalary, j.maxSalary, fmt)
 }

@@ -36,11 +36,11 @@ export async function GovtNavGrids() {
                   <span className="govt-nav-cat-card__label">{c.label}</span>
                 </div>
                 <div className="govt-nav-cat-card__meta">
-                  <span className="govt-nav-pill govt-nav-pill--jobs">{fmt(stat.notifications)}+ notices</span>
+                  <span className="govt-nav-pill govt-nav-pill--jobs">{fmt(stat.notifications)} notices</span>
                   {/* Hide the posts pill for content categories (results / admit
                       cards / answer keys / syllabus / papers) that have no vacancies. */}
                   {stat.vacancies > 0 && (
-                    <span className="govt-nav-pill govt-nav-pill--vac">{fmt(stat.vacancies)}+ posts</span>
+                    <span className="govt-nav-pill govt-nav-pill--vac">{fmt(stat.vacancies)} posts</span>
                   )}
                 </div>
               </div>
@@ -104,7 +104,7 @@ export async function GovtNavGrids() {
               <span className="govt-nav-qual-chip__icon">{q.label.slice(0, 1)}</span>
               <span className="govt-nav-qual-chip__label">{q.label}</span>
               <span className="govt-nav-qual-chip__count">
-                {fmt(stat.notifications)} · {fmt(stat.vacancies)} vac.
+                {fmt(stat.notifications)}{stat.vacancies > 0 ? ` · ${fmt(stat.vacancies)} vac.` : ''}
               </span>
             </Link>
           )

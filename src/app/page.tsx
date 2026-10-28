@@ -22,7 +22,7 @@ import { ScrollToTop } from '@/components/shared/ScrollToTop'
 export const metadata = buildPageMetadata({
   title: 'Jobs in India — Government, Private, WFH & Abroad | Noble Job',
   description:
-    'Job Portal India: search Jobs in India — Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. Free registration, verified employers, daily updates.',
+    'Job Portal India: search Jobs in India — Government Jobs, Private Jobs, Work From Home Jobs, and Abroad Jobs. Free registration for candidates.',
   path: '/',
   keywords: ['Jobs in India', 'Job Portal India', 'Government Jobs', 'Private Jobs', 'Work From Home Jobs', 'Abroad Jobs'],
 })

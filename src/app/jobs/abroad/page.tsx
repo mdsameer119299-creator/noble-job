@@ -2,10 +2,12 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { listingMeta, pageFromSearchParams } from '@/lib/seo/metadata'
 import { CategoryHero } from '@/components/heroes/CategoryHero'
-import { AbroadJobsPanel } from '@/components/abroad/AbroadJobsPanel'
+import { AbroadJobsPanel, type InitialAbroadData } from '@/components/abroad/AbroadJobsPanel'
 import { JobsBrowseIndex } from '@/components/jobs/JobsBrowseIndex'
 import { ScrollToTop } from '@/components/shared/ScrollToTop'
 import { getVisibleAbroadCountryCounts } from '@/lib/services/visibleCounts'
+import { getAbroadJobsPaginated } from '@/lib/services/abroadJobService'
+import { abroadViewFromSearchParams, abroadQueryFor } from '@/lib/jobs/abroadView'
 
 export const dynamic = "force-dynamic"
 
@@ -17,13 +19,34 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
 }
 
 export default async function AbroadJobsPage({ searchParams }: SP) {
-  const page = pageFromSearchParams(await searchParams)
+  const sp = await searchParams
+  const page = pageFromSearchParams(sp)
+  // The exact view the URL asks for (country / category / search / status / page) — rendered here, not
+  // after hydration, so a filtered deep link never flashes the unfiltered totals first.
+  const view = abroadViewFromSearchParams(sp)
   const countries = await getVisibleAbroadCountryCounts()
+
+  // Server-side initial data fetch so search engines see real job content.
+  let initialData: InitialAbroadData | undefined
+  try {
+    const result = await getAbroadJobsPaginated({ ...abroadQueryFor(view), limit: 20 } as Parameters<typeof getAbroadJobsPaginated>[0])
+    initialData = {
+      jobs: result.items,
+      total: result.total,
+      totalPages: result.totalPages,
+      counts: result.counts,
+      page,
+      view,
+    }
+  } catch {
+    // SSR fetch failed — the client component will re-fetch on mount.
+  }
+
   return (
     <div style={{ background: '#f8faff', minHeight: '100vh' }}>
       <CategoryHero variant="abroad" />
       <div id="abroad-jobs">
-        <AbroadJobsPanel countries={countries} />
+        <AbroadJobsPanel countries={countries} initialData={initialData} />
       </div>
       <div className="wrap">
         <Suspense fallback={null}>

@@ -6,10 +6,18 @@
  * minimum real-job threshold is gated out rather than shipped as a thin
  * page — same principle as cityCategoryLanding.ts.
  */
-import { getGenuineOpenJobs } from "@/lib/seo/genuineJobs"
+import {
+  getGenuineOpenJobs,
+  filterSnapshotForCity,
+  type GenuineOpenJobsSnapshot,
+} from "@/lib/seo/genuineJobs"
 import { TAIL_CITY_MIN_GENUINE_JOBS } from "@/lib/seo/indexThresholds"
 import { TAIL_CITIES, getTailCityBySlug, type TailCityDef } from "@/lib/data/cityTaxonomy"
-import { getQualifyingCategorySlugsForCity, categoryFromSlug } from "@/lib/seo/cityCategoryLanding"
+import {
+  getQualifyingCategorySlugsForCity,
+  getQualifyingCategorySlugsForCityFromSnapshot,
+  categoryFromSlug,
+} from "@/lib/seo/cityCategoryLanding"
 import { jobDetailHref } from "@/lib/jobs/provenance"
 import { joinReal, displayValue } from "@/lib/jobs/renderable"
 import type { LandingView, FaqItem } from "@/lib/seo/landingTypes"
@@ -134,4 +142,26 @@ export async function getQualifyingTailCitySlugs(): Promise<string[]> {
 /** Category slugs (for a given tail city) that clear the city x category gate. */
 export async function getQualifyingCategorySlugsForTailCity(city: TailCityDef): Promise<string[]> {
   return getQualifyingCategorySlugsForCity(city)
+}
+
+/**
+ * Tail-city slugs that clear TAIL_CITY_MIN_JOBS, derived from a pre-loaded
+ * shared snapshot. Used by the sitemap to avoid 28 separate Supabase queries.
+ */
+export function getQualifyingTailCitySlugsFromSnapshot(snapshot: GenuineOpenJobsSnapshot): string[] {
+  return TAIL_CITIES.filter(city => {
+    const matching = filterSnapshotForCity(snapshot, city.locationQuery, TAIL_CITY_MIN_JOBS)
+    return matching.length >= TAIL_CITY_MIN_JOBS
+  }).map(c => c.slug)
+}
+
+/**
+ * Category slugs (for a given tail city) that clear the city x category gate,
+ * derived from a pre-loaded shared snapshot. Used by the sitemap.
+ */
+export function getQualifyingCategorySlugsForTailCityFromSnapshot(
+  city: TailCityDef,
+  snapshot: GenuineOpenJobsSnapshot,
+): string[] {
+  return getQualifyingCategorySlugsForCityFromSnapshot(city, snapshot)
 }

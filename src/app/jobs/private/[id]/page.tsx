@@ -16,6 +16,7 @@ import { applyStateFor } from '@/lib/jobs/applyRoute'
 import { toRelatedLinks } from '@/lib/seo/relatedLinks'
 import { incrementJobViews } from '@/lib/services/jobViews'
 import { displayValue, isRealDisplayValue, joinReal } from '@/lib/jobs/renderable'
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 export const dynamic = "force-dynamic"
 
@@ -100,7 +101,7 @@ export default async function JobDetailPage({ params }: Props) {
   const govtSuggestions: JobLink[] = govt.slice(0, 5).map(g => ({
     href: `/jobs/govt/${(g as { slug?: string }).slug || g.id}`,
     title: g.title,
-    meta: isRealDisplayValue(g.vacancies) ? `${g.org} · ${g.vacancies} posts` : g.org,
+    meta: displayVacancies(g) ? `${g.org} · ${displayVacancies(g)} posts` : g.org,
   }))
   const privateSuggestions: JobLink[] = related.slice(0, 5)
   const cityLink = detectCityLink(job.location, 'private')

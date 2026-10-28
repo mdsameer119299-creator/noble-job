@@ -41,6 +41,7 @@ import {
 import { applyRouteFor, isGenuineApplyRoute } from "./applyRoute"
 import { govtRecordTypeOf, isCurrentGovtNotification } from "../govt/recordType"
 import { plainTextOf } from "../seo/jobPostingDescription"
+import { isZeroSalaryText } from "./salaryRange"
 
 export type RenderableBoard = "private" | "wfh" | "abroad" | "govt"
 
@@ -81,6 +82,8 @@ export function isPlaceholderText(v: unknown): boolean {
   if (!t) return true
   if (PLACEHOLDER_VALUES.has(t.toLowerCase())) return true
   if (/^[\s\-_.?#*·•0]+$/.test(t)) return true
+  // A salary range stored as zeros ("$0K-$0K/yr", "₹0L") is a formatting artefact, not a salary.
+  if (isZeroSalaryText(t)) return true
   return ACCIDENTAL_TOKEN_RE.test(t)
 }
 
@@ -135,6 +138,20 @@ export function isValidJobId(id: unknown): boolean {
   if (t !== id) return false
   if (!ID_RE.test(t)) return false
   return !PLACEHOLDER_VALUES.has(t.toLowerCase())
+}
+
+/**
+ * A dynamic-route `[id]` segment → the stored job id.
+ *
+ * Next.js hands a dynamic segment to the page still percent-encoded: the sitemap lists
+ * `/jobs/wfh/himalayas:<hash>` and the request arrives with `params.id === "himalayas%3A<hash>"`.
+ * `isValidJobId` (rightly) rejects "%", so every id containing a character that gets encoded — the ":" of
+ * every aggregated (Himalayas) id — was a 404 before any database lookup. Decode exactly ONCE here, at the
+ * route boundary; the validator stays strict (a still-encoded or double-encoded id remains invalid), and a
+ * malformed escape ("%E0%A4%A") falls back to the raw text, which then fails validation and 404s.
+ */
+export function decodeRouteId(raw: string): string {
+  try { return decodeURIComponent(raw) } catch { return raw }
 }
 
 /** Minimum description for a job to be shown at all (JobPosting needs far more — see jobPostingDescription). */

@@ -25,7 +25,6 @@ export function GovtStatsClient({ items }: { items: StatItem[] }) {
           <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
           <div style={{ fontFamily: 'Playfair Display,serif', fontSize: 22, fontWeight: 900, color: '#1847d4' }}>
             <AnimatedCounter value={s.num} />
-            <span style={{ fontSize: 14 }}>+</span>
           </div>
           <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{s.label}</div>
         </div>

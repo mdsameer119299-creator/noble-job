@@ -1,18 +1,38 @@
 import Link from 'next/link'
 import { getFeaturedJobsMix, type FeaturedJobCard } from '@/lib/services/featuredJobs'
+import { featuredCardLink } from '@/lib/jobs/featuredCardLink'
+import { featuredCardBadge, type FeaturedBadgeKind } from '@/lib/jobs/featuredCardBadge'
+
+const BADGE_STYLE: Record<FeaturedBadgeKind, { background: string; color: string }> = {
+  verified: { background: '#eff6ff', color: '#1847d4' },
+  employer: { background: '#f1f5f9', color: '#475569' },
+  source: { background: '#fef3c7', color: '#92400e' },
+  curated: { background: '#f5f3ff', color: '#6d28d9' },
+  official: { background: '#ecfdf5', color: '#047857' },
+}
 
 const BOARD_LABEL: Record<FeaturedJobCard['board'], string> = { private: 'Private', wfh: 'Work From Home', abroad: 'Abroad' }
-const BOARD_HREF = (card: FeaturedJobCard) => `/jobs/${card.board}/${card.id}`
 
 /**
- * Genuine-employer jobs only (see featuredJobs.ts), balanced across all three
- * employer-postable boards — renders nothing when there aren't any yet,
- * rather than padding the section with synthetic content just to avoid an
- * empty state.
+ * Genuine, open jobs only (never synthetic / unclassified demo content), balanced across the
+ * Private, Work From Home and Abroad boards. The mix is NOT all employer-verified, and the two
+ * decisions on a card are made independently:
+ *
+ *   • DESTINATION — `featuredCardLink()`: an internal detail page for native jobs, the job's own
+ *     external URL for external-source (aggregated, e.g. Himalayas) jobs; a card with no safe link
+ *     is not rendered.
+ *   • BADGE — `featuredCardBadge()`: from the job's provenance + verification evidence. "Verified" is
+ *     only for employer-owned jobs that satisfy `isEmployerVerified`; aggregated jobs say "Source ↗";
+ *     curated / official-source jobs get their own accurate label. An internal link proves nothing.
+ *
+ * Renders nothing when there are no cards, rather than padding the section with synthetic content.
  */
 export async function FeaturedJobsSection() {
-  const jobs = await getFeaturedJobsMix(6)
-  if (jobs.length === 0) return null
+  const cards = (await getFeaturedJobsMix(6)).flatMap(job => {
+    const link = featuredCardLink(job)
+    return link ? [{ job, link, badge: featuredCardBadge(job) }] : []
+  })
+  if (cards.length === 0) return null
 
   return (
     <section style={{ padding: '48px 0 8px' }} className="wrap">
@@ -21,41 +41,51 @@ export async function FeaturedJobsSection() {
           <h2 style={{ fontFamily: '"Playfair Display",serif', fontSize: 'clamp(20px,2.4vw,26px)', fontWeight: 900, color: '#0d1f4e', marginBottom: 4 }}>
             ⭐ Featured Jobs
           </h2>
-          <p style={{ color: '#6b7280', fontSize: 13.5 }}>Verified openings from real employers — Private, Work From Home &amp; Abroad</p>
+          <p style={{ color: '#6b7280', fontSize: 13.5 }}>Openings from employers and external job sources — Private, Work From Home &amp; Abroad. Each card shows where it comes from.</p>
         </div>
         <Link href="/jobs/private" style={{ fontSize: 13.5, fontWeight: 700, color: '#1847d4', textDecoration: 'none', whiteSpace: 'nowrap' }}>
           View All Jobs →
         </Link>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 16 }}>
-        {jobs.map(job => (
-          <Link
-            key={`${job.board}-${job.id}`}
-            href={BOARD_HREF(job)}
-            style={{
-              display: 'block', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 16,
-              padding: '18px 20px', textDecoration: 'none', boxShadow: '0 2px 12px rgba(24,71,212,.06)',
-            }}
-          >
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 11, background: job.color || '#1847d4', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 14, flexShrink: 0 }}>
-                {job.company?.slice(0, 2).toUpperCase() || 'NJ'}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: '"Playfair Display",serif', fontWeight: 800, fontSize: 14.5, color: '#0d1f4e', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {job.title}
+        {cards.map(({ job, link, badge }) => {
+          const cardStyle = {
+            display: 'block', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 16,
+            padding: '18px 20px', textDecoration: 'none', boxShadow: '0 2px 12px rgba(24,71,212,.06)',
+          }
+          const inner = (
+            <>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 11, background: job.color || '#1847d4', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 14, flexShrink: 0 }}>
+                  {job.company?.slice(0, 2).toUpperCase() || 'NJ'}
                 </div>
-                <div style={{ fontSize: 12.5, color: '#6b7280' }}>{job.company}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: '"Playfair Display",serif', fontWeight: 800, fontSize: 14.5, color: '#0d1f4e', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {job.title}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#6b7280' }}>{job.company}</div>
+                </div>
+                {badge && (
+                  <span style={{ ...BADGE_STYLE[badge.kind], fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 8, flexShrink: 0 }}>{badge.label}</span>
+                )}
               </div>
-              <span style={{ background: '#eff6ff', color: '#1847d4', fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 8, flexShrink: 0 }}>Verified</span>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ background: '#f0f4ff', color: '#374151', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 600 }}>📍 {job.location}</span>
-              {job.salary && <span style={{ background: '#f0f4ff', color: '#374151', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 600 }}>💰 {job.salary}</span>}
-              <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>{BOARD_LABEL[job.board]}</span>
-            </div>
-          </Link>
-        ))}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ background: '#f0f4ff', color: '#374151', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 600 }}>📍 {job.location}</span>
+                {job.salary && <span style={{ background: '#f0f4ff', color: '#374151', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 600 }}>💰 {job.salary}</span>}
+                <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>{BOARD_LABEL[job.board]}</span>
+              </div>
+            </>
+          )
+          return link.external ? (
+            <a key={`${job.board}-${job.id}`} href={link.href} target="_blank" rel="noopener noreferrer" style={cardStyle}>
+              {inner}
+            </a>
+          ) : (
+            <Link key={`${job.board}-${job.id}`} href={link.href} style={cardStyle}>
+              {inner}
+            </Link>
+          )
+        })}
       </div>
     </section>
   )

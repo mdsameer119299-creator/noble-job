@@ -17,6 +17,7 @@ import {
   type SitemapEntry,
   type SitemapJobRow,
 } from "./sitemapPolicy"
+import { readOrThrow, isBuildPhase } from "./sitemapReadGuard"
 import {
   countGenuineOpen,
   meetsGenuineThreshold,
@@ -228,7 +229,10 @@ test("sitemap.ts wires the exclusions in and only lists govt states that have th
 test("sitemap failure policy: strict govt read + throws at runtime, tolerant only during next build", () => {
   const src = read("src/app/sitemap.ts")
   assert.match(src, /getActiveGovtRowsStrict/)
-  assert.match(src, /phase-production-build/)
+  // phase-production-build lives in the guard module (sitemapReadGuard.ts), not in sitemap.ts —
+  // sitemap.ts imports readOrThrow from it. The guard is the single authoritative location.
+  assert.match(src, /sitemapReadGuard/)
+  assert.match(read("src/lib/seo/sitemapReadGuard.ts"), /phase-production-build/)
 })
 test("sitemap does not list auth (raw source check used by verify-seo too)", () => {
   assert.doesNotMatch(read("src/app/sitemap.ts"), /["'`]\/auth/)
@@ -395,6 +399,108 @@ test("a noindex/demo page keeps its own browsing continuity", () => {
 })
 test("all three job detail pages use the provenance-aware link builder", () => {
   for (const b of ["private", "wfh", "abroad"]) assert.match(read(`src/app/jobs/${b}/[id]/page.tsx`), /toRelatedLinks/, b)
+})
+
+/* -------------------- readOrThrow / build-phase guard -------------------- */
+
+test("isBuildPhase: false in test runner (NEXT_PHASE is undefined)", () => {
+  const saved = process.env.NEXT_PHASE
+  delete process.env.NEXT_PHASE
+  assert.equal(isBuildPhase(), false)
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+})
+
+test("isBuildPhase: true only for exact 'phase-production-build' string", () => {
+  const saved = process.env.NEXT_PHASE
+  process.env.NEXT_PHASE = "phase-production-build"
+  assert.equal(isBuildPhase(), true)
+  process.env.NEXT_PHASE = "phase-production-server"
+  assert.equal(isBuildPhase(), false)
+  process.env.NEXT_PHASE = "development"
+  assert.equal(isBuildPhase(), false)
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+  else delete process.env.NEXT_PHASE
+})
+
+test("readOrThrow — build phase: returns fallback WITHOUT invoking the callback", async () => {
+  const saved = process.env.NEXT_PHASE
+  process.env.NEXT_PHASE = "phase-production-build"
+  let called = false
+  const fn = async () => { called = true; return ["expensive"] }
+  const result = await readOrThrow(fn, [] as string[], "test section")
+  assert.equal(called, false, "callback must NOT be invoked during build phase")
+  assert.deepEqual(result, [], "fallback is returned")
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+  else delete process.env.NEXT_PHASE
+})
+
+test("readOrThrow — build phase: callback that throws is never reached (no error, just fallback)", async () => {
+  const saved = process.env.NEXT_PHASE
+  process.env.NEXT_PHASE = "phase-production-build"
+  const fn = async (): Promise<number[]> => { throw new Error("DB unavailable") }
+  const result = await readOrThrow(fn, [42] as number[], "throwing section")
+  assert.deepEqual(result, [42], "fallback is returned without the error propagating")
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+  else delete process.env.NEXT_PHASE
+})
+
+test("readOrThrow — runtime: invokes callback and returns its result", async () => {
+  const saved = process.env.NEXT_PHASE
+  delete process.env.NEXT_PHASE // runtime: NEXT_PHASE is undefined or 'phase-production-server'
+  let called = false
+  const fn = async () => { called = true; return ["live-data"] }
+  const result = await readOrThrow(fn, [] as string[], "runtime section")
+  assert.equal(called, true, "callback IS invoked at runtime")
+  assert.deepEqual(result, ["live-data"])
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+})
+
+test("readOrThrow — runtime: propagates errors from the callback (never caches a partial sitemap)", async () => {
+  const saved = process.env.NEXT_PHASE
+  delete process.env.NEXT_PHASE
+  const fn = async (): Promise<string[]> => { throw new Error("Supabase timeout") }
+  await assert.rejects(
+    () => readOrThrow(fn, [] as string[], "failing runtime section"),
+    /Supabase timeout/,
+  )
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+})
+
+test("readOrThrow — runtime with phase-production-server: also propagates errors", async () => {
+  const saved = process.env.NEXT_PHASE
+  process.env.NEXT_PHASE = "phase-production-server"
+  const fn = async (): Promise<string[]> => { throw new Error("query timeout at runtime") }
+  await assert.rejects(
+    () => readOrThrow(fn, [] as string[], "production server section"),
+    /query timeout at runtime/,
+  )
+  if (saved !== undefined) process.env.NEXT_PHASE = saved
+  else delete process.env.NEXT_PHASE
+})
+
+test("sitemap.ts imports readOrThrow from sitemapReadGuard (not a local definition)", () => {
+  const src = read("src/app/sitemap.ts")
+  assert.match(src, /from "@\/lib\/seo\/sitemapReadGuard"/, "readOrThrow must be imported from the guard module")
+  assert.doesNotMatch(
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""),
+    /async function readOrThrow/,
+    "readOrThrow must not be re-defined locally in sitemap.ts",
+  )
+})
+
+test("sitemapReadGuard: build phase returns fallback immediately (source-code check on the guard)", () => {
+  const src = read("src/lib/seo/sitemapReadGuard.ts")
+  // Guard must check isBuildPhase() BEFORE awaiting fn(), not after fn() throws.
+  // Structural check: the isBuildPhase check and return-fallback come before any `fn()` invocation.
+  const guardBody = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
+  const phaseIdx = guardBody.indexOf("isBuildPhase()")
+  const fnCallIdx = guardBody.indexOf("fn()")
+  assert.ok(phaseIdx !== -1, "isBuildPhase() check is present")
+  assert.ok(fnCallIdx !== -1, "fn() is still called at runtime")
+  assert.ok(phaseIdx < fnCallIdx, "isBuildPhase() check must appear BEFORE fn() is invoked in the source")
+  // And there must be a return-fallback branch for build phase (no try/catch wrapping fn).
+  assert.match(src, /return fallback/)
+  assert.doesNotMatch(guardBody, /try\s*\{[\s\S]*?fn\(\)/, "fn() must not be inside a try block in the guard")
 })
 
 console.log(`\nsitemap/seo policy tests: ${passed} passed, ${failed} failed`)

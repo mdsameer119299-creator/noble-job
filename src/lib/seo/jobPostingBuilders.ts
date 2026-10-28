@@ -31,6 +31,7 @@ import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
 import type { GovtJob } from "@/types/govtJob"
 import type { JobContent } from "./jobContent"
+import { displayVacancies } from "@/lib/govt/vacancyFigure"
 
 type SalaryFields = Partial<{
   salaryMin: number
@@ -256,7 +257,8 @@ export function buildGovtJobPosting(job: GovtJob, helpers: GovtLocationHelpers) 
     title: job.title,
     org: job.org,
     post: job.post,
-    vacanciesStated: job.vacanciesStated,
+    // Defence in depth: a figure the official notice does not support is never cited (govt/vacancyFigure.ts).
+    vacanciesStated: displayVacancies(job) ? job.vacanciesStated : undefined,
     qualification: job.qualification,
     salary: job.salary,
     lastDate: job.lastDate,

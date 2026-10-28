@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { displayVacancies } from '@/lib/govt/vacancyFigure'
 
 interface LatestJobCardProps { job: any; type: string }
 
@@ -7,7 +8,7 @@ export function LatestJobCard({ job, type }: LatestJobCardProps) {
                type === "wfh" ? `/jobs/wfh/${job.id}` :
                type === "abroad" ? `/jobs/abroad/${job.id}` : `/jobs/private/${job.id}`
 
-  const subtitle = type === "govt" ? `${job.vacancies || ""} Vacancies · ${job.location}` :
+  const subtitle = type === "govt" ? [displayVacancies(job) ? `${displayVacancies(job)} Vacancies` : "", job.location].filter(Boolean).join(" · ") :
                    type === "wfh" ? `${job.company} · ${job.cat}` :
                    type === "abroad" ? `${job.company} · ${job.country}` :
                    `${job.location || "India"} · ${job.job_type || "Full Time"}`

@@ -72,7 +72,9 @@ test("REGRESSION — enrichGovtJob(row, { synthesizeVacancies: false }) must not
 })
 
 test("sanity — a row with a real, parseable vacancy count still passes it through untouched", () => {
-  const row = { ...jnuRow, id: "x:real-count", vacancies: "11,558", vacancy_breakup: [] }
+  // Override both id (not in REVIEWED_NOTICES) and post (not a scraped fragment)
+  // so the vacancy display gate does not suppress it.
+  const row = { ...jnuRow, id: "x:real-count", post: "Junior Engineer", vacancies: "11,558", vacancy_breakup: [] }
   const job = mapRow(row)
   assert.equal(job.vacancies, "11,558")
 })

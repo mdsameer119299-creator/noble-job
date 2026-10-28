@@ -56,8 +56,9 @@ export function GovtScopeHero({ crumbs, title, description, categorySlug, qualif
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
             {[
-              { label: "Notifications", value: stat.notifications > 0 ? `${fmt(stat.notifications)}+` : "0" },
-              { label: "Vacancies", value: stat.vacancies > 0 ? `${fmt(stat.vacancies)}+` : "0" },
+              { label: "Notifications", value: stat.notifications > 0 ? `${fmt(stat.notifications)}` : "0" },
+              // No vacancy total (none stated, or one that nothing supports): the box is omitted rather than shown as "0".
+              ...(stat.vacancies > 0 ? [{ label: "Vacancies", value: fmt(stat.vacancies) }] : []),
             ].map(item => (
               <div
                 key={item.label}

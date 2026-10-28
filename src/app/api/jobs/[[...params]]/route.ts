@@ -50,9 +50,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ para
       // NO EMPTY JOBS / count integrity: the number of OPEN jobs in the SAME renderable,
       // switch-honouring set the list serves (its Live + Verified tabs) — in local and
       // database mode alike. Never a raw row count.
-      const { getJobs } = await import("@/lib/services/jobService")
-      const { counts } = await getJobs({ page: 1, limit: 1 })
-      return NextResponse.json({ count: Math.max(0, (counts?.all ?? 0) - (counts?.archived ?? 0)) })
+      // Includes the live third-party jobs the list merges in (getPrivateListingCounts), so this number,
+      // the hero and the list's own "Showing N jobs" agree.
+      const { getPrivateListingCounts } = await import("@/lib/services/visibleCounts")
+      const counts = await getPrivateListingCounts()
+      return NextResponse.json({ count: Math.max(0, (counts.all ?? 0) - (counts.archived ?? 0)) })
     }
 
     const filter = {

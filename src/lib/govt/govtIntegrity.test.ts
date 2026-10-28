@@ -396,7 +396,7 @@ async function main() {
     }
     assert.doesNotMatch(sql, /DROP\s+(TABLE|COLUMN)|DELETE\s+FROM|TRUNCATE/i)
     assert.doesNotMatch(sql, /UPDATE[^;]*SET[^;]*source_published_at\s*=/i, "must not invent source_published_at")
-    assert.match(read("supabase/migrations/20260727000001_govt_jobs_record_integrity.down.sql"), /DROP COLUMN IF EXISTS/)
+    assert.match(read("supabase/rollbacks/20260727000001_govt_jobs_record_integrity.down.sql"), /DROP COLUMN IF EXISTS/)
   })
 
   console.log(`\ngovt integrity tests: ${passed} passed, ${failed} failed`)
