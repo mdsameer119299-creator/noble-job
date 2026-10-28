@@ -24,6 +24,7 @@ import {
   type SitemapEntry,
   type SitemapJobBoard,
 } from "@/lib/seo/sitemapPolicy"
+import { readOrThrow, isBuildPhase } from "@/lib/seo/sitemapReadGuard"
 import type { GovtJob } from "@/types/govtJob"
 
 // Cache the generated sitemap for 1 hour. Its contents change at most hourly
@@ -63,21 +64,6 @@ const REDIRECT_SOURCE_PATHS = new Set<string>([
   "/jobs",
   "/jobs/govt/rrb-ntpc-graduate-level-recruitment-2026",
 ])
-
-const isBuildPhase = () => process.env.NEXT_PHASE === "phase-production-build"
-
-/** Run a data read; during `next build` degrade to `fallback`, at runtime rethrow. */
-async function readOrThrow<T>(fn: () => Promise<T>, fallback: T, label: string): Promise<T> {
-  try {
-    return await fn()
-  } catch (e) {
-    if (isBuildPhase()) {
-      console.warn(`[sitemap] ${label} unavailable during build (${(e as Error).message}); section skipped`)
-      return fallback
-    }
-    throw e
-  }
-}
 
 const govtChangedAt = (j: GovtJob, now: Date) => toLastModified([j.contentChangedAt], now)
 
