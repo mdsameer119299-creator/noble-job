@@ -180,6 +180,18 @@ export interface SnapshotPage {
  * so the snapshot reader can detect a partial/failed read and let readOrThrow()
  * abort ISR regeneration, preserving the previously-served sitemap.
  *
+ * Uses supabaseAdmin (service-role, cookie-less) instead of the cookie-based
+ * server client so this function works during ISR background regeneration, where
+ * cookies() is unavailable.  The snapshot is a server-side background operation
+ * that never acts on behalf of a user session — it has no need for a cookie jar.
+ * This follows the established pattern in readSitemapJobRows() (sitemapJobs.ts)
+ * and loadActiveGovtRows() (govtStatsSource.ts).
+ *
+ * RLS note: supabaseAdmin bypasses Row Level Security.  The query selects only
+ * status='active' rows and the result is run through filterRenderable(),
+ * applySyntheticVisibility(), and — in the caller — isIndexable(), which together
+ * ensure only eligible public job records reach the sitemap.
+ *
  * Ordering: posted_at DESC, id ASC — the secondary sort on id eliminates
  * duplicate/skipped rows across page boundaries when multiple jobs share the
  * same posted_at timestamp.
@@ -202,10 +214,10 @@ export async function getPrivateJobsForSnapshot(
   if (!isSupabaseConfigured()) {
     throw new Error("[jobService:snapshot] Supabase is not configured — cannot build sitemap snapshot")
   }
-  const sb = await getSupabaseClient()
-  if (!sb) {
-    throw new Error("[jobService:snapshot] Supabase client unavailable — cannot build sitemap snapshot")
-  }
+  // Use the service-role admin client — it does not require a cookie/request
+  // context and therefore works during ISR background regeneration.
+  const { supabaseAdmin } = await import("@/lib/supabase/admin")
+  const sb = supabaseAdmin
 
   const query = sb
     .from("jobs")
