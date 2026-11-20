@@ -28,6 +28,10 @@ import type { Job } from "@/types/job"
 import type { WfhJob } from "@/types/wfhJob"
 import type { AbroadJob } from "@/types/abroadJob"
 import type { GovtJob } from "@/types/govtJob"
+import { futureDeadline } from "@/lib/testing/futureDeadline"
+
+// Always-open deadline: a fixed calendar date eventually passes and (correctly) stops emitting JobPosting.
+const OPEN = futureDeadline()
 
 let passed = 0
 let failed = 0
@@ -77,7 +81,7 @@ const abroadJob = (over: Obj = {}) =>
 const govtJob = (over: Obj = {}) =>
   ({
     id: "ibps:clerk-2026", slug: "ibps-clerk-2026", title: "IBPS Clerk Recruitment 2026", org: "IBPS", post: "Clerk", vacancies: "6000",
-    vacanciesStated: "6000", ageRange: "20-28 years", tab: "banking", status: "active", lastDate: "30 Oct 2026",
+    vacanciesStated: "6000", ageRange: "20-28 years", tab: "banking", status: "active", lastDate: OPEN.label,
     officialUrl: "https://www.ibps.in/careers/clerk-2026.pdf", applyUrl: "https://ibpsonline.ibps.in/apply", location: "All India", state: "",
     qualification: "Any Graduate", salary: "", ...over,
   }) as unknown as GovtJob
