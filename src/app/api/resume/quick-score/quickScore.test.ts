@@ -290,8 +290,10 @@ async function main() {
       assert.ok((await extractResumeText(buildPdf(1), "pdf")).text.includes(MARKER), `round ${round}: valid PDF after failures`)
       assert.ok((await extractResumeText(buildPdf(PDF_MAX_PAGES), "pdf")).text.includes(MARKER))
     }
-    const concurrent = await Promise.all(Array.from({ length: 6 }, () => extractResumeText(buildPdf(2), "pdf")))
-    assert.ok(concurrent.every(r => r.text.includes(MARKER)), "overlapping parses")
+    // overlapping parses: up to the worker cap run; extras are told "busy" (503), never corrupted
+    const concurrent = await Promise.all(Array.from({ length: 4 }, () => extractResumeText(buildPdf(2), "pdf")))
+    assert.ok(concurrent.filter(r => r.text.includes(MARKER)).length >= 2, "at least the permitted parses succeed")
+    assert.ok(concurrent.every(r => r.text.includes(MARKER) || r.code === "busy"), "the rest are 'busy', nothing is misread")
   })
   await test("rate limit: 6th request from one client in the window gets 429 + Retry-After", async () => {
     setRateLimitBackend(memoryBackend())

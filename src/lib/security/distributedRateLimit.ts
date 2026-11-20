@@ -23,11 +23,21 @@
  *   does not consume the global budget or grow the table.
  *
  * FAILURE MODES (documented, deliberate)
- *   Every database call has a hard deadline (DB_DEADLINE_MS). If the store is
- *   unreachable/slow, the request is NOT blocked; it is allowed under a per-instance
- *   in-memory limit only (`degraded: true`). Availability of the free resume scorer
- *   is preferred over hard-failing while the DB is down; abuse is still bounded by
- *   the byte/page/time caps and the per-instance limiter.
+ *   Every database call is given DB_DEADLINE_MS to answer. The deadline only makes THIS REQUEST
+ *   STOP WAITING — it does NOT cancel the underlying Supabase operation, which may still finish
+ *   later. If the store is unreachable/slow the request is NOT blocked; it is allowed under a
+ *   per-instance in-memory limit only (`degraded: true`). Availability of the free resume scorer
+ *   is preferred over hard-failing while the DB is down; abuse is still bounded by the
+ *   byte/page/time caps and the per-instance limiter.
+ *
+ * LATE OPERATIONS (what happens to work that finishes after the deadline)
+ *   - Late INSERT: the in-process promise keeps running; when it finally resolves with a row id
+ *     the row is withdrawn immediately ("abandoned" flag), so it cannot sit in the counters. If the
+ *     process is frozen/terminated before that (serverless), the row stays; it counts only against
+ *     this client's own window (it over-counts, never under-counts) and is swept after 24 h.
+ *   - Late/failed DELETE (withdrawal): the row id goes to a small bounded in-process retry queue
+ *     (ORPHAN_QUEUE_MAX) that later requests drain; if that is lost too, the same over-count bound applies.
+ *   - Late COUNT: read-only, ignored.
  *
  * LOAD / GROWTH
  *   Allowed request = 1 insert + 2 head-counts; denied = +1 delete (and a repeat
@@ -43,6 +53,7 @@
  */
 import { createHmac, randomBytes } from "node:crypto"
 import { rateLimit as memoryRateLimit } from "@/lib/utils/rateLimit"
+import { getTrustedClientIp } from "@/lib/security/clientIp"
 
 export interface RateLimitPolicy {
   /** Logical bucket, e.g. "resume-quick-score". */
@@ -66,7 +77,7 @@ export type RateLimitDecision =
   | { allowed: false; retryAfterSec: number; reason: "client" | "global" }
 
 const UA_PREFIX = "ratelimit:"
-/** Max time any single rate-limit DB call may take before we degrade. */
+/** How long a request WAITS for any single rate-limit DB call before degrading (it does not cancel the call). */
 export const DB_DEADLINE_MS = 2500
 const SWEEP_PROBABILITY = 0.02
 const SWEEP_AGE_MS = 24 * 3600_000
@@ -84,14 +95,16 @@ export function scopeTag(scope: string): string {
 
 /** Stable pseudonymous client id. Raw IPs are never stored. */
 export function clientKeyFromRequest(req: Request): string {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip")?.trim() ||
-    "unknown"
+  const ip = getTrustedClientIp(req) // see clientIp.ts for the trust model
   return createHmac("sha256", subKey()).update("ip:" + ip).digest("hex").slice(0, 32)
 }
 
-function withDeadline<T>(p: PromiseLike<T>, ms = DB_DEADLINE_MS): Promise<T> {
+let deadlineMs = DB_DEADLINE_MS
+/** Test seam: shorten the deadline so late-completion paths can be exercised quickly. */
+export function setRateLimitDeadlineMs(ms: number | null) { deadlineMs = ms ?? DB_DEADLINE_MS }
+
+/** Stop WAITING after `ms`. Does not cancel `p`; late settlement is swallowed (no unhandled rejection). */
+function withDeadline<T>(p: PromiseLike<T>, ms = deadlineMs): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("rate-limit-timeout")), ms)
     Promise.resolve(p).then(
@@ -165,6 +178,21 @@ export function setRateLimitBackend(b: RateLimitBackend | null) {
   backend = b ?? supabaseRateLimitBackend
 }
 
+/** Rows whose withdrawal failed or timed out; retried (bounded) by later requests. */
+const ORPHAN_QUEUE_MAX = 200
+const orphans: { scope: string; id: string }[] = []
+export function __orphanCount() { return orphans.length }
+function queueOrphan(scope: string, id: string) {
+  if (orphans.length >= ORPHAN_QUEUE_MAX) orphans.shift()
+  orphans.push({ scope, id })
+}
+function drainOrphans() {
+  for (const o of orphans.splice(0, 3)) {
+    // fire-and-forget; on failure it goes back in the queue
+    withDeadline(backend.remove(o.scope, o.id)).catch(() => queueOrphan(o.scope, o.id))
+  }
+}
+
 export async function checkRateLimit(req: Request, policy: RateLimitPolicy): Promise<RateLimitDecision> {
   const clientKey = clientKeyFromRequest(req)
 
@@ -176,14 +204,27 @@ export async function checkRateLimit(req: Request, policy: RateLimitPolicy): Pro
     return { allowed: false, reason: "client", retryAfterSec: Math.max(1, Math.ceil((pre.resetAt - Date.now()) / 1000)) }
   }
 
+  if (orphans.length) drainOrphans()
+
+  // The insert may outlive our deadline; if it does, withdraw it as soon as it lands.
+  let abandoned = false
+  const inserting = Promise.resolve(backend.record(policy.scope, clientKey))
+  inserting.then(
+    lateId => { if (abandoned) withDeadline(backend.remove(policy.scope, lateId)).catch(() => queueOrphan(policy.scope, lateId)) },
+    () => { /* insert failed: nothing to withdraw */ },
+  )
+
   let id: string
   try {
-    id = await withDeadline(backend.record(policy.scope, clientKey))
+    id = await withDeadline(inserting)
   } catch {
+    abandoned = true // late success (if any) is withdrawn by the handler above
     return { allowed: true, degraded: true } // store unavailable: per-instance gate already applied
   }
 
-  const withdraw = async () => { try { await withDeadline(backend.remove(policy.scope, id)) } catch { /* best effort */ } }
+  const withdraw = async () => {
+    try { await withDeadline(backend.remove(policy.scope, id)) } catch { queueOrphan(policy.scope, id) }
+  }
 
   let mine: number
   let all: number

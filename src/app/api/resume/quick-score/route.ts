@@ -69,6 +69,9 @@ export async function POST(req: NextRequest) {
     }
 
     const parsed = await extractResumeText(buf, valid.ext)
+    if (parsed.code === "busy" || parsed.code === "unavailable") {
+      return fail(parsed.warning || "Temporarily unavailable.", 503, { "Retry-After": "30" })
+    }
     if (!parsed.text || parsed.text.length < 30) {
       return fail(parsed.warning || "Could not read your resume. Try a text-based PDF or DOCX.", 422)
     }

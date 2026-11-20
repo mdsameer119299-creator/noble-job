@@ -1,7 +1,7 @@
 /**
  * resume/parse.ts — extract plain text from resume files (server-only).
  *
- *   • PDF  → pdf-parse (already a project dependency, used by ingestion).
+ *   • PDF  → bundled pdf.js run in an isolated, resource-limited worker thread (pdfIsolated.ts).
  *   • DOCX → read word/document.xml from the OOXML zip via the central directory
  *            and inflate it with the built-in zlib (no extra dependency).
  *   • DOC (legacy binary) → best-effort ASCII scrape; may be partial.
@@ -10,17 +10,20 @@
  * Never throws: returns { text, warning? }. Real extraction — no fabrication.
  */
 import zlib from "node:zlib"
+import { parsePdfIsolated, PDF_MAX_PAGES, PDF_PARSE_TIMEOUT_MS } from "@/lib/resume/pdfIsolated"
+
+export { PDF_MAX_PAGES, PDF_PARSE_TIMEOUT_MS }
 
 /** Hard ceilings so a hostile upload cannot exhaust memory or CPU. */
 export const DOCX_MAX_UNCOMPRESSED_BYTES = 10 * 1024 * 1024 // word/document.xml after inflate
-export const PDF_MAX_PAGES = 15
-export const PDF_PARSE_TIMEOUT_MS = 10_000
 
 class ResumeLimitError extends Error {}
 
 export interface ParsedResume {
   text: string
   warning?: string
+  /** Machine-readable class for failures the caller should map to a non-422 status. */
+  code?: "busy" | "unavailable"
 }
 
 export type ResumeExt = "pdf" | "docx" | "doc" | "txt"
@@ -31,65 +34,22 @@ export function extToKind(ext: string): ResumeExt | null {
   return null
 }
 
-/** Minimal surface of the bundled pdf.js 1.10 we drive directly (see parsePdf). */
-interface PdfJsLib {
-  disableWorker: boolean
-  getDocument(src: Uint8Array): {
-    promise: Promise<{
-      numPages: number
-      getPage(n: number): Promise<{ getTextContent(o: object): Promise<{ items: { str: string; transform: number[] }[] }> }>
-    }>
-    destroy(): Promise<void>
-  }
-}
-
 async function parsePdf(buf: Buffer): Promise<ParsedResume> {
-  let task: ReturnType<PdfJsLib["getDocument"]> | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    const mod = await import("pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js")
-    const PDFJS = ((mod as { default?: unknown }).default ?? mod) as PdfJsLib
-    PDFJS.disableWorker = true
-    const timeout = new Promise<never>((_, rej) => {
-      timer = setTimeout(() => rej(new ResumeLimitError("pdf-timeout")), PDF_PARSE_TIMEOUT_MS)
-    })
-    // We drive pdf.js ourselves (rather than through pdf-parse) so the loading task is ALWAYS
-    // destroyed and awaited, success or failure. pdf-parse never destroys a failed task and does
-    // not await doc.destroy(); with pdf.js's shared fake worker that left stale state that made the
-    // next, perfectly valid, PDF intermittently fail with "bad XRef entry".
-    const work = (async () => {
-      task = PDFJS.getDocument(new Uint8Array(buf))
-      const doc = await task.promise
-      if (doc.numPages > PDF_MAX_PAGES) return { text: "", numPages: doc.numPages }
-      let text = ""
-      for (let i = 1; i <= doc.numPages; i++) {
-        const pageText = await doc.getPage(i).then(async page => {
-          const tc = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
-          let lastY: number | undefined
-          let t = ""
-          for (const item of tc.items) {
-            t += lastY === item.transform[5] || !lastY ? item.str : "\n" + item.str
-            lastY = item.transform[5]
-          }
-          return t
-        }).catch(() => "")
-        text = `${text}\n\n${pageText}`
-      }
-      return { text, numPages: doc.numPages }
-    })()
-    const data = await Promise.race([work, timeout])
-    if (data.numPages > PDF_MAX_PAGES) {
-      return { text: "", warning: `PDF has too many pages (maximum ${PDF_MAX_PAGES}).` }
-    }
-    const text = (data.text || "").trim()
+  // Parsing runs in an isolated, resource-limited worker thread (see pdfIsolated.ts for exactly what is
+  // and is NOT enforced). Messages are generic on purpose: parser internals never reach the client.
+  const r = await parsePdfIsolated(buf)
+  if (r.ok) {
+    const text = (r.text || "").trim()
     return text.length >= 30 ? { text } : { text, warning: "Scanned or image-only PDF — little text extracted." }
-  } catch (e) {
-    // Generic message only: parser internals / paths must never reach the client.
-    if (e instanceof ResumeLimitError) return { text: "", warning: "The PDF took too long to process." }
-    return { text: "", warning: "Could not read the PDF file — it may be corrupted or password-protected." }
-  } finally {
-    if (timer) clearTimeout(timer)
-    try { await task?.destroy() } catch { /* already torn down */ }
+  }
+  switch (r.reason) {
+    case "too-many-pages": return { text: "", warning: `PDF has too many pages (maximum ${PDF_MAX_PAGES}).` }
+    case "timeout": case "memory": case "too-large": case "unsupported-compression":
+      return { text: "", warning: "The document is too large or complex to process safely." }
+    case "busy": return { text: "", warning: "The resume scorer is busy. Please try again shortly.", code: "busy" }
+    case "disabled": case "unavailable":
+      return { text: "", warning: "PDF scoring is temporarily unavailable. Please upload a DOCX instead.", code: "unavailable" }
+    default: return { text: "", warning: "Could not read the PDF file — it may be corrupted or password-protected." }
   }
 }
 
