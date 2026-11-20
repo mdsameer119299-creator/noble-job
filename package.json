@@ -44,6 +44,8 @@
                       "test:acq": "tsx src/lib/resume/scoreBand.test.ts",
                       "test:resume": "tsx src/lib/resume/resumeModes.test.ts",
                       "test:resume-workspace": "tsx src/lib/resume/resumeWorkspace.test.ts",
+                      "test:resume-security": "tsx src/app/api/resume/quick-score/quickScore.test.ts",
+                      "test:homepage-queries": "tsx src/lib/seo/homepageTailCities.test.ts",
                       "test:admin": "tsx src/lib/validation/adminValidation.test.ts",
                       "test:admin-route": "tsx src/app/api/admin/adminRoute.test.ts",
                       "test:admin-candidates": "tsx src/lib/admin/candidateIntelligence.test.ts",

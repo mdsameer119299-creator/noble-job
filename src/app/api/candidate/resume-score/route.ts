@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { analyzeResume, enrichWithAiRecommendations } from "@/lib/resume/atsScore"
-import { extractResumeText } from "@/lib/resume/parse"
+import { extractResumeText, extToKind } from "@/lib/resume/parse"
+import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
 import {
   RESUME_BUCKET,
   normalizeResumeStoragePath,
@@ -69,6 +70,10 @@ export async function POST(req: NextRequest) {
     }
     const ext = path.split(".").pop() || "pdf"
     const buf = Buffer.from(await file.arrayBuffer())
+    const kind = extToKind(ext)
+    if (!kind || !hasValidResumeSignature(buf, kind)) {
+      return NextResponse.json({ error: "Your stored resume is not a valid PDF, DOC or DOCX file." }, { status: 422 })
+    }
     const parsed = await extractResumeText(buf, ext)
     text = parsed.text
     parseWarning = parsed.warning

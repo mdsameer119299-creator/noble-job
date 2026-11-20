@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { CITY_LANDINGS } from '@/lib/data/landingCities'
 import { getTailCityBySlug } from '@/lib/data/cityTaxonomy'
-import { getQualifyingTailCitySlugs } from '@/lib/seo/tailCityLanding'
+import { getQualifyingTailCitySlugsForHomepage } from '@/lib/seo/tailCityLanding'
 
 /**
  * Internal-link entry point for the tail-city pages under /jobs-in/[city] —
@@ -12,7 +12,7 @@ import { getQualifyingTailCitySlugs } from '@/lib/seo/tailCityLanding'
  * gate, same rule as every other generated-page link on the site.
  */
 export async function PopularCitiesSection() {
-  const qualifyingSlugs = await getQualifyingTailCitySlugs()
+  const qualifyingSlugs = await getQualifyingTailCitySlugsForHomepage()
   const tailCities = qualifyingSlugs.map(s => getTailCityBySlug(s)).filter((c): c is NonNullable<typeof c> => Boolean(c))
   if (tailCities.length === 0 && CITY_LANDINGS.length === 0) return null
 

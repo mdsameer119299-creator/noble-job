@@ -11,6 +11,13 @@
  */
 import zlib from "node:zlib"
 
+/** Hard ceilings so a hostile upload cannot exhaust memory or CPU. */
+export const DOCX_MAX_UNCOMPRESSED_BYTES = 10 * 1024 * 1024 // word/document.xml after inflate
+export const PDF_MAX_PAGES = 15
+export const PDF_PARSE_TIMEOUT_MS = 10_000
+
+class ResumeLimitError extends Error {}
+
 export interface ParsedResume {
   text: string
   warning?: string
@@ -27,12 +34,36 @@ export function extToKind(ext: string): ResumeExt | null {
 async function parsePdf(buf: Buffer): Promise<ParsedResume> {
   try {
     const mod = await import("pdf-parse/lib/pdf-parse.js")
-    const pdf = (mod as unknown as { default: (b: Buffer) => Promise<{ text: string }> }).default
-    const data = await pdf(buf)
+    const pdf = (mod as unknown as {
+      default: (b: Buffer, o?: { max?: number }) => Promise<{ text: string; numpages: number }>
+    }).default
+    // `max` stops page processing after PDF_MAX_PAGES; numpages still reports the real total.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new ResumeLimitError("pdf-timeout")), PDF_PARSE_TIMEOUT_MS)
+    })
+    let data: { text: string; numpages: number }
+    try {
+      try {
+        data = await Promise.race([pdf(Buffer.from(buf), { max: PDF_MAX_PAGES }), timeout])
+      } catch (first) {
+        if (first instanceof ResumeLimitError) throw first
+        // pdf.js 1.x can fail its very first parse in a fresh process (observed: "bad XRef entry"
+        // on a valid file, succeeding on retry). Retry once; genuinely broken files fail again.
+        data = await Promise.race([pdf(Buffer.from(buf), { max: PDF_MAX_PAGES }), timeout])
+      }
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+    if (data.numpages > PDF_MAX_PAGES) {
+      return { text: "", warning: `PDF has too many pages (maximum ${PDF_MAX_PAGES}).` }
+    }
     const text = (data.text || "").trim()
     return text.length >= 30 ? { text } : { text, warning: "Scanned or image-only PDF — little text extracted." }
   } catch (e) {
-    return { text: "", warning: `PDF parse failed: ${e instanceof Error ? e.message : "unknown error"}` }
+    // Generic message only: parser internals / paths must never reach the client.
+    if (e instanceof ResumeLimitError) return { text: "", warning: "The PDF took too long to process." }
+    return { text: "", warning: "Could not read the PDF file — it may be corrupted or password-protected." }
   }
 }
 
@@ -53,6 +84,7 @@ function extractDocxXml(buf: Buffer): string | null {
     if (buf.readUInt32LE(ptr) !== CEN_SIG) break
     const method = buf.readUInt16LE(ptr + 10)
     const compSize = buf.readUInt32LE(ptr + 20)
+    const declaredSize = buf.readUInt32LE(ptr + 24) // uncompressed size claimed by the zip
     const nameLen = buf.readUInt16LE(ptr + 28)
     const extraLen = buf.readUInt16LE(ptr + 30)
     const commentLen = buf.readUInt16LE(ptr + 32)
@@ -60,15 +92,24 @@ function extractDocxXml(buf: Buffer): string | null {
     const name = buf.toString("utf8", ptr + 46, ptr + 46 + nameLen)
 
     if (name === "word/document.xml") {
+      // Reject up-front when the zip itself declares an oversized entry (zip-bomb guard);
+      // inflate below is ALSO capped because the declared size can be forged.
+      if (declaredSize > DOCX_MAX_UNCOMPRESSED_BYTES) throw new ResumeLimitError("docx-too-large")
+      if (localOff + 30 > buf.length || compSize > buf.length) return null
       // Local header: 30 bytes fixed + filename + extra, then the data.
       const lhNameLen = buf.readUInt16LE(localOff + 26)
       const lhExtraLen = buf.readUInt16LE(localOff + 28)
       const dataStart = localOff + 30 + lhNameLen + lhExtraLen
       const raw = buf.subarray(dataStart, dataStart + compSize)
       try {
-        const out = method === 0 ? raw : zlib.inflateRawSync(raw)
+        if (method === 0 && raw.length > DOCX_MAX_UNCOMPRESSED_BYTES) throw new ResumeLimitError("docx-too-large")
+        const out = method === 0 ? raw : zlib.inflateRawSync(raw, { maxOutputLength: DOCX_MAX_UNCOMPRESSED_BYTES })
         return out.toString("utf8")
-      } catch {
+      } catch (e) {
+        // zlib throws ERR_BUFFER_TOO_LARGE when maxOutputLength is exceeded.
+        if (e instanceof ResumeLimitError || (e as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE") {
+          throw new ResumeLimitError("docx-too-large")
+        }
         return null
       }
     }
@@ -127,7 +168,10 @@ export async function extractResumeText(buf: Buffer, ext: string): Promise<Parse
       case "doc": return parseLegacyDoc(buf)
       case "txt": return { text: buf.toString("utf8").trim() }
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof ResumeLimitError) {
+      return { text: "", warning: "The document is too large or complex to process safely." }
+    }
     return { text: "", warning: `Could not read the ${kind.toUpperCase()} file — it may be corrupted or password-protected.` }
   }
 }
