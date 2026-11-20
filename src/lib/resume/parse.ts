@@ -31,31 +31,54 @@ export function extToKind(ext: string): ResumeExt | null {
   return null
 }
 
+/** Minimal surface of the bundled pdf.js 1.10 we drive directly (see parsePdf). */
+interface PdfJsLib {
+  disableWorker: boolean
+  getDocument(src: Uint8Array): {
+    promise: Promise<{
+      numPages: number
+      getPage(n: number): Promise<{ getTextContent(o: object): Promise<{ items: { str: string; transform: number[] }[] }> }>
+    }>
+    destroy(): Promise<void>
+  }
+}
+
 async function parsePdf(buf: Buffer): Promise<ParsedResume> {
+  let task: ReturnType<PdfJsLib["getDocument"]> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const mod = await import("pdf-parse/lib/pdf-parse.js")
-    const pdf = (mod as unknown as {
-      default: (b: Buffer, o?: { max?: number }) => Promise<{ text: string; numpages: number }>
-    }).default
-    // `max` stops page processing after PDF_MAX_PAGES; numpages still reports the real total.
-    let timer: ReturnType<typeof setTimeout> | undefined
+    const mod = await import("pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js")
+    const PDFJS = ((mod as { default?: unknown }).default ?? mod) as PdfJsLib
+    PDFJS.disableWorker = true
     const timeout = new Promise<never>((_, rej) => {
       timer = setTimeout(() => rej(new ResumeLimitError("pdf-timeout")), PDF_PARSE_TIMEOUT_MS)
     })
-    let data: { text: string; numpages: number }
-    try {
-      try {
-        data = await Promise.race([pdf(Buffer.from(buf), { max: PDF_MAX_PAGES }), timeout])
-      } catch (first) {
-        if (first instanceof ResumeLimitError) throw first
-        // pdf.js 1.x can fail its very first parse in a fresh process (observed: "bad XRef entry"
-        // on a valid file, succeeding on retry). Retry once; genuinely broken files fail again.
-        data = await Promise.race([pdf(Buffer.from(buf), { max: PDF_MAX_PAGES }), timeout])
+    // We drive pdf.js ourselves (rather than through pdf-parse) so the loading task is ALWAYS
+    // destroyed and awaited, success or failure. pdf-parse never destroys a failed task and does
+    // not await doc.destroy(); with pdf.js's shared fake worker that left stale state that made the
+    // next, perfectly valid, PDF intermittently fail with "bad XRef entry".
+    const work = (async () => {
+      task = PDFJS.getDocument(new Uint8Array(buf))
+      const doc = await task.promise
+      if (doc.numPages > PDF_MAX_PAGES) return { text: "", numPages: doc.numPages }
+      let text = ""
+      for (let i = 1; i <= doc.numPages; i++) {
+        const pageText = await doc.getPage(i).then(async page => {
+          const tc = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
+          let lastY: number | undefined
+          let t = ""
+          for (const item of tc.items) {
+            t += lastY === item.transform[5] || !lastY ? item.str : "\n" + item.str
+            lastY = item.transform[5]
+          }
+          return t
+        }).catch(() => "")
+        text = `${text}\n\n${pageText}`
       }
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
-    if (data.numpages > PDF_MAX_PAGES) {
+      return { text, numPages: doc.numPages }
+    })()
+    const data = await Promise.race([work, timeout])
+    if (data.numPages > PDF_MAX_PAGES) {
       return { text: "", warning: `PDF has too many pages (maximum ${PDF_MAX_PAGES}).` }
     }
     const text = (data.text || "").trim()
@@ -64,6 +87,9 @@ async function parsePdf(buf: Buffer): Promise<ParsedResume> {
     // Generic message only: parser internals / paths must never reach the client.
     if (e instanceof ResumeLimitError) return { text: "", warning: "The PDF took too long to process." }
     return { text: "", warning: "Could not read the PDF file — it may be corrupted or password-protected." }
+  } finally {
+    if (timer) clearTimeout(timer)
+    try { await task?.destroy() } catch { /* already torn down */ }
   }
 }
 

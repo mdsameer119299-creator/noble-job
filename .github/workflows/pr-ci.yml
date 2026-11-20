@@ -55,6 +55,15 @@ jobs:
       - name: Resume-workspace tests
         run: npm run test:resume-workspace
 
+      - name: Resume-upload security tests
+        run: npm run test:resume-security
+
+      - name: Distributed rate-limit tests
+        run: npm run test:rate-limit
+
+      - name: Homepage query fan-out tests
+        run: npm run test:homepage-queries
+
       - name: Admin validation tests
         run: npm run test:admin
 

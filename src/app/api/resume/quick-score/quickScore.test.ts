@@ -128,7 +128,8 @@ function memoryBackend(): RateLimitBackend & { hits: { scope: string; key: strin
       const since = Date.now() - windowMs
       return hits.filter(h => h.scope === scope && h.at > since && (key === null || h.key === key)).length
     },
-    async record(scope, key) { hits.push({ scope, key, at: Date.now() }) },
+    async record(scope, key) { hits.push({ scope, key, at: Date.now() }); return String(hits.length - 1) },
+    async remove(_scope, id) { const h = hits[Number(id)]; if (h) h.at = 0 },
   }
 }
 
@@ -281,11 +282,22 @@ async function main() {
     assert.ok(r.text.includes(MARKER), r.warning)
   })
 
+  await test("parser stays healthy: valid PDFs always parse after failures / over-limit files (no stale pdf.js state)", async () => {
+    const garbage = Buffer.from("%PDF-1.4\nxx\n%%EOF garbage \u0000\u0001 garbage")
+    for (let round = 0; round < 6; round++) {
+      await extractResumeText(garbage, "pdf")
+      await extractResumeText(buildPdf(PDF_MAX_PAGES + 1), "pdf")
+      assert.ok((await extractResumeText(buildPdf(1), "pdf")).text.includes(MARKER), `round ${round}: valid PDF after failures`)
+      assert.ok((await extractResumeText(buildPdf(PDF_MAX_PAGES), "pdf")).text.includes(MARKER))
+    }
+    const concurrent = await Promise.all(Array.from({ length: 6 }, () => extractResumeText(buildPdf(2), "pdf")))
+    assert.ok(concurrent.every(r => r.text.includes(MARKER)), "overlapping parses")
+  })
   await test("rate limit: 6th request from one client in the window gets 429 + Retry-After", async () => {
     setRateLimitBackend(memoryBackend())
     const ip = "198.51.100.50"
     for (let i = 0; i < QUICK_SCORE_RATE_POLICY.perClient.max; i++) {
-      assert.equal((await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip }))).status, 200, `request ${i + 1}`)
+      { const rr = await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip })); assert.equal(rr.status, 200, `request ${i + 1} ` + JSON.stringify(await rr.clone().json())) }
     }
     const res = await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip }))
     assert.equal(res.status, 429)
@@ -309,7 +321,7 @@ async function main() {
     assert.equal((await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip: "198.51.100.53" }))).status, 429)
   })
   await test("rate limit: store outage degrades to per-instance limiting (still limits, never 500)", async () => {
-    setRateLimitBackend({ count: async () => { throw new Error("db down") }, record: async () => { throw new Error("db down") } })
+    setRateLimitBackend({ count: async () => { throw new Error("db down") }, record: async () => { throw new Error("db down") }, remove: async () => { throw new Error("db down") } })
     const ip = "198.51.100.54"
     let last = 0
     for (let i = 0; i < 7; i++) last = (await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip }))).status
