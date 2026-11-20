@@ -64,6 +64,12 @@ async function main() {
   const rssBefore = process.memoryUsage().rss
 
   // ── real limits, proven with hostile worker scripts ──
+  await test("UNAVAILABLE: if the Worker cannot be constructed, parsing fails closed as 'unavailable'", async () => {
+    // A real synchronous constructor failure, not a mock of the outcome.
+    const r = await runLimitedWorker("1", { notCloneable: () => 1 }, LIMITS) // DataCloneError thrown by the real constructor
+    assert.deepEqual(r, { ok: false, reason: "unavailable" })
+  })
+
   await test("TIME: an infinite CPU loop is terminated at the timeout and the host stays responsive", async () => {
     let ticks = 0
     const iv = setInterval(() => ticks++, 20)

@@ -13,6 +13,7 @@ import { POST } from "./route"
 import { QUICK_SCORE_RATE_POLICY } from "@/lib/resume/quickScorePolicy"
 import { POST as candidateScorePOST } from "../../candidate/resume-score/route"
 import { extractResumeText, DOCX_MAX_UNCOMPRESSED_BYTES, PDF_MAX_PAGES } from "@/lib/resume/parse"
+import { parserUnavailableResponse } from "@/lib/resume/parseFailure"
 import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
 import { setRateLimitBackend, type RateLimitBackend } from "@/lib/security/distributedRateLimit"
 import { RESUME_MAX_BYTES } from "@/lib/utils/resumeUpload"
@@ -330,6 +331,42 @@ async function main() {
     assert.equal(last, 429)
   })
   setRateLimitBackend(memoryBackend())
+
+  await test("FAIL-SAFE: PDF_PARSING_ENABLED=false -> public route 503+Retry-After for PDF; DOCX and TXT keep working", async () => {
+    const prev = process.env.PDF_PARSING_ENABLED
+    process.env.PDF_PARSING_ENABLED = "false"
+    try {
+      const pdf = await POST(await uploadRequest(buildPdf(1), "cv.pdf", "application/pdf", { ip: "198.51.100.80" }))
+      assert.equal(pdf.status, 503)
+      assert.equal(pdf.headers.get("retry-after"), "30")
+      const docx = await POST(await uploadRequest(buildDocx(docxXml(RESUME_TEXT)), "cv.docx", DOCX_MIME, { ip: "198.51.100.81" }))
+      assert.equal(docx.status, 200)
+      const txt = await extractResumeText(Buffer.from(RESUME_TEXT), "txt")
+      assert.ok(txt.text.includes(MARKER) && !txt.code)
+      const doc = await extractResumeText(Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.from(RESUME_TEXT)]), "doc")
+      assert.ok(!doc.code, "DOC path never touches the PDF kill-switch")
+      const d2 = await extractResumeText(buildDocx(docxXml(RESUME_TEXT)), "docx")
+      assert.ok(d2.text.includes(MARKER) && !d2.code)
+    } finally {
+      if (prev === undefined) delete process.env.PDF_PARSING_ENABLED
+      else process.env.PDF_PARSING_ENABLED = prev
+    }
+  })
+
+  await test("FAIL-SAFE: candidate scorer maps disabled/busy PDF parsing to 503 (not a 422 'bad file')", async () => {
+    const prev = process.env.PDF_PARSING_ENABLED
+    process.env.PDF_PARSING_ENABLED = "false"
+    try {
+      const parsed = await extractResumeText(buildPdf(1), "pdf")
+      assert.equal(parsed.code, "unavailable")
+      assert.equal(parserUnavailableResponse(parsed)?.status, 503)
+      assert.equal(parserUnavailableResponse({ code: "busy", warning: "x" })?.headers["Retry-After"], "30")
+      assert.equal(parserUnavailableResponse({ warning: "too large" }), null, "ordinary failures stay 422 in the route")
+    } finally {
+      if (prev === undefined) delete process.env.PDF_PARSING_ENABLED
+      else process.env.PDF_PARSING_ENABLED = prev
+    }
+  })
 
   await test("unauthenticated access to the AUTHENTICATED candidate scorer is denied", async () => {
     const req = new Request("http://localhost/api/candidate/resume-score", { method: "POST", body: "{}", headers: { "content-type": "application/json" } }) as unknown as NextRequest

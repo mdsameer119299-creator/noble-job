@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { analyzeResume, enrichWithAiRecommendations } from "@/lib/resume/atsScore"
 import { extractResumeText, extToKind } from "@/lib/resume/parse"
+import { parserUnavailableResponse } from "@/lib/resume/parseFailure"
 import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
 import {
   RESUME_BUCKET,
@@ -77,6 +78,11 @@ export async function POST(req: NextRequest) {
     const parsed = await extractResumeText(buf, ext)
     text = parsed.text
     parseWarning = parsed.warning
+    const unavailable = parserUnavailableResponse(parsed)
+    if (unavailable) {
+      // PDF parsing disabled/busy: a server-side condition, not a bad file → 503, retryable.
+      return NextResponse.json({ error: unavailable.error }, { status: unavailable.status, headers: unavailable.headers })
+    }
     if (!text || text.length < 30) {
       return NextResponse.json(
         {
