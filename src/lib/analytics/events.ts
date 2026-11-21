@@ -23,7 +23,15 @@ export const AcqEvent = {
   RESUME_SIGNIN_REQUESTED: "resume_signin_requested",       // { mode, reason }
   JOB_ALERT_SUBSCRIBED: "job_alert_subscribed",
   FIRST_APPLICATION: "first_application",
+  // Registration + employer funnel (visitor -> registration -> application; employer registration -> first job).
+  REGISTER_VIEWED: "register_viewed",               // { role, src }
+  REGISTER_SUBMITTED: "register_submitted",         // { role }  account created, OTP sent
+  REGISTER_VERIFIED: "register_verified",           // { role }  OTP verified = registration complete
+  EMPLOYER_JOB_SUBMITTED: "employer_job_submitted", // { board }  job posted for review
 } as const
+
+/** Single source of truth for the /api/events allow-list. */
+export const ACQ_EVENT_NAMES: readonly string[] = Object.values(AcqEvent)
 
 export type AcqEventName = (typeof AcqEvent)[keyof typeof AcqEvent]
 

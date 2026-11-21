@@ -6,6 +6,7 @@ import{Textarea}from'@/components/ui/Textarea'
 import{Select}from'@/components/ui/Select'
 import{Button}from'@/components/ui/Button'
 import{useToast}from'@/hooks/useToast'
+import{track,AcqEvent}from'@/lib/analytics/events'
 import{JOB_CATEGORIES,WFH_CATEGORIES,JOB_TYPES}from'@/lib/constants/jobCategories'
 
 type Board='private'|'wfh'|'abroad'
@@ -60,7 +61,7 @@ export function PostJobModal({open,onClose,onPosted}:PostJobModalProps){
       payload.salary=form.salary
     }
     const res=await fetch('/api/employer/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    if(res.ok){toast.success(`${BOARD_META[board].label} job posted for review!`);onPosted();onClose();setForm(EMPTY_FORM);setBoard('private')}
+    if(res.ok){track(AcqEvent.EMPLOYER_JOB_SUBMITTED,{board});toast.success(`${BOARD_META[board].label} job posted for review!`);onPosted();onClose();setForm(EMPTY_FORM);setBoard('private')}
     else toast.error('Failed to post job')
     setLoading(false)
   }
