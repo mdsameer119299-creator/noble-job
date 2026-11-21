@@ -53,3 +53,18 @@ Unit: `randomInt` range/zero-padding; HMAC stable & email/type-bound; timing-saf
 
 ## 7. Out of scope / follow-ups
 CAPTCHA, WebAuthn/passkeys, replacing custom OTP with Supabase Auth OTP, account-enumeration review of the register endpoints.
+
+
+## 7. Owner decisions (21 Nov 2026) and relationship to the anonymous-resume proposal
+
+This PR stays **separate** from the anonymous-resume work (PR #68). Principle preserved: **OTP is not required to browse jobs, upload a resume anonymously, or get a basic resume score.**
+
+1. **Where OTP is required:** applying to a job, permanently claiming an anonymous stored resume, password reset, e-mail change. Unverified candidates may sign in, browse and complete non-sensitive profile fields.
+2. **Authoritative verified status:** `users.email_verified`, written only by the verify-OTP path with the service role. Do not auto-confirm accounts at the Supabase Auth layer (no `email_confirm:true` at creation, no blanket "Confirm email: off"); how unverified sign-in is supported is being investigated for #68 (I-1/I-2) and this PR must not assume an answer.
+3. **Send endpoint requires a session:** because registration no longer needs OTP, "send verification code" should be an **authenticated** action keyed by user id (not by an e-mail in the request body). This removes the anonymous OTP-send/e-mail-spam surface and the account-enumeration oracle. Password reset remains unauthenticated by nature and keeps the 60 s cooldown, 5/hour and uniform responses.
+4. **Limiter:** reuse `distributedRateLimit` with `failClosed` (3.8). The `failClosed` option is implemented **once**, shared with #68; neither PR should add a second limiter.
+5. **DB-level enforcement:** apply is gated by RLS (`applications_require_verified_email`) and the claim by `claim_anonymous_resume`, both defined in #68's proposed migration; this PR only owns the OTP table/function changes.
+6. **Added tests:** OTP send without a session → 401; verify marks only `users.email_verified` (Auth `email_confirmed_at` handling per I-1); reset-password and e-mail-change reject unverified accounts; OTP is never requested by the anonymous upload, score or claim-token endpoints (grep/route test); fail-closed returns 503 when the limiter is degraded.
+7. **Risks added:** if Supabase cannot allow unverified sign-in without marking accounts confirmed, the design needs an owner decision before implementation (see #68 section 3.3); Supabase's own `/recover` and e-mail-change endpoints are reachable with the anon key, so server-side checks alone are not sufficient until I-2 is answered.
+
+No implementation, merge, migration run or production change is part of this update.
