@@ -60,6 +60,7 @@
                       "test:uksssc-drop-filter": "tsx src/lib/ingest/adapters/stateListSources.test.ts",
                       "test:govt-vacancy-figure": "tsx src/lib/govt/vacancyFigure.test.ts",
                       "test:seo-jobposting": "tsx src/lib/seo/jobPosting.test.ts",
+                      "test:hub-meta": "tsx src/lib/seo/hubDescriptions.test.ts",
                       "test:seo-sitemap": "tsx src/lib/seo/sitemapPolicy.test.ts",
                       "test:sitemap-snapshot": "tsx src/lib/seo/sitemapSnapshot.test.ts",
                       "test:govt-integrity": "tsx src/lib/govt/govtIntegrity.test.ts",
