@@ -62,7 +62,7 @@ update public.users set role='admin' where email='<admin-a email>';   -- staging
 
 ## 6. Verification before tests start (Claude does these)
 - Preview loads; the "Login unavailable until authentication is configured" banner is gone.
-- `GET /api/events` POST with `register_viewed` → row appears in `analytics_events` (service-role write).
+- POST to `/api/events` with event `register_viewed` → row appears in `analytics_events` (service-role write).
 - Vercel Runtime Logs show no Supabase auth/config errors.
 
 ## 7. Risks to flag (not fixed here)
