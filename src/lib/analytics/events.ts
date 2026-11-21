@@ -28,6 +28,8 @@ export const AcqEvent = {
   REGISTER_SUBMITTED: "register_submitted",         // { role }  account created, OTP sent
   REGISTER_VERIFIED: "register_verified",           // { role }  OTP verified = registration complete
   EMPLOYER_JOB_SUBMITTED: "employer_job_submitted", // { board }  job posted for review
+  PROFILE_STEP_SAVED: "profile_step_saved",         // { remaining }  post-signup profile completion
+  PROFILE_COMPLETED: "profile_completed",           // {}  category + experience + skills all set
 } as const
 
 /** Single source of truth for the /api/events allow-list. */

@@ -79,6 +79,9 @@ jobs:
       - name: Funnel analytics event tests
         run: npm run test:events
 
+      - name: Candidate onboarding / profile whitelist tests
+        run: npm run test:onboarding
+
       - name: SEO verification (static)
         run: npm run verify:seo
 

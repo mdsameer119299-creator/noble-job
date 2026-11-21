@@ -40,13 +40,18 @@ export const employerRegisterStep2Schema = z.object({
 
 export const candidateLoginSchema = employerLoginSchema
 
-export const candidateRegisterStep1Schema = employerRegisterStep1Schema
-
-export const candidateRegisterStep2Schema = z.object({
-  experienceYears:  z.number().min(0).max(50),
-  category:         z.string().min(1),
-  expectedSalary:   z.number().optional(),
-  skills:           z.array(z.string()).min(1),
+/**
+ * Candidate sign-up needs ONLY name, email and password (+ accepting the terms). Phone is optional.
+ * Category / experience / skills are collected AFTER the account exists (profile completion on the dashboard),
+ * see candidateProfileUpdateSchema. (Employer sign-up is unchanged and still requires phone.)
+ */
+export const candidateRegisterStep1Schema = z.object({
+  firstName: z.string().trim().min(2, "Enter your first name"),
+  lastName:  z.string().trim().min(2, "Enter your last name"),
+  email:     z.string().trim().email("Enter a valid email address"),
+  phone:     z.string().regex(/^\+?[0-9]{10,14}$/, "Enter a valid phone number or leave it blank").optional().or(z.literal("")),
+  password:  passwordSchema,
+  terms:     z.boolean().refine(v => v, "You must accept terms"),
 })
 
 export const otpSchema = z.object({

@@ -3,17 +3,12 @@ import { generateAndSendOtp } from "@/lib/services/otpService"
 import { alertAdmins } from "@/lib/services/adminNotifyService"
 import {
   candidateRegisterStep1Schema,
-  candidateRegisterStep2Schema,
   employerRegisterStep1Schema,
   employerRegisterStep2Schema,
 } from "@/lib/validations/authSchema"
 import { z } from "zod"
 
-const candidateRegisterSchema = candidateRegisterStep1Schema.merge(
-  candidateRegisterStep2Schema.extend({
-    experienceYears: z.coerce.number().min(0).max(50),
-  })
-)
+const candidateRegisterSchema = candidateRegisterStep1Schema
 
 const employerRegisterSchema = employerRegisterStep1Schema.merge(employerRegisterStep2Schema)
 
@@ -53,11 +48,8 @@ export async function registerCandidate(body: unknown) {
       user_id: userId,
       first_name: d.firstName,
       last_name: d.lastName,
-      phone: d.phone,
-      experience_years: d.experienceYears,
-      category: d.category,
-      expected_salary: d.expectedSalary ?? null,
-      skills: d.skills,
+      // phone is optional; category / experience / skills are collected after sign-up (profile completion).
+      ...(d.phone ? { phone: d.phone } : {}),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
     { onConflict: "user_id" }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireApiSupabase } from "@/lib/supabase/apiHelpers"
 import { calculateProfileScore } from "@/lib/services/profileScoreService"
+import { parseCandidateProfileUpdate } from "@/lib/validations/candidateProfile"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
   const api = await requireApiSupabase()
@@ -102,13 +103,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ para
   const sb = api.sb
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const body = await req.json()
+  const body = await req.json().catch(() => null)
   const { params: p } = await params
   const route = p?.join("/") || "profile"
 
   if (route === "profile") {
-    const { error } = await sb.from("candidates").update(body).eq("user_id", user.id)
-    return NextResponse.json({ success: !error })
+    // Whitelist + validate: the raw body must never reach .update() (mass-assignment of profile_score, resume_url, ...).
+    const parsed = parseCandidateProfileUpdate(body)
+    if (!parsed.ok) return NextResponse.json({ success: false, error: parsed.error }, { status: 400 })
+    const { error } = await sb.from("candidates").update(parsed.data).eq("user_id", user.id)
+    return NextResponse.json({ success: !error }, { status: error ? 400 : 200 })
   }
 
   return NextResponse.json({ success: true })
