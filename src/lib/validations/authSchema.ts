@@ -46,12 +46,12 @@ export const candidateLoginSchema = employerLoginSchema
  * see candidateProfileUpdateSchema. (Employer sign-up is unchanged and still requires phone.)
  */
 export const candidateRegisterStep1Schema = z.object({
-  firstName: z.string().trim().min(2, "Enter your first name"),
-  lastName:  z.string().trim().min(2, "Enter your last name"),
-  email:     z.string().trim().email("Enter a valid email address"),
+  firstName: z.string().trim().min(2, "Enter your first name (at least 2 letters)"),
+  lastName:  z.string().trim().min(2, "Enter your last name (at least 2 letters)"),
+  email:     z.string().trim().email("Enter a valid email address, like name@example.com"),
   phone:     z.string().regex(/^\+?[0-9]{10,14}$/, "Enter a valid phone number or leave it blank").optional().or(z.literal("")),
   password:  passwordSchema,
-  terms:     z.boolean().refine(v => v, "You must accept terms"),
+  terms:     z.boolean().refine(v => v, "Please accept the Terms of Service and Privacy Policy to continue"),
 })
 
 export const otpSchema = z.object({

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { candidateRegisterStep1Schema as reg } from "./authSchema"
+import { validateCandidateRegisterForm as vform } from "./candidateRegisterForm"
 import { parseCandidateProfileUpdate as parse, missingProfileSteps as missing, EXPERIENCE_VALUES } from "./candidateProfile"
 
 let n = 0
@@ -73,5 +74,42 @@ t("missingProfileSteps: new account misses all three; completed misses none", ()
   assert.deepEqual(missing({ category: "IT", experience_years: "fresher", skills: ["SQL"] }), [])
   assert.deepEqual(missing({ category: "IT", experience_years: 0, skills: ["SQL"] }), [], "0 years is a valid answer, not missing")
   assert.deepEqual(missing({ category: "IT", experience_years: "", skills: null }), ["experience", "skills"])
+})
+
+// ── inline field-level validation (replaces the generic "Required" toast) ─────────
+const bad = (f: Record<string, unknown>) => { const r = vform(f); assert.ok(!r.ok); return (r as { errors: Record<string, string> }).errors }
+t("untouched/empty form: every required field gets its own readable message, never zod's 'Required'", () => {
+  for (const f of [{}, { firstName: "", lastName: "", email: "", password: "", terms: false }]) {
+    const e = bad(f)
+    assert.deepEqual(Object.keys(e).sort(), ["email", "firstName", "lastName", "password", "terms"])
+    for (const m of Object.values(e)) assert.ok(m.length > 12 && m !== "Required", m)
+    assert.ok(!("phone" in e), "optional phone is not an error when blank")
+  }
+})
+t("invalid email gets an email-only message", () => {
+  const e = bad({ ...base, email: "asha@" }); assert.deepEqual(Object.keys(e), ["email"]); assert.match(e.email, /valid email/)
+})
+t("password: length, capital and number each give a specific message", () => {
+  assert.match(bad({ ...base, password: "Ab1" }).password, /at least 8/)
+  assert.match(bad({ ...base, password: "lowercase1x" }).password, /uppercase/)
+  assert.match(bad({ ...base, password: "NoDigitsHere" }).password, /number/)
+})
+t("terms must be ticked, with a clear message", () => assert.match(bad({ ...base, terms: false }).terms, /Terms of Service/))
+t("phone: spaces/dashes from the placeholder format are accepted; garbage is flagged inline", () => {
+  const ok = vform({ ...base, phone: "+91 98765 43210" }); assert.ok(ok.ok); assert.equal(ok.ok && ok.data.phone, "+919876543210")
+  assert.match(bad({ ...base, phone: "12345" }).phone, /valid phone/)
+})
+t("a valid form passes, trims whitespace, and only terms===true counts (truthy strings do not)", () => {
+  const r = vform({ ...base, firstName: "  Asha ", email: " asha@example.com " }); assert.ok(r.ok && r.data.firstName === "Asha" && r.data.email === "asha@example.com")
+  assert.ok(!vform({ ...base, terms: "yes" }).ok)
+})
+t("rendered form shows inline errors with aria-invalid/role=alert, and none when valid", () => {
+  const { renderToStaticMarkup } = require("react-dom/server"); const React = require("react"); (globalThis as any).React = React // tsx uses the classic JSX runtime
+  const { CandidateRegisterStep1 } = require("../../components/auth/CandidateRegisterStep1")
+  const withErr = renderToStaticMarkup(React.createElement(CandidateRegisterStep1, { form: {}, onChange() {}, errors: bad({}) }))
+  assert.ok((withErr.match(/role="alert"/g) || []).length === 5 && (withErr.match(/aria-invalid="true"/g) || []).length === 5)
+  assert.match(withErr, /Enter your first name/); assert.match(withErr, /Please accept the Terms/)
+  const clean = renderToStaticMarkup(React.createElement(CandidateRegisterStep1, { form: base, onChange() {}, errors: {} }))
+  assert.ok(!/role="alert"/.test(clean) && !/aria-invalid/.test(clean))
 })
 console.log(`candidate onboarding: ${n} passed`)
