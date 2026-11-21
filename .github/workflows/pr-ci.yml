@@ -117,6 +117,9 @@ jobs:
       - name: Funnel analytics event tests
         run: npm run test:events
 
+      - name: No pricing references
+        run: npm run test:no-pricing
+
       - name: SEO verification (static)
         run: npm run verify:seo
 
