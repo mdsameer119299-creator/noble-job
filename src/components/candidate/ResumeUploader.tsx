@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useToast } from '@/hooks/useToast'
+import { validateResumeFile } from '@/lib/utils/resumeUpload'
 
 interface ResumeUploaderProps {
   onUploaded?: (url: string) => void
@@ -12,10 +13,14 @@ export function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
   const toast = useToast()
 
   const handleFile = async (file: File) => {
+    // Same rule as the server (4 MB, PDF/DOC/DOCX): a clear message here instead of a platform error after a long upload.
+    const v = validateResumeFile(file)
+    if (!v.ok) { toast.error(v.error); return }
     setLoading(true)
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch('/api/candidate/resume', { method: 'POST', body: form })
+    let res: Response
+    try { res = await fetch('/api/candidate/resume', { method: 'POST', body: form }) } catch { setLoading(false); toast.error('Network error. Please try again.'); return }
     const data = await res.json().catch(() => ({}))
     setLoading(false)
     if (res.ok) {
