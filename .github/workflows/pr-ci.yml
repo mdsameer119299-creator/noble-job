@@ -76,11 +76,11 @@ jobs:
       - name: SEO Phase 1 tests (JobPosting, sitemap, govt integrity, lifecycle, synthetic apply, no-empty-jobs, gate coverage, counts, apply route, apply state, source dates)
         run: npm run test:seo-phase1
 
-      - name: Funnel analytics event tests
-        run: npm run test:events
-
       - name: Candidate onboarding / profile whitelist tests
         run: npm run test:onboarding
+
+      - name: Funnel analytics event tests
+        run: npm run test:events
 
       - name: SEO verification (static)
         run: npm run verify:seo
