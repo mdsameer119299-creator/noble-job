@@ -11,6 +11,7 @@ import { extractSkills } from "./skills"
 import { RESUME_MAX_TEXT_CHARS, JOB_DESCRIPTION_MAX_CHARS } from "./limits"
 import { createCandidateScoreHandler, readCandidateScoreBody, type CandidateScoreDeps } from "./candidateScoreHandler"
 import { readBodyLimited } from "../security/boundedBody"
+import { RESUME_MAX_BYTES, validateResumeFile } from "../utils/resumeUpload"
 
 function crc32(b: Buffer): number {
   let c, crc = 0xffffffff
@@ -197,6 +198,31 @@ async function main() {
     assert.equal((await h(post({ text: "a".repeat(RESUME_MAX_TEXT_CHARS + 1) }))).status, 413)
     assert.equal((await h(post({ text: RESUME, jobDescription: "a".repeat(JOB_DESCRIPTION_MAX_CHARS + 1) }))).status, 413)
     assert.equal((await h(post({ text: "a".repeat(RESUME_MAX_TEXT_CHARS) }))).status, 200) // exactly at the cap is accepted
+  })
+  const storedSb = (size: number) => ({
+    auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) },
+    from: (t: string) => ({ select: () => ({ eq: () => ({ single: async () => ({ data: t === "candidates" ? { id: "cand-u1", resume_url: "cand-u1/resume.pdf" } : { description: "jd" } }) }) }) }),
+    storage: { from: () => ({ download: async () => ({ data: new Blob([new Uint8Array(size)]), error: null }) }) },
+  })
+  await test("candidate: stored resume over 4 MB → 413 friendly JSON with code (consistent with quick-score)", async () => {
+    const h = createCandidateScoreHandler({ requireApi: async () => ({ sb: storedSb(RESUME_MAX_BYTES + 1) as never }), analyze: analyzeResume as never, enrich: async (r) => r, extract: async () => ({ text: "", warning: "no" }) as never, rateLimit: memLimiter().rateLimit })
+    const r = await h(post(""))
+    assert.equal(r.status, 413)
+    const j = await r.json()
+    assert.equal(j.code, "file_too_large"); assert.equal(j.maxBytes, RESUME_MAX_BYTES); assert.match(j.error, /saved resume is larger than 4 MB/)
+  })
+  await test("candidate: stored resume at exactly 4 MB is NOT rejected for size (passes on to signature check)", async () => {
+    const h = createCandidateScoreHandler({ requireApi: async () => ({ sb: storedSb(RESUME_MAX_BYTES) as never }), analyze: analyzeResume as never, enrich: async (r) => r, extract: async () => ({ text: "", warning: "no" }) as never, rateLimit: memLimiter().rateLimit })
+    const r = await h(post(""))
+    assert.equal(r.status, 422) // zero-filled bytes are not a PDF → signature rejection, i.e. it got PAST the size check
+  })
+  await test("shared validator: boundary at RESUME_MAX_BYTES (client + server use the same rule)", async () => {
+    const mk = (n: number) => new File([new Uint8Array(n)], "cv.pdf", { type: "application/pdf" })
+    assert.equal(validateResumeFile(mk(RESUME_MAX_BYTES)).ok, true)
+    assert.equal(validateResumeFile(mk(RESUME_MAX_BYTES - 1)).ok, true)
+    const over = validateResumeFile(mk(RESUME_MAX_BYTES + 1))
+    assert.equal(over.ok, false)
+    if (!over.ok) assert.match(over.error, /larger than 4 MB/)
   })
   await test("candidate: body over 512 KB → 413 (even without Content-Length semantics)", async () => {
     const { h } = mkHandler("u1")

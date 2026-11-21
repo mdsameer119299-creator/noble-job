@@ -47,7 +47,7 @@ export function TailorFlow() {
       <ResumeFilePicker
         onFileReady={(f, ext) => { setHasResume(true); track(AcqEvent.RESUME_FILE_SELECTED, { mode: 'tailor', ext, size: f.size }) }}
         onClear={() => setHasResume(false)}
-        prompt="PDF, DOC or DOCX · up to 5 MB · not uploaded or stored"
+        prompt="PDF, DOC or DOCX · up to 4 MB · not uploaded or stored"
       />
 
       {/* 2) Target job description */}

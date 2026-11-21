@@ -53,7 +53,7 @@ export function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
       <p style={{ fontWeight: 800, color: '#0d1f4e', fontSize: 14, marginBottom: 4 }}>
         {loading ? 'Uploading…' : 'Click to upload resume'}
       </p>
-      <p style={{ color: '#6b7280', fontSize: 12 }}>PDF, DOC, or DOCX · Max 5 MB</p>
+      <p style={{ color: '#6b7280', fontSize: 12 }}>PDF, DOC, or DOCX · Max 4 MB</p>
     </div>
   )
 }
