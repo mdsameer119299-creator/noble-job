@@ -34,6 +34,7 @@ const POPULAR_SEARCHES = [
 ]
 const IMPORTANT = [
   { label: 'About Us', href: '/about' },
+  { label: 'For Employers', href: '/for-employers' },
   { label: 'Contact Us', href: '/contact' },
   { label: 'Editorial Policy', href: '/editorial-policy' },
   { label: 'Job Verification', href: '/job-verification-policy' },
