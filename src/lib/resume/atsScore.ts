@@ -10,6 +10,8 @@
 import { extractSkills, extractJobKeywords, tokenize } from "./skills"
 import type { AtsSubscores, ResumeScoreResult } from "./types"
 import { generateText, isAiConfigured } from "@/lib/ai/provider"
+import { hasBulletLine, hasEmail, hasPhone } from "./linearScan"
+import { JOB_DESCRIPTION_MAX_CHARS, RESUME_MAX_TEXT_CHARS, TEXT_TRUNCATED_WARNING } from "./limits"
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
 
@@ -21,10 +23,10 @@ const SECTION_PATTERNS: { key: string; re: RegExp }[] = [
   { key: "projects", re: /\b(projects|portfolio|certification|achievements|awards)\b/i },
 ]
 
-const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i
-const PHONE_RE = /(\+?\d[\d\s().-]{7,}\d)/
+// NOTE: the email / phone / bullet checks are linear-time scanners (linearScan.ts), NOT regexes:
+// the equivalent regexes (/[a-z0-9._%+-]+@…/, /\+?\d[\d\s().-]{7,}\d/, /(^|\n)\s*[•…]/) backtrack
+// quadratically on long runs and froze the Node event loop for ~20 s on a 200k-character input.
 const DATE_RE = /\b(19|20)\d{2}\b/
-const BULLET_RE = /(^|\n)\s*[•\-*▪◦·]/
 
 export interface AnalyzeInput {
   text: string
@@ -33,7 +35,7 @@ export interface AnalyzeInput {
 }
 
 function scoreContact(text: string): number {
-  return (EMAIL_RE.test(text) ? 60 : 0) + (PHONE_RE.test(text) ? 40 : 0)
+  return (hasEmail(text) ? 60 : 0) + (hasPhone(text) ? 40 : 0)
 }
 
 function scoreSections(text: string): { score: number; missing: string[] } {
@@ -53,7 +55,7 @@ function scoreSkills(count: number): number {
 
 function scoreFormatting(text: string): number {
   let s = 0
-  if (BULLET_RE.test(text)) s += 40
+  if (hasBulletLine(text)) s += 40
   if (DATE_RE.test(text)) s += 25
   const words = text.split(/\s+/).length
   const lines = text.split(/\n/).filter((l) => l.trim()).length
@@ -94,7 +96,14 @@ function buildSuggestions(
 
 /** Pure, deterministic resume analysis. Safe to unit-test without any I/O. */
 export function analyzeResume(input: AnalyzeInput): ResumeScoreResult {
-  const text = (input.text || "").trim()
+  // Bound the work BEFORE any scoring step runs (second layer behind the linear-time scanners).
+  const raw = (input.text || "").trim()
+  const truncated = raw.length > RESUME_MAX_TEXT_CHARS
+  const text = truncated ? raw.slice(0, RESUME_MAX_TEXT_CHARS) : raw
+  const jobDescription = input.jobDescription ? input.jobDescription.slice(0, JOB_DESCRIPTION_MAX_CHARS) : input.jobDescription
+  const parseWarning = truncated
+    ? [input.parseWarning, TEXT_TRUNCATED_WARNING].filter(Boolean).join(" ")
+    : input.parseWarning
   const wordCount = text ? text.split(/\s+/).length : 0
 
   const extractedSkills = extractSkills(text)
@@ -105,8 +114,8 @@ export function analyzeResume(input: AnalyzeInput): ResumeScoreResult {
   let matchedSkills: string[] = []
   let missingKeywords: string[] = []
 
-  if (input.jobDescription && input.jobDescription.trim()) {
-    const jdKeywords = extractJobKeywords(input.jobDescription)
+  if (jobDescription && jobDescription.trim()) {
+    const jdKeywords = extractJobKeywords(jobDescription)
     const resumeTokens = new Set(tokenize(text))
     const resumeSkillsLc = new Set(extractedSkills.map((s) => s.toLowerCase()))
     const present = jdKeywords.filter((k) => resumeTokens.has(k) || resumeSkillsLc.has(k))
@@ -114,7 +123,7 @@ export function analyzeResume(input: AnalyzeInput): ResumeScoreResult {
     keywordScore = jdKeywords.length ? (present.length / jdKeywords.length) * 100 : 50
     jobMatchScore = clamp(keywordScore)
 
-    const jdSkills = extractSkills(input.jobDescription)
+    const jdSkills = extractSkills(jobDescription)
     matchedSkills = jdSkills.filter((s) => resumeSkillsLc.has(s.toLowerCase()))
     missingKeywords = [
       ...jdSkills.filter((s) => !resumeSkillsLc.has(s.toLowerCase())).map((s) => s.toLowerCase()),
@@ -162,7 +171,7 @@ export function analyzeResume(input: AnalyzeInput): ResumeScoreResult {
     recommendationsSource: "heuristic",
     aiConfigured: isAiConfigured(),
     wordCount,
-    ...(input.parseWarning ? { parseWarning: input.parseWarning } : {}),
+    ...(parseWarning ? { parseWarning } : {}),
   }
 }
 

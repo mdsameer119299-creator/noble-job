@@ -65,7 +65,7 @@ const INTERNAL_READERS: Record<string, string> = {
   "src/lib/services/adminService.ts": "admin moderation writes",
   "src/lib/services/adminAnalytics.ts": "admin dashboard aggregates",
   "src/app/api/applications/[[...params]]/route.ts": "reads employer_id/title/category of the job being applied to; returns no job card",
-  "src/app/api/candidate/resume-score/route.ts": "reads one description to score a resume; returns a score, no job card",
+  "src/lib/resume/candidateScoreHandler.ts": "reads one description to score a resume; returns a score, no job card",
   "src/lib/services/govtAutoUpdate.ts": "ingestion writer",
   "src/lib/services/himalayasWfhIngest.ts": "ingestion writer (genuine Himalayas → wfh_jobs; upserts AGGREGATED rows and closes stale ones, same shape as govtAutoUpdate.ts — no job card returned)",
   "src/lib/services/himalayasAbroadIngest.ts": "ingestion writer (genuine Himalayas → abroad_jobs; upserts AGGREGATED rows and guarded stale-closing, no job card returned)",

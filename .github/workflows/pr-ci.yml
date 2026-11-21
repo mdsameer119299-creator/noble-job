@@ -55,6 +55,24 @@ jobs:
       - name: Resume-workspace tests
         run: npm run test:resume-workspace
 
+      - name: Resume-upload security tests
+        run: npm run test:resume-security
+
+      - name: Distributed rate-limit tests
+        run: npm run test:rate-limit
+
+      - name: PDF isolation / resource-limit tests
+        run: npm run test:pdf-isolation
+
+      - name: Resume ReDoS / candidate scorer protection tests
+        run: npm run test:resume-redos
+
+      - name: CI chain-runner tests
+        run: npm run test:ci-chain
+
+      - name: Homepage query fan-out tests
+        run: npm run test:homepage-queries
+
       - name: Admin validation tests
         run: npm run test:admin
 
@@ -73,8 +91,16 @@ jobs:
       - name: Ingest-run status tests
         run: npm run test:ingest-status
 
+      # KNOWN BASELINE FAILURES (present on main @ 940a9ce, unrelated to this PR's changes):
+      #   test:seo-jobposting (8), test:apply-route (3), test:source-dates (2).
+      # This step runs EVERY suite in the test:seo-phase1 chain even after one fails (a plain `&&` chain stops
+      # at the first failure and silently skips ~38 later suites). `continue-on-error` lets the independent
+      # steps below (SEO verification, JobPosting schema, production build) still run; the final
+      # "Enforce" step then FAILS THE JOB if this step failed. Failures stay visible and are never skipped.
       - name: SEO Phase 1 tests (JobPosting, sitemap, govt integrity, lifecycle, synthetic apply, no-empty-jobs, gate coverage, counts, apply route, apply state, source dates)
-        run: npm run test:seo-phase1
+        id: seo_phase1
+        continue-on-error: true
+        run: node scripts/run-script-chain.mjs test:seo-phase1
 
       - name: SEO verification (static)
         run: npm run verify:seo
@@ -84,3 +110,14 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Always runs (even if an earlier step failed) and turns the tolerated SEO Phase 1 failure back into a
+      # failing job, so this workflow can only go green when those suites pass.
+      - name: Enforce — SEO Phase 1 failures fail the job
+        if: always()
+        run: |
+          if [ "${{ steps.seo_phase1.outcome }}" = "failure" ]; then
+            echo "::error title=SEO Phase 1 suites failed::One or more test:seo-phase1 suites failed (see that step's log for the exact list). Later steps ran, but the job is failing on purpose."
+            exit 1
+          fi
+          echo "SEO Phase 1 suites: ${{ steps.seo_phase1.outcome }}"
