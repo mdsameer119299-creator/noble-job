@@ -6,8 +6,10 @@
  * minimum real-job threshold is gated out rather than shipped as a thin
  * page — same principle as cityCategoryLanding.ts.
  */
+import { unstable_cache } from "next/cache"
 import {
   getGenuineOpenJobs,
+  getGenuineOpenJobsSnapshot,
   filterSnapshotForCity,
   type GenuineOpenJobsSnapshot,
 } from "@/lib/seo/genuineJobs"
@@ -137,6 +139,45 @@ export async function getQualifyingTailCitySlugs(): Promise<string[]> {
     }),
   )
   return results.filter(r => r.qualifies).map(r => r.slug)
+}
+
+/** How long the homepage's tail-city link list may lag the live job data. */
+export const HOMEPAGE_TAIL_CITY_TTL_SECONDS = 600
+
+/**
+ * Tail-city slugs for the HOMEPAGE "Browse Jobs by City" links.
+ *
+ * `getQualifyingTailCitySlugs()` issues one `select * … limit 1000` query PER tail city
+ * (28 per render) and the homepage is force-dynamic, so every page view paid for all of
+ * them. This variant derives the identical gate (same snapshot filter the sitemap uses)
+ * from ONE cookie-less snapshot read that is shared across requests through the Data
+ * Cache and refreshed at most every HOMEPAGE_TAIL_CITY_TTL_SECONDS — closed/expired jobs
+ * therefore drop out of the qualification within that window, never indefinitely.
+ *
+ * The service-role snapshot reader is used deliberately: a cookie-bound client inside
+ * `unstable_cache` would silently fall back to local inventory and cache fake data.
+ * On any failure nothing is cached and an EMPTY list is returned (links hidden) — never
+ * demo/fallback cities.
+ */
+export async function loadHomepageTailCitySlugs(
+  loadSnapshot: () => Promise<GenuineOpenJobsSnapshot> = () => getGenuineOpenJobsSnapshot(),
+): Promise<string[]> {
+  return getQualifyingTailCitySlugsFromSnapshot(await loadSnapshot())
+}
+
+const cachedHomepageTailCitySlugs = unstable_cache(
+  () => loadHomepageTailCitySlugs(),
+  ["home-tail-city-slugs-v1"],
+  { revalidate: HOMEPAGE_TAIL_CITY_TTL_SECONDS, tags: ["home-tail-cities"] },
+)
+
+export async function getQualifyingTailCitySlugsForHomepage(): Promise<string[]> {
+  try {
+    return await cachedHomepageTailCitySlugs()
+  } catch (e) {
+    console.warn("[home] tail-city snapshot unavailable; hiding city links:", e instanceof Error ? e.name : "error")
+    return []
+  }
 }
 
 /** Category slugs (for a given tail city) that clear the city x category gate. */

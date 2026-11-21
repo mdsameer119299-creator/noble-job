@@ -36,6 +36,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|images|fonts).*)",
+    // api/resume/quick-score is excluded on purpose: it is public (no session to refresh), and for every
+    // middleware-matched request Next.js buffers the request body (up to 10 MB) BEFORE the route handler
+    // runs — so an oversized/stalled upload was not rejected, or rate-limited, until fully received.
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|images|fonts|api/resume/quick-score$).*)",
   ],
 }

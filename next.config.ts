@@ -132,6 +132,15 @@ const nextConfig: NextConfig = {
 
   // ── Output: minimal Node server bundle (.next/standalone) ─
   output: 'standalone',
+
+  // The resume PDF parser runs pdf.js inside a worker thread that locates it at RUNTIME
+  // (src/lib/resume/pdfIsolated.ts), so file tracing cannot discover it from an import. This include
+  // guarantees the standalone/ZIP bundle ships pdf.js; if it were missing, PDF scoring would fail closed.
+  outputFileTracingIncludes: {
+    // pdf.js loads pdf.worker.js at runtime (fake-worker mode), so both files must ship.
+    '/api/resume/quick-score': ['./node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js', './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.worker.js'],
+    '/api/candidate/resume-score': ['./node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js', './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.worker.js'],
+  },
 }
 
 export default nextConfig
