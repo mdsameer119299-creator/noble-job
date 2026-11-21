@@ -22,3 +22,8 @@ Principles: staging keys only (anon + service-role of the staging project) in th
 | 12 | Auth hardening | rate limits, session cookies, logout | as per existing security tests |
 
 Exit: all PASS or documented waivers → Gate in PRODUCTION_CUTOVER_PLAN.md §C.0.
+
+## Update (21 Nov) — which tests need a migration?
+- **No test needs a new migration**, except **#11**: the admin growth RPC is only a proposal (`docs/growth/proposed-migrations/20261121000001_admin_growth_summary.sql` + `.down.sql`, validated locally on the real schema: service_role OK, anon/authenticated denied, rollback drops it). There is **no API route/page for it yet**, so #11 on staging = run the function in the SQL editor with the service role. It will only be run after you approve the SQL.
+- #1–#10 and #12 use objects that already exist in the 34 migrations (`analytics_events` has RLS enabled with no policies, i.e. service-role-only; `candidates.category/experience_years/phone` nullable; `profile_score` trigger verified locally: 0 at signup, 15 after profile completion).
+- Test 3 (OTP): see STAGING_SETUP.md §4. Test 12 adds: OTP brute-force attempt limiting, unauthorised/failed operations return clean 4xx (no stack traces), runtime logs reviewed for each failure.
