@@ -87,6 +87,7 @@
                       "test:location-pill": "tsx src/components/jobs/TruncatedLocationPill.test.ts",
                       "test:extract-published-date": "tsx src/lib/ingest/extractPublishedDate.test.ts",
                       "test:pdf-dates": "tsx src/lib/ingest/pdf.test.ts",
+                      "test:no-pricing": "tsx src/components/shared/noPricing.test.ts",
                       "test:employment-news-dates": "tsx src/lib/ingest/adapters/employmentNews.test.ts",
                       "test:uppsc-dates": "tsx src/lib/ingest/adapters/uppsc.test.ts",
                       "test:ibps-dates": "tsx src/lib/ingest/adapters/ibps.test.ts",

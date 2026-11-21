@@ -76,6 +76,9 @@ jobs:
       - name: SEO Phase 1 tests (JobPosting, sitemap, govt integrity, lifecycle, synthetic apply, no-empty-jobs, gate coverage, counts, apply route, apply state, source dates)
         run: npm run test:seo-phase1
 
+      - name: No pricing references
+        run: npm run test:no-pricing
+
       - name: SEO verification (static)
         run: npm run verify:seo
 
