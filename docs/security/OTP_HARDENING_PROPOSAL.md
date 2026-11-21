@@ -55,16 +55,18 @@ Unit: `randomInt` range/zero-padding; HMAC stable & email/type-bound; timing-saf
 CAPTCHA, WebAuthn/passkeys, replacing custom OTP with Supabase Auth OTP, account-enumeration review of the register endpoints.
 
 
-## 7. Owner decisions (21 Nov 2026) and relationship to the anonymous-resume proposal
+## 7. Owner decisions (21 Nov 2026) and relationship to the anonymous-resume proposal (updated 14:47)
 
-This PR stays **separate** from the anonymous-resume work (PR #68). Principle preserved: **OTP is not required to browse jobs, upload a resume anonymously, or get a basic resume score.**
+This PR stays **separate** from the anonymous-resume work (PR #68). Principle preserved: **OTP is never required to browse jobs, upload a resume anonymously, get a basic resume score, or temporarily store a resume.**
 
-1. **Where OTP is required:** applying to a job, permanently claiming an anonymous stored resume, password reset, e-mail change. Unverified candidates may sign in, browse and complete non-sensitive profile fields.
-2. **Authoritative verified status:** `users.email_verified`, written only by the verify-OTP path with the service role. Do not auto-confirm accounts at the Supabase Auth layer (no `email_confirm:true` at creation, no blanket "Confirm email: off"); how unverified sign-in is supported is being investigated for #68 (I-1/I-2) and this PR must not assume an answer.
-3. **Send endpoint requires a session:** because registration no longer needs OTP, "send verification code" should be an **authenticated** action keyed by user id (not by an e-mail in the request body). This removes the anonymous OTP-send/e-mail-spam surface and the account-enumeration oracle. Password reset remains unauthenticated by nature and keeps the 60 s cooldown, 5/hour and uniform responses.
-4. **Limiter:** reuse `distributedRateLimit` with `failClosed` (3.8). The `failClosed` option is implemented **once**, shared with #68; neither PR should add a second limiter.
-5. **DB-level enforcement:** apply is gated by RLS (`applications_require_verified_email`) and the claim by `claim_anonymous_resume`, both defined in #68's proposed migration; this PR only owns the OTP table/function changes.
-6. **Added tests:** OTP send without a session → 401; verify marks only `users.email_verified` (Auth `email_confirmed_at` handling per I-1); reset-password and e-mail-change reject unverified accounts; OTP is never requested by the anonymous upload, score or claim-token endpoints (grep/route test); fail-closed returns 503 when the limiter is degraded.
-7. **Risks added:** if Supabase cannot allow unverified sign-in without marking accounts confirmed, the design needs an owner decision before implementation (see #68 section 3.3); Supabase's own `/recover` and e-mail-change endpoints are reachable with the anon key, so server-side checks alone are not sufficient until I-2 is answered.
+**Supabase finding (see #68 section 3.3):** Supabase password sign-in is not supported for unconfirmed e-mails (the auth server's password grant rejects them with `email_not_confirmed`; `mailer_allow_unverified_email_sign_ins` is only honoured for OAuth per a maintainer in supabase/auth#2513). So the fallback journey applies and this PR's earlier idea of an *authenticated* OTP-send endpoint is **withdrawn**: before first sign-in there is no session.
+
+1. **Where OTP is required:** account creation (verification before the first sign-in, which gates saving permanently and applying), password reset, e-mail change. No separate OTP at apply: only verified accounts can sign in, so apply/claim are already verified.
+2. **Authoritative verified status:** `users.email_verified`, written only by the verify-OTP path with the service role. Never auto-confirm at the Auth layer (no `email_confirm:true` at creation, no "Confirm email: off").
+3. **Send endpoint (pre-session):** keyed by e-mail but only for an existing **unverified** account (or reset request), uniform response (no enumeration), 60 s per-email cooldown, 5 sends/hour per email and per IP bucket, fail-closed via `distributedRateLimit`. Because OTP now appears only at account creation/reset, the volume surface is smaller than "OTP on every action" but is still unauthenticated, so 3.5-3.9 stay as designed.
+4. **Limiter:** reuse `distributedRateLimit` with `failClosed` (3.8), implemented once and shared with #68.
+5. **DB enforcement:** apply gate (`applications_require_verified_email`), claim function and `resume_url` guard live in #68's proposed migration; this PR owns only OTP table/function changes.
+6. **Added tests:** verify sets only `users.email_verified` (and the Auth confirmation the existing flow already performs); send for a verified or unknown e-mail returns the same response; reset-password and e-mail-change reject unverified accounts; OTP is never requested by the anonymous upload, score, temp-store or claim endpoints (route test); fail-closed returns 503 when the limiter is degraded.
+7. **Risk:** registration still creates an Auth user that cannot sign in until verified, so e-mail squatting rows exist; purge unverified rows after 30 days and let genuine verification take over.
 
 No implementation, merge, migration run or production change is part of this update.
