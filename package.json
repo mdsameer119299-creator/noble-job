@@ -47,6 +47,7 @@
                       "test:admin": "tsx src/lib/validation/adminValidation.test.ts",
                       "test:admin-route": "tsx src/app/api/admin/adminRoute.test.ts",
                       "test:admin-candidates": "tsx src/lib/admin/candidateIntelligence.test.ts",
+                      "test:cron-auth": "tsx src/lib/security/cronAuth.test.ts",
                       "test:egress": "tsx src/lib/config/govtCache.test.ts",
                       "test:jobservice-timeout": "tsx src/lib/services/jobService.test.ts",
                       "test:snapshot-admin-client": "tsx src/lib/services/snapshotAdminClient.test.ts",
