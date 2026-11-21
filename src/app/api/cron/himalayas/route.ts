@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isCronAuthorized } from "@/lib/security/cronAuth"
 import { refreshHimalayasCache } from "@/services/himalayasCronService"
 import { ingestHimalayasWfhJobs } from "@/lib/services/himalayasWfhIngest"
 import { ingestHimalayasAbroadJobs } from "@/lib/services/himalayasAbroadIngest"
@@ -27,14 +28,7 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) {
-    // Fail CLOSED in production: a missing secret must never leave this
-    // ingestion endpoint publicly callable. Allowed only outside production
-    // so local dev without a secret still works (mirrors /api/cron/govt-jobs).
-    return process.env.NODE_ENV !== "production"
-  }
-  return (req.headers.get("authorization") || "") === `Bearer ${secret}`
+  return isCronAuthorized(req.headers.get("authorization"))
 }
 
 export async function GET(req: NextRequest) {

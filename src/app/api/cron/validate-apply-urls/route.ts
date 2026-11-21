@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isCronAuthorized } from "@/lib/security/cronAuth"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import { validateUrlShape, probeUrl } from "@/lib/utils/urlHealth"
@@ -21,9 +22,7 @@ import { alertAdmins } from "@/lib/services/adminNotifyService"
 export const dynamic = "force-dynamic"
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return process.env.NODE_ENV !== "production" // fail closed in prod
-  return (req.headers.get("authorization") || "") === `Bearer ${secret}`
+  return isCronAuthorized(req.headers.get("authorization"))
 }
 
 const TABLES = ["jobs", "wfh_jobs", "abroad_jobs", "govt_jobs"] as const
