@@ -33,7 +33,8 @@ import type { Job, JobFilter } from "@/types/job"
  */
 export async function getGenuineOpenJobs(filter: JobFilter): Promise<Job[]> {
   const want = filter.limit ?? 20
-  const r = await getJobs({ ...filter, limit: Math.max(want * 4, 60) })
+  // cookie-less: this feeds ISR/static SEO pages, which must not call cookies().
+  const r = await getJobs({ ...filter, limit: Math.max(want * 4, 60) }, { cookieless: true })
   return r.jobs.filter(isIndexable).slice(0, want)
 }
 

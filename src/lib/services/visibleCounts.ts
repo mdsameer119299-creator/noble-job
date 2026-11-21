@@ -47,7 +47,7 @@ const sum = (...c: StatusCounts[]): StatusCounts => ({
 /** Status counts of the private list a filter produces (what its tabs show). */
 export async function getPrivateVisibleCounts(filter: JobFilter = {}): Promise<StatusCounts> {
   try {
-    return (await getJobs({ ...filter, page: 1, limit: 1 })).counts ?? ZERO
+    return (await getJobs({ ...filter, page: 1, limit: 1 }, { cookieless: true })).counts ?? ZERO
   } catch {
     return ZERO
   }
