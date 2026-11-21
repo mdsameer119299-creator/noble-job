@@ -98,6 +98,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/jobs/abroad`, changeFrequency: "daily", priority: 0.95 },
     { url: `${base}/contact`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/about`, changeFrequency: "monthly", priority: 0.65 },
+    { url: `${base}/for-employers`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/editorial-policy`, changeFrequency: "yearly", priority: 0.4 },
     { url: `${base}/job-verification-policy`, changeFrequency: "yearly", priority: 0.4 },
     { url: `${base}/privacy-policy`, changeFrequency: "yearly", priority: 0.3 },

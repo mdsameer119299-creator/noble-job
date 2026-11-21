@@ -49,6 +49,9 @@ jobs:
       - name: Candidate-acquisition tests
         run: npm run test:acq
 
+      - name: Employer landing page tests
+        run: npm run test:for-employers
+
       - name: Resume-launcher tests
         run: npm run test:resume
 
