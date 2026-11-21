@@ -1,4 +1,5 @@
 import { ProfileCompleteness } from '@/components/candidate/ProfileCompleteness'
+import { ProfileCompletionCard } from '@/components/candidate/ProfileCompletionCard'
 import { RecommendedJobsList } from '@/components/candidate/RecommendedJobsList'
 import { AppTracker } from '@/components/candidate/AppTracker'
 import { AiScoreChart } from '@/components/candidate/AiScoreChart'
@@ -30,6 +31,7 @@ export default async function CandidateDashboardPage() {
         </h1>
         <p style={{ color: '#6b7280', fontSize: 14 }}>Your personalised Noble Job dashboard.</p>
       </div>
+      <ProfileCompletionCard />
       <div className="dashboard-content-grid">
         <div>
           <AppTracker />
