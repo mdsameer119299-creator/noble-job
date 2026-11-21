@@ -114,6 +114,9 @@ jobs:
       - name: Hub meta description tests
         run: npm run test:hub-meta
 
+      - name: Candidate onboarding / profile whitelist tests
+        run: npm run test:onboarding
+
       - name: Funnel analytics event tests
         run: npm run test:events
 
