@@ -45,7 +45,7 @@ Mark secrets as **Sensitive** (write-only after saving). Variables only affect d
 | 8 | `RESEND_API_KEY` | your Resend (sandbox) key | **SECRET** | sends OTP emails | same, **Sensitive** |
 | 9 | `EMAIL_FROM` | `Noble Job <onboarding@resend.dev>` | Non-secret | from address (sandbox) | same |
 | 10 | `ADMIN_NOTIFICATION_EMAIL` | your test inbox (optional) | Non-secret | admin notification target | same |
-| — | `NEXT_PUBLIC_SUPABASE_DB_PASSWORD`/`SUPABASE_DB_PASSWORD` | **do not add** | SECRET | not needed by the app at runtime | none |
+| — | `SUPABASE_DB_PASSWORD` | **do not add** | SECRET | not needed by the app at runtime | none |
 | — | `AI_PROVIDER`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | not needed for these tests | SECRET | AI features | none |
 **All Supabase values above come from the staging project only. Production-only (never Preview):** production Supabase URL/anon/service-role/DB password, production Resend key, production `CRON_SECRET`.
 
