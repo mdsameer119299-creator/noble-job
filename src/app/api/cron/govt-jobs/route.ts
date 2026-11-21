@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { isCronAuthorized } from "@/lib/security/cronAuth"
 import { runGovtAutoUpdate, getGovtIngestMetrics } from "@/lib/services/govtAutoUpdate"
-import { SCHEDULER_CONFIG } from "@/lib/config/govtSources"
 
 /**
  * Daily government-jobs auto-update endpoint.
@@ -20,16 +20,7 @@ export const preferredRegion = "bom1"
 export const maxDuration = 60
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env[SCHEDULER_CONFIG.secretEnvVar]
-  if (!secret) {
-    // Fail CLOSED in production: a missing secret must never leave the ingestion
-    // endpoint publicly callable (previously this returned true and exposed it).
-    // Allowed only outside production so local dev without a secret still works.
-    return process.env.NODE_ENV !== "production"
-  }
-  // Bearer header only. The legacy ?secret= query param was dropped — query
-  // strings leak into access logs / referrers, an avoidable credential-exposure.
-  return (req.headers.get("authorization") || "") === `Bearer ${secret}`
+  return isCronAuthorized(req.headers.get("authorization"))
 }
 
 export async function GET(req: NextRequest) {

@@ -105,6 +105,9 @@ jobs:
         continue-on-error: true
         run: node scripts/run-script-chain.mjs test:seo-phase1
 
+      - name: Cron auth tests
+        run: npm run test:cron-auth
+
       - name: SEO verification (static)
         run: npm run verify:seo
 
