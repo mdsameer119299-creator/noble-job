@@ -26,7 +26,7 @@ const STEPS = [
 ]
 
 const FAQ = [
-  { q: 'Is it free to post a job?', a: 'Yes. Employer accounts and job posting are free to get started. If paid options are introduced in future, they will be clearly announced first.' },
+  { q: 'Is it free to post a job?', a: 'Yes. Employer registration and job posting are free. Every job is reviewed by our team before it goes live.' },
   { q: 'Do candidates pay to apply?', a: 'No. Noble Job does not charge job seekers.' },
   { q: 'Why are jobs reviewed before they go live?', a: 'To protect job seekers from fake or misleading listings. You can read how we handle this on our job verification page.' },
   { q: 'What kinds of jobs can I post?', a: 'Private jobs, work-from-home jobs and abroad jobs. Government vacancies are published only from official sources by our own team.' },
