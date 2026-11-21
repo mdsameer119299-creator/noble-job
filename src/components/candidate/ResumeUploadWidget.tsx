@@ -217,7 +217,7 @@ export function ResumeUploadWidget({ source = 'dock' }: { source?: string }) {
           {state === 'busy' ? 'Analysing your resume…' : 'Upload your resume'}
         </div>
         <div style={{ color: '#6b7280', fontSize: 12.5, marginTop: 4 }}>
-          {fileName || 'PDF, DOC or DOCX · up to 5 MB · instant AI Career Report, no signup'}
+          {fileName || 'PDF, DOC or DOCX · up to 4 MB · instant AI Career Report, no signup'}
         </div>
         <input ref={inputRef} type="file" accept=".pdf,.doc,.docx" onChange={onPick} style={{ display: 'none' }} />
       </div>

@@ -6,7 +6,7 @@ import { validateResumeFile } from '@/lib/utils/resumeUpload'
 /**
  * Reusable resume file-selection primitive for the Resume AI workspace (Improve
  * and Tailor entry flows). Reuses the production `validateResumeFile` rules
- * (PDF/DOC/DOCX, ≤5 MB, ext + MIME). Handles select / replace / remove, shows
+ * (PDF/DOC/DOCX, ≤4 MB, ext + MIME). Handles select / replace / remove, shows
  * the selected filename + a truthful "ready" status, and surfaces validation
  * errors accessibly.
  *
@@ -86,7 +86,7 @@ export function ResumeFilePicker({ onFileReady, onClear, prompt }: Props) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker() } }}
           role="button"
           tabIndex={0}
-          aria-label="Add your resume — PDF, DOC or DOCX, up to 5 MB"
+          aria-label="Add your resume — PDF, DOC or DOCX, up to 4 MB"
           aria-describedby={error ? errorId : undefined}
           style={{
             border: '2px dashed #cbd5e1', borderRadius: 12, padding: '26px 18px',
@@ -96,7 +96,7 @@ export function ResumeFilePicker({ onFileReady, onClear, prompt }: Props) {
           <div style={{ fontSize: 30, marginBottom: 6 }} aria-hidden>📄</div>
           <div style={{ fontWeight: 800, color: '#0d1f4e', fontSize: 15 }}>Add your resume</div>
           <div style={{ color: '#6b7280', fontSize: 12.5, marginTop: 4 }}>
-            {prompt || 'PDF, DOC or DOCX · up to 5 MB · nothing is saved'}
+            {prompt || 'PDF, DOC or DOCX · up to 4 MB · nothing is saved'}
           </div>
         </div>
       ) : (

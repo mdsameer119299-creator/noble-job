@@ -80,7 +80,7 @@ export function ImproveFlow() {
 
   return (
     <div>
-      <ResumeFilePicker onFileReady={onReady} onClear={onClear} prompt="PDF, DOC or DOCX · up to 5 MB · not uploaded or stored" />
+      <ResumeFilePicker onFileReady={onReady} onClear={onClear} prompt="PDF, DOC or DOCX · up to 4 MB · not uploaded or stored" />
 
       {file && (
         <div style={{ marginTop: 14 }}>

@@ -187,6 +187,36 @@ async function main() {
     assert.equal(res.status, 413)
   })
 
+  const padTo = (n: number) => { const b = buildPdf(1); assert.ok(b.length < n); return Buffer.concat([b, Buffer.alloc(n - b.length, 0x20)]) }
+  await test("4 MB limit: a file of exactly RESUME_MAX_BYTES is accepted (200)", async () => {
+    assert.equal(RESUME_MAX_BYTES, 4 * 1024 * 1024)
+    const res = await POST(await uploadRequest(padTo(RESUME_MAX_BYTES), "cv.pdf", "application/pdf", { ip: "198.51.100.30" }))
+    assert.equal(res.status, 200)
+  })
+  await test("4 MB limit: a file just below the limit is accepted (200)", async () => {
+    const res = await POST(await uploadRequest(padTo(RESUME_MAX_BYTES - 1), "cv.pdf", "application/pdf", { ip: "198.51.100.31" }))
+    assert.equal(res.status, 200)
+  })
+  await test("4 MB limit: RESUME_MAX_BYTES + 1 → 413 with friendly, consistent JSON", async () => {
+    const res = await POST(await uploadRequest(padTo(RESUME_MAX_BYTES + 1), "cv.pdf", "application/pdf", { ip: "198.51.100.32" }))
+    assert.equal(res.status, 413)
+    const j = await res.json()
+    assert.equal(j.code, "file_too_large")
+    assert.equal(j.maxBytes, RESUME_MAX_BYTES)
+    assert.match(j.error, /larger than 4 MB/)
+    assert.match(res.headers.get("content-type") ?? "", /json/)
+  })
+  await test("4 MB limit: streamed-body cap also returns the same friendly JSON (not 'Upload is too large.')", async () => {
+    const big = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(RESUME_MAX_BYTES + 200_000, 0x20)])
+    const res = await POST(await uploadRequest(big, "big.pdf", "application/pdf", { ip: "198.51.100.33", contentLength: 1000 }))
+    assert.equal(res.status, 413)
+    assert.equal((await res.json()).code, "file_too_large")
+  })
+  await test("4 MB limit: stays below Vercel's 4.5 MB request cap including multipart framing", async () => {
+    const req = await uploadRequest(padTo(RESUME_MAX_BYTES), "cv.pdf", "application/pdf", { ip: "198.51.100.34" })
+    assert.ok(Number(req.headers.get("content-length")) < 4.5 * 1024 * 1024)
+  })
+
   await test("lying Content-Length (small header, large streamed body) is cut off by the byte cap (413)", async () => {
     const big = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(RESUME_MAX_BYTES + 200_000, 0x20)])
     const honest = await uploadRequest(big, "big.pdf", "application/pdf", { ip: "198.51.100.5", contentLength: 1000 })

@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useToast } from '@/hooks/useToast'
+import { validateResumeFile } from '@/lib/utils/resumeUpload'
 
 interface ResumeUploaderProps {
   onUploaded?: (url: string) => void
@@ -12,10 +13,14 @@ export function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
   const toast = useToast()
 
   const handleFile = async (file: File) => {
+    // Same rule as the server (4 MB, PDF/DOC/DOCX): a clear message here instead of a platform error after a long upload.
+    const v = validateResumeFile(file)
+    if (!v.ok) { toast.error(v.error); return }
     setLoading(true)
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch('/api/candidate/resume', { method: 'POST', body: form })
+    let res: Response
+    try { res = await fetch('/api/candidate/resume', { method: 'POST', body: form }) } catch { setLoading(false); toast.error('Network error. Please try again.'); return }
     const data = await res.json().catch(() => ({}))
     setLoading(false)
     if (res.ok) {
@@ -53,7 +58,7 @@ export function ResumeUploader({ onUploaded }: ResumeUploaderProps) {
       <p style={{ fontWeight: 800, color: '#0d1f4e', fontSize: 14, marginBottom: 4 }}>
         {loading ? 'Uploading…' : 'Click to upload resume'}
       </p>
-      <p style={{ color: '#6b7280', fontSize: 12 }}>PDF, DOC, or DOCX · Max 5 MB</p>
+      <p style={{ color: '#6b7280', fontSize: 12 }}>PDF, DOC, or DOCX · Max 4 MB</p>
     </div>
   )
 }

@@ -14,6 +14,7 @@ import type { RateLimitDecision, RateLimitPolicy } from "@/lib/security/distribu
 import { extToKind } from "@/lib/resume/parse"
 import { parserUnavailableResponse } from "@/lib/resume/parseFailure"
 import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
+import { RESUME_MAX_BYTES, RESUME_STORED_TOO_LARGE_MESSAGE, resumeTooLargeBody } from "@/lib/utils/resumeUpload"
 import { readBodyLimited } from "@/lib/security/boundedBody"
 import {
   BODY_READ_TIMEOUT_MS,
@@ -142,6 +143,9 @@ export function createCandidateScoreHandler(deps: CandidateScoreDeps) {
           return NextResponse.json({ error: "Could not read your stored resume." }, { status: 500 })
         }
         const ext = path.split(".").pop() || "pdf"
+        if (file.size > RESUME_MAX_BYTES) {
+          return NextResponse.json(resumeTooLargeBody(RESUME_STORED_TOO_LARGE_MESSAGE), { status: 413 })
+        }
         const buf = Buffer.from(await file.arrayBuffer())
         const kind = extToKind(ext)
         if (!kind || !hasValidResumeSignature(buf, kind)) {
