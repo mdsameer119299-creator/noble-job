@@ -11,7 +11,7 @@ targets below are hypotheses to be replaced by real baselines, not benchmarks.
 | Employer 1 | Employer registration → first job submitted | `jobs` vs `employers` | TBD wk 1 |
 | Employer 2 | First job → approved & live; time-to-approval | `jobs.status` | TBD wk 1 |
 | Employer 3 | Repeat posting (≥2 jobs, different weeks) | `jobs` | TBD wk 1 |
-All queries: `funnel-queries.sql` (read-only, unvalidated until staging exists).
+All queries: `funnel-queries.sql` (read-only). Syntax and logic verified on a local PostgreSQL 16 with synthetic fixtures; the header of that file lists which queries need staging, deployed events, or real data. Not yet run against Supabase.
 
 ## Instrumentation (ready as patch)
 Branch `feat/funnel-events`: `register_viewed/submitted/verified` (role + `?src=` attribution) and `employer_job_submitted`,

@@ -1,6 +1,18 @@
--- Noble Job funnel queries (READ-ONLY). Run in the Supabase SQL editor of the PRODUCTION project after the
--- funnel-events branch is deployed. NOT yet executed against a database (no DB access during preparation):
--- validate on staging first. Replace the interval as needed.
+-- Noble Job funnel queries (READ-ONLY).
+--
+-- VALIDATION STATUS (21 Nov 2026): every query below was executed on a throwaway PostgreSQL 16 with synthetic fixtures
+-- (hand-computed expected values matched: e.g. query 3 -> 3 candidates / 1 applied within 7d; query 6 -> 1 repeat employer).
+-- NOT yet run against Supabase: column names were taken from src/database/schema.sql (candidates.created_at,
+-- employers.created_at, jobs.employer_id/created_at/status, applications.candidate_id/applied_at, analytics_events.*).
+--
+-- WHAT NEEDS STAGING / DEPLOYED CODE
+--   Q1 weekly signups ........ needs only a read connection (production read-only OR staging with seeded data)
+--   Q2 registration funnel ... needs feat/funnel-events DEPLOYED and the analytics_events migration applied; returns empty before that
+--   Q3 candidate -> 7d apply . read connection; meaningful only with real candidate/application data
+--   Q4 employer -> first job . read connection; meaningful only with real data
+--   Q5 approval health ....... read connection
+--   Q6 repeat employers ...... read connection; needs >= 2 weeks of data
+-- Run on STAGING first to confirm the schema matches, then production READ-ONLY (SELECT only). Replace intervals as needed.
 
 -- 1) Visitor -> registration (candidates + employers). Visitors come from Vercel Web Analytics / Search Console;
 --    registrations come from the DB (source of truth, independent of client tracking).
