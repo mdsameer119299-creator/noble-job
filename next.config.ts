@@ -39,6 +39,13 @@ const cacheOverrides: Pick<NextConfig, 'cacheHandler' | 'cacheMaxMemorySize'> = 
       cacheMaxMemorySize: 0, // defer entirely to the custom handler's own in-memory layer
     }
 
+/** Files the isolated PDF worker loads at runtime (see outputFileTracingIncludes below). */
+export const PDF_RUNTIME_FILES = [
+  './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js',
+  './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.worker.js',
+  './node_modules/node-ensure/**/*',
+]
+
 const nextConfig: NextConfig = {
   ...cacheOverrides,
 
@@ -134,12 +141,14 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   // The resume PDF parser runs pdf.js inside a worker thread that locates it at RUNTIME
-  // (src/lib/resume/pdfIsolated.ts), so file tracing cannot discover it from an import. This include
-  // guarantees the standalone/ZIP bundle ships pdf.js; if it were missing, PDF scoring would fail closed.
+  // (src/lib/resume/pdfIsolated.ts), so file tracing cannot discover it from an import. These includes
+  // guarantee each function ships everything pdf.js needs: pdf.js loads pdf.worker.js (fake-worker mode)
+  // AND `require('node-ensure')` at runtime. Vercel packages every function from ITS OWN trace only, so a
+  // module that merely happens to be in another route's trace is absent here — the worker then dies with
+  // MODULE_NOT_FOUND and every valid PDF is rejected as "could not read". Guarded by pdfTraceIncludes.test.ts.
   outputFileTracingIncludes: {
-    // pdf.js loads pdf.worker.js at runtime (fake-worker mode), so both files must ship.
-    '/api/resume/quick-score': ['./node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js', './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.worker.js'],
-    '/api/candidate/resume-score': ['./node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js', './node_modules/pdf-parse/lib/pdf.js/v1.10.100/build/pdf.worker.js'],
+    '/api/resume/quick-score': PDF_RUNTIME_FILES,
+    '/api/candidate/resume-score': PDF_RUNTIME_FILES,
   },
 }
 

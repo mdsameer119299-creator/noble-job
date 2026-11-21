@@ -64,6 +64,9 @@ jobs:
       - name: PDF isolation / resource-limit tests
         run: npm run test:pdf-isolation
 
+      - name: PDF runtime files are traced into the function
+        run: npm run test:pdf-trace
+
       - name: Resume ReDoS / candidate scorer protection tests
         run: npm run test:resume-redos
 
