@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { analyzeResume } from "@/lib/resume/atsScore"
 import { extractResumeText, extToKind } from "@/lib/resume/parse"
 import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
-import { validateResumeFile, RESUME_MAX_BYTES } from "@/lib/utils/resumeUpload"
+import { validateResumeFile, resumeTooLargeBody, RESUME_MAX_BYTES, RESUME_MAX_LABEL } from "@/lib/utils/resumeUpload"
 import { readBodyLimited } from "@/lib/security/boundedBody"
 import { BODY_READ_TIMEOUT_MS } from "@/lib/resume/limits"
 import { checkRateLimit } from "@/lib/security/distributedRateLimit"
@@ -17,6 +17,9 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024
 const NO_STORE = { "Cache-Control": "no-store" }
 function fail(error: string, status: number, extra?: Record<string, string>) {
   return NextResponse.json({ error }, { status, headers: { ...NO_STORE, ...extra } })
+}
+function tooLarge() {
+  return NextResponse.json(resumeTooLargeBody(), { status: 413, headers: NO_STORE })
 }
 
 /**
@@ -33,7 +36,7 @@ function fail(error: string, status: number, extra?: Record<string, string>) {
  *   4. bounded parsing (DOCX inflate cap, PDF page + time caps — see lib/resume/parse),
  *   5. generic errors only; uploaded content / extracted text is never logged or echoed.
  *
- * Body: multipart/form-data with `file` (PDF/DOC/DOCX, ≤5 MB).
+ * Body: multipart/form-data with `file` (PDF/DOC/DOCX, ≤4 MB).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await readBodyLimited(req, RESUME_MAX_BYTES + MULTIPART_OVERHEAD_BYTES, { timeoutMs: BODY_READ_TIMEOUT_MS })
-    if (!body.ok) return fail(body.error, body.status)
+    if (!body.ok) return body.status === 413 ? tooLarge() : fail(body.error, body.status)
 
     let form: FormData
     try {
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     const file = form.get("file")
     if (!(file instanceof File)) return fail("No resume file provided.", 400)
-    if (file.size > RESUME_MAX_BYTES) return fail("File must be 5 MB or smaller.", 413)
+    if (file.size > RESUME_MAX_BYTES) return tooLarge()
     const valid = validateResumeFile(file)
     if (!valid.ok) return fail(valid.error, 415)
 

@@ -276,7 +276,7 @@ export function ApplicationModal({ open, onClose, jobId, board = 'private', titl
                   )}
                 </div>
               )}
-              <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '8px 0 0' }}>PDF, DOC or DOCX · Max 5 MB</p>
+              <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '8px 0 0' }}>PDF, DOC or DOCX · Max 4 MB</p>
             </section>
 
             {/* Message to Employer */}

@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState } from 'react'
 import type { ResumeScoreResult } from '@/lib/resume/types'
 
@@ -40,10 +41,12 @@ export function ResumeScoreCard() {
   const [result, setResult] = useState<ResumeScoreResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tooLarge, setTooLarge] = useState(false)
 
   const run = async () => {
     setLoading(true)
     setError(null)
+    setTooLarge(false)
     try {
       const res = await fetch('/api/candidate/resume-score', {
         method: 'POST',
@@ -51,7 +54,7 @@ export function ResumeScoreCard() {
         body: JSON.stringify(jd.trim() ? { jobDescription: jd.trim() } : {}),
       })
       const d = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(d.error || 'Could not score resume'); setResult(null) }
+      if (!res.ok) { setTooLarge(d.code === 'file_too_large'); setError(d.error || 'Could not score resume'); setResult(null) }
       else setResult(d.data as ResumeScoreResult)
     } catch {
       setError('Network error — please try again.')
@@ -81,7 +84,14 @@ export function ResumeScoreCard() {
         {loading ? 'Analysing…' : result ? 'Re-analyse' : 'Score my resume'}
       </button>
 
-      {error && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 12 }}>{error}</p>}
+      {error && tooLarge && (
+        <div role="alert" style={{ background: '#fffbeb', border: '1.5px solid #fcd34d', borderRadius: 10, padding: '12px 14px', marginTop: 12, fontSize: 13, color: '#92400e' }}>
+          <strong>Your saved resume is too large to analyse.</strong> {error}{' '}
+          <Link href="/candidate/resume" style={{ color: '#1847d4', fontWeight: 800 }}>Upload a smaller version →</Link>
+          <div style={{ marginTop: 4, color: '#78350f' }}>Your existing file has not been deleted.</div>
+        </div>
+      )}
+      {error && !tooLarge && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 12 }}>{error}</p>}
 
       {result && (
         <div style={{ marginTop: 18 }}>
