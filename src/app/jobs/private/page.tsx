@@ -12,6 +12,7 @@ import { ScrollToTop } from '@/components/shared/ScrollToTop'
 import { getJobs } from '@/lib/services/jobService'
 import { getHimalayasJobsForDisplay } from '@/lib/services/himalayasCache'
 import { mergePrivateListing } from '@/lib/jobs/mergePrivateListing'
+import { HUB_DESCRIPTIONS } from '@/lib/seo/hubDescriptions'
 
 export const dynamic = "force-dynamic"
 
@@ -23,7 +24,7 @@ export async function generateMetadata({ searchParams }: SP): Promise<Metadata> 
     ...buildPageMetadata({
       title: 'Private Jobs in India — IT, Banking, Fresher & More | Noble Job',
       description:
-        'Browse Private Jobs from employers and external job sources on Job Portal India Noble Job.',
+        HUB_DESCRIPTIONS.private,
       path: '/jobs/private',
       keywords: ['Private Jobs', 'Jobs in India', 'fresher jobs', 'IT jobs India'],
     }),
