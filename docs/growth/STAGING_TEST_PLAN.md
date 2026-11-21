@@ -23,7 +23,8 @@ Principles: staging keys only (anon + service-role of the staging project) in th
 
 Exit: all PASS or documented waivers → Gate in PRODUCTION_CUTOVER_PLAN.md §C.0.
 
-## Update (21 Nov) — which tests need a migration?
-- **No test needs a new migration**, except **#11**: the admin growth RPC is only a proposal (`docs/growth/proposed-migrations/20261121000001_admin_growth_summary.sql` + `.down.sql`, validated locally on the real schema: service_role OK, anon/authenticated denied, rollback drops it). There is **no API route/page for it yet**, so #11 on staging = run the function in the SQL editor with the service role. It will only be run after you approve the SQL.
-- #1–#10 and #12 use objects that already exist in the 34 migrations (`analytics_events` has RLS enabled with no policies, i.e. service-role-only; `candidates.category/experience_years/phone` nullable; `profile_score` trigger verified locally: 0 at signup, 15 after profile completion).
-- Test 3 (OTP): see STAGING_SETUP.md §4. Test 12 adds: OTP brute-force attempt limiting, unauthorised/failed operations return clean 4xx (no stack traces), runtime logs reviewed for each failure.
+## Update (21 Nov, v2 — owner adjustments)
+- **11 required tests + 1 deferred.** #11 (admin growth RPC) is a future OPTIONAL feature: not applied, not a blocker, no staging run. Testing of existing candidate/employer functionality needs **no new migration** — only the 34 existing ones.
+- Objects used already exist: `analytics_events` (RLS on, no policies = service-role only), nullable `candidates.category/experience_years/phone`, `profile_score` trigger (verified locally: 0 at signup, 15 after completion), `auth_failures` lockout table.
+- **OTP (#3, #12):** controlled methods only — Resend sandbox to the owner's own address, wrong-code/lockout/reuse tests, staging-only `expires_at` edit for expiry. No hash recovery. See STAGING_SETUP.md §4.
+- #12 also checks: failed/unauthorised operations return clean 4xx (no stack traces/secrets), runtime logs reviewed per failure, lockout behaviour under concurrent wrong guesses (observation only; hardening is the separate proposal).
