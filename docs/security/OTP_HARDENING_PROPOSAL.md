@@ -30,7 +30,8 @@ Status: PROPOSAL for owner review. Nothing here is implemented, applied to any d
 **3.5 Atomic verification with per-token attempts:** a Postgres function `verify_otp(p_email, p_type, p_hash)` that, in one statement/transaction, locks the active row (`FOR UPDATE`), rejects if `attempts >= 5` or expired, increments `attempts`, compares hash, and marks used on match. Removes the race, so ≤5 guesses per code **regardless of concurrency**; after 5, the code is dead and a new one must be requested.
 **3.6 Account-level limits (keep, make atomic):** keep the 30-min `auth_failures` lockout but count inside the same function/transaction; add a generic, non-enumerating response; to limit lockout-DoS, key lockout on `(email, source ip bucket)` for verification and cap *per-email* total at a higher ceiling (e.g. 15/30 min) with CAPTCHA/step-up later.
 **3.7 Send throttling:** per-email cooldown 60 s and max 5 sends/hour (counted in the DB), uniform response to avoid account enumeration.
-**3.8 Distributed rate limiting (₹0):** replace the in-memory `Map` for auth routes with a Postgres-backed fixed-window counter: table `rate_limits(key text, window_start timestamptz, count int, primary key(key, window_start))` + function `rate_limit_hit(key, window_seconds, max)` using `INSERT … ON CONFLICT DO UPDATE … RETURNING` (atomic, shared across all instances). Alternative: Upstash Redis free tier (adds a vendor + env vars; not needed to start). Keep the in-memory limiter only as a cheap first filter.
+**3.8 Distributed rate limiting (reuse, no new table):** the repo already has a durable cross-instance limiter, `src/lib/security/distributedRateLimit.ts` (backed by `auth_failures`, `rl:`+HMAC keys, no raw IP), used by `/api/resume/quick-score`. Auth routes still use an in-memory per-IP `Map`. Change: route auth limits (login, register, verify-otp, forgot-password, reset-password, OTP send) through this helper and add a **`failClosed` option** (return 503 when the limiter is degraded) for auth/OTP routes; quick-score keeps fail-open. **No `rate_limits` table or `rate_limit_hit` function is needed** (superseded; earlier draft proposed them).
+**3.8b Where OTP applies (product decision, see candidate-journey proposal):** OTP is **not** required to browse, upload a resume or get a basic score, nor to create an account and save. It is required at **apply**, password reset and e-mail change. This lowers OTP volume (fewer sends, less abuse surface) but makes each OTP gate more security-relevant, so 3.3-3.7 and 3.9 stay as designed.
 **3.9 Fail-closed:** if limit/lockout accounting errors on auth routes, return 503 (user retries) instead of allowing the attempt.
 
 ## 4. Proposed migration (NOT applied; to be reviewed as SQL before any run; additive)
@@ -39,11 +40,9 @@ alter table public.otp_tokens
   add column if not exists attempts smallint not null default 0,
   add column if not exists superseded_at timestamptz;
 create unique index if not exists otp_tokens_one_active_idx on public.otp_tokens(email, type) where not is_used and superseded_at is null;
-create table if not exists public.rate_limits(key text not null, window_start timestamptz not null, count integer not null default 0, primary key(key, window_start));
-alter table public.rate_limits enable row level security;  -- service-role only (no policy)
--- functions: rate_limit_hit(...), verify_otp(...)  — SECURITY DEFINER, search_path pinned, EXECUTE only to service_role
+-- function: verify_otp(...)  — SECURITY DEFINER, search_path pinned, EXECUTE only to service_role
 ```
-Rollback: `drop function` ×2, `drop table rate_limits`, `drop index otp_tokens_one_active_idx`, `alter table … drop column attempts, superseded_at` (all additive, no data loss to existing rows).
+Rollback: `drop function verify_otp`, `drop index otp_tokens_one_active_idx`, `alter table … drop column attempts, superseded_at` (all additive, no data loss to existing rows).
 New secret: `OTP_PEPPER` (Production secret + separate staging value; never in non-branch Preview).
 
 ## 5. Rollout and compatibility
