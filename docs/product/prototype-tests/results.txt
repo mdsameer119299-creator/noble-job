@@ -1,0 +1,87 @@
+A. upload, token and cookie properties
+  PASS opt-in upload 200 with csrf
+  PASS cookie flags: HttpOnly, Secure, SameSite=Strict, scoped Path, 24h Max-Age
+  PASS token is 256-bit (32 random bytes)
+  PASS raw token is not stored (only HMAC)
+  PASS no plaintext e-mail or IP stored
+  PASS exactly one temp object stored
+B. validation: nothing stored on rejection
+  PASS renamed exe (MZ) as .pdf → 400 (got 400)
+  PASS empty file → 400 (got 400)
+  PASS 4 MB + 1 → 413 (got 413)
+  PASS unsupported .txt → 400 (got 400)
+  PASS invalid e-mail → 400 (got 400)
+  PASS missing e-mail → 400 (got 400)
+  PASS docx extension but PDF-less junk → 400 (got 400)
+  PASS no row and no object after all rejections
+  PASS oversized body cut off before parsing (413)
+  PASS just under 4 MB accepted
+  PASS valid DOCX accepted
+C. replace removes the old object; D. rate limit
+  PASS second upload from same client replaces row AND deletes the old object
+  PASS 4th stored upload within the window → 429
+  PASS limiter degraded → stored upload fails CLOSED (503)
+E. status / delete (CSRF) 
+  PASS status live with csrf (same-origin readable only)
+  PASS no cookie → not live
+  PASS DELETE without CSRF header → 403, nothing deleted
+  PASS DELETE from foreign Origin → 403
+  PASS DELETE with CSRF → row AND storage object removed
+  PASS cookie cleared on delete
+F. happy-path claim
+  PASS verified owner with matching e-mail (case/space-insensitive) → 200
+  PASS permanent copy exists at resumes/{candidateId}/resume.pdf and resume_url set
+  PASS TEMP OBJECT DELETED from storage after claim
+  PASS row bound to claiming user
+  PASS claim cookie cleared
+G. replay and H. stolen token / cross-user
+  PASS verified user B with stolen cookie+csrf but different e-mail → refused
+  PASS token NOT consumed; bad_claims=1
+  PASS legitimate owner still claims after thief failed
+  PASS REPLAY by owner after claim → refused
+  PASS REPLAY by other user → refused
+  PASS B's profile never received A's resume
+  PASS 5 mismatched attempts revoke the token
+  PASS after revoke even the owner is refused (accepted DoS trade-off; owner re-uploads)
+I. unverified account
+  PASS unverified account → 403 email_not_verified
+  PASS token untouched; resume stays pending until expiry
+  PASS no resume attached to unverified profile
+  PASS after verification the same pending resume can be claimed
+J. CSRF and request-shape checks (token must stay unconsumed)
+  PASS missing CSRF header → 403 (got 403)
+  PASS wrong CSRF header → 403 (got 403)
+  PASS CSRF of a different token → 403 (got 403)
+  PASS no Origin → 403 (got 403)
+  PASS foreign Origin → 403 (got 403)
+  PASS Sec-Fetch-Site cross-site → 403 (got 403)
+  PASS Content-Type text/plain (simple-form CSRF) → 415 (got 415)
+  PASS GET → 405 (got 405)
+  PASS no session → 401 (got 401)
+  PASS no claim cookie → 404 (got 404)
+  PASS none of the rejected requests consumed or damaged the token
+K. concurrency
+  PASS 20 parallel claims by the owner → exactly ONE 200 (got 1; others 404)
+  PASS one permanent object, zero temp objects
+  PASS mixed owner+thief race: exactly one winner and it is the e-mail owner
+  PASS thief gets nothing
+L. expiry/cleanup deletes REAL storage objects
+  PASS expired token cannot be claimed even BEFORE cleanup runs (DB enforces expiry)
+  PASS storage delete failing → rows KEPT for retry (never row-deleted while object remains)
+  PASS purge removed 3 expired rows + 1 orphan ({"removedRows":3,"removedObjects":4,"failures":0,"orphans":1})
+  PASS on DISK only the one unexpired object remains; matches the one remaining row
+  PASS expired object 5d743129… physically gone
+  PASS expired object 3c717886… physically gone
+  PASS expired object 868ff17e… physically gone
+  PASS orphan object (no row) physically gone
+M. leftover temp object after a claim, and N. copy failure release
+  PASS claim succeeds even if temp removal fails; object left behind
+  PASS sweep removes the leftover temp object of a CLAIMED row
+  PASS permanent copy fails → 502
+  PASS claim released after failure
+  PASS retry succeeds
+O. logs
+  PASS no e-mail addresses in logs
+  PASS no tokens / CSRF values / cookies in logs
+
+RESULT: 73 passed, 0 failed
