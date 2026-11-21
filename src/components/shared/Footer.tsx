@@ -15,7 +15,6 @@ const EMPLOYERS = [
   { label: 'Post a Job', href: '/employer/jobs/new' },
   { label: 'Find Candidates', href: '/employer/candidates' },
   { label: 'Employer Dashboard', href: '/employer/dashboard' },
-  { label: 'Pricing Plans', href: '/employer/billing' },
 ]
 const POPULAR_SEARCHES = [
   { label: 'Government Jobs', href: '/government-jobs' },

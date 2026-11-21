@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 
 type Plan = { plan_type?: string; jobs_limit?: number; expires_at?: string | null }
 
-const PLAN_LABEL: Record<string, string> = { free: 'Free', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise' }
 
 export function CurrentPlan() {
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -30,21 +29,19 @@ export function CurrentPlan() {
     </div>
   )
 
-  const type = plan?.plan_type || 'free'
   return (
     <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ background: 'linear-gradient(135deg,#0d1f4e,#1847d4)', borderRadius: 16, padding: 24, color: '#fff' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', opacity: 0.8 }}>Current plan</div>
-        <div style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, fontSize: 30, margin: '6px 0 14px' }}>{PLAN_LABEL[type] || type}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', opacity: 0.8 }}>Your account</div>
+        <div style={{ fontFamily: 'Playfair Display,serif', fontWeight: 900, fontSize: 30, margin: '6px 0 14px' }}>Free to post</div>
         <div style={{ display: 'flex', gap: 24, fontSize: 13 }}>
           <div><div style={{ opacity: 0.75 }}>Active job limit</div><div style={{ fontWeight: 800, fontSize: 18 }}>{plan?.jobs_limit ?? 3}</div></div>
-          <div><div style={{ opacity: 0.75 }}>Renews</div><div style={{ fontWeight: 800, fontSize: 18 }}>{plan?.expires_at ? new Date(plan.expires_at).toLocaleDateString() : '—'}</div></div>
         </div>
       </div>
       <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #e2e8f0', padding: 20 }}>
         <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
-          Need more active postings or premium candidate search? Contact us at{' '}
-          <a href="mailto:support@noblejob.in" style={{ color: '#1847d4', fontWeight: 700 }}>support@noblejob.in</a> to upgrade.
+          Employer accounts and job posting are free. Every job is reviewed before it goes live. Need more active postings? Contact us at{' '}
+          <a href="mailto:support@noblejob.in" style={{ color: '#1847d4', fontWeight: 700 }}>support@noblejob.in</a>.
         </p>
       </div>
     </div>
