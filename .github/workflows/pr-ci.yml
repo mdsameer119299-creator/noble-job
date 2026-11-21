@@ -114,6 +114,9 @@ jobs:
       - name: Hub meta description tests
         run: npm run test:hub-meta
 
+      - name: Funnel analytics event tests
+        run: npm run test:events
+
       - name: SEO verification (static)
         run: npm run verify:seo
 

@@ -4,6 +4,7 @@
  *   npm run test:resume
  */
 import assert from "node:assert/strict"
+import { ACQ_EVENT_NAMES } from "@/lib/analytics/events"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -62,12 +63,10 @@ test("RESUME_MODE_EVENT matches AcqEvent.RESUME_MODE_SELECTED", () => {
 })
 
 test("the mode event is ALLOWED by /api/events (else it is silently dropped)", () => {
+  // The route derives its allow-list from ACQ_EVENT_NAMES (single source of truth) - assert both halves.
   const src = read("src/app/api/events/route.ts")
-  assert.match(src, /const ALLOWED = new Set\(\[[\s\S]*?\]\)/)
-  assert.ok(
-    new RegExp(`["']${RESUME_MODE_EVENT}["']`).test(src),
-    `"${RESUME_MODE_EVENT}" must appear in the /api/events allowlist`,
-  )
+  assert.match(src, /new Set<string>\(ACQ_EVENT_NAMES\)/)
+  assert.ok((ACQ_EVENT_NAMES as readonly string[]).includes(RESUME_MODE_EVENT), `"${RESUME_MODE_EVENT}" must be in ACQ_EVENT_NAMES`)
 })
 
 // ── Placeholder routes exist and are SEO-safe ─────────────────────────────

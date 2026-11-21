@@ -1,5 +1,6 @@
 'use client'
-import{useState}from'react'
+import{useEffect,useState}from'react'
+import{track,AcqEvent}from'@/lib/analytics/events'
 import{StepIndicator}from'./StepIndicator'
 import{CandidateRegisterStep1}from'./CandidateRegisterStep1'
 import{CandidateRegisterStep2}from'./CandidateRegisterStep2'
@@ -13,6 +14,7 @@ export function CandidateRegisterWizard(){
   const[form,setForm]=useState<any>({})
   const[loading,setLoading]=useState(false)
   const toast=useToast()
+  useEffect(()=>{track(AcqEvent.REGISTER_VIEWED,{role:'candidate',src:new URLSearchParams(window.location.search).get('src')||''})},[])
   const onChange=(k:string,v:any)=>setForm((f:any)=>({...f,[k]:v}))
 
   const handleStep1=()=>{
@@ -27,7 +29,7 @@ export function CandidateRegisterWizard(){
     setLoading(true)
     const res=await fetch('/api/auth/register/candidate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)})
     const data=await res.json()
-    if(res.ok)setStep(2)
+    if(res.ok){track(AcqEvent.REGISTER_SUBMITTED,{role:'candidate'});setStep(2)}
     else toast.error(data.error||'Registration failed')
     setLoading(false)
   }
@@ -50,7 +52,7 @@ export function CandidateRegisterWizard(){
           </div>
         </>
       )}
-      {step===2&&<OtpVerification email={form.email} onVerified={()=>setStep(3)}/>}
+      {step===2&&<OtpVerification email={form.email} onVerified={()=>{track(AcqEvent.REGISTER_VERIFIED,{role:'candidate'});setStep(3)}}/>}
       {step===3&&<SuccessPane role="candidate" name={form.firstName}/>}
     </div>
   )

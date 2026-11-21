@@ -5,6 +5,7 @@
  *   npm run test:resume-workspace
  */
 import assert from "node:assert/strict"
+import { ACQ_EVENT_NAMES } from "@/lib/analytics/events"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -98,11 +99,12 @@ test("new funnel events exist on AcqEvent", () => {
 
 test("every new event is ALLOWED by /api/events (else silently dropped)", () => {
   const src = read("src/app/api/events/route.ts")
+  assert.match(src, /new Set<string>\(ACQ_EVENT_NAMES\)/)
   for (const ev of [
     "resume_workspace_viewed", "resume_file_selected", "resume_build_method_selected",
     "resume_tailor_target_entered", "resume_signin_requested",
   ]) {
-    assert.ok(new RegExp(`["']${ev}["']`).test(src), `"${ev}" must be in the /api/events allowlist`)
+    assert.ok((ACQ_EVENT_NAMES as readonly string[]).includes(ev), `"${ev}" must be in ACQ_EVENT_NAMES (the /api/events allow-list)`)
   }
 })
 

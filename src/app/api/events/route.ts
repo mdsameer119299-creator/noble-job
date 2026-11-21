@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { isSupabaseConfigured } from "@/lib/supabase/config"
 import type { Json } from "@/types/supabase"
+import { ACQ_EVENT_NAMES } from "@/lib/analytics/events"
 
 export const runtime = "nodejs"
 
@@ -14,20 +15,7 @@ export const runtime = "nodejs"
  * a 200 so tracking can never break a user flow or a deploy.
  */
 
-const ALLOWED = new Set([
-  "resume_cta_opened",
-  "resume_upload",
-  "resume_parsed",
-  "resume_score_generated",
-  "resume_mode_selected",
-  "resume_workspace_viewed",
-  "resume_file_selected",
-  "resume_build_method_selected",
-  "resume_tailor_target_entered",
-  "resume_signin_requested",
-  "job_alert_subscribed",
-  "first_application",
-])
+const ALLOWED = new Set<string>(ACQ_EVENT_NAMES)
 
 type Body = {
   event?: unknown
