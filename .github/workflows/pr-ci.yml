@@ -111,6 +111,9 @@ jobs:
       - name: Cron auth tests
         run: npm run test:cron-auth
 
+      - name: Hub meta description tests
+        run: npm run test:hub-meta
+
       - name: SEO verification (static)
         run: npm run verify:seo
 

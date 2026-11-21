@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
 import { buildPageMetadata } from "@/lib/seo/metadata"
+import { HUB_DESCRIPTIONS } from "@/lib/seo/hubDescriptions"
 
 export const metadata: Metadata = buildPageMetadata({
   title: "Work From Home Jobs in India — Remote & WFH | Noble Job",
   description:
-    "Browse Work From Home Jobs and remote openings. IT, marketing, customer support, and more on Noble Job.",
+    HUB_DESCRIPTIONS.wfh,
   path: "/jobs/wfh",
   keywords: ["Work From Home Jobs", "WFH Jobs", "remote jobs India", "Jobs in India"],
 })
