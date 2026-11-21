@@ -11,6 +11,8 @@
  */
 import zlib from "node:zlib"
 import { parsePdfIsolated, PDF_MAX_PAGES, PDF_PARSE_TIMEOUT_MS } from "@/lib/resume/pdfIsolated"
+import { replaceTabTags, stripTags, trimLineEnds } from "@/lib/resume/linearScan"
+import { RESUME_MAX_TEXT_CHARS, TEXT_TRUNCATED_WARNING } from "@/lib/resume/limits"
 
 export { PDF_MAX_PAGES, PDF_PARSE_TIMEOUT_MS }
 
@@ -104,18 +106,21 @@ function extractDocxXml(buf: Buffer): string | null {
   return null
 }
 
-/** Convert OOXML document.xml to readable text (paragraph breaks, tags stripped). */
-function docxXmlToText(xml: string): string {
-  return xml
-    .replace(/<\/w:p>/g, "\n")
-    .replace(/<w:tab[^>]*\/>/g, "\t")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/[ \t]+\n/g, "\n")
+/**
+ * Convert OOXML document.xml to readable text (paragraph breaks, tags stripped).
+ * Every step is linear-time: the original `[ \t]+\n`, `<[^>]+>` and `<w:tab[^>]*\/>` regexes were
+ * quadratic and a 550-byte DOCX of spaces blocked the event loop for 4 s (hours at the 10 MB cap).
+ */
+export function docxXmlToText(xml: string): string {
+  const noPara = xml.split("</w:p>").join("\n")
+  return trimLineEnds(
+    stripTags(replaceTabTags(noPara))
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'"),
+  )
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
@@ -148,12 +153,18 @@ export async function extractResumeText(buf: Buffer, ext: string): Promise<Parse
   if (!kind) return { text: "", warning: `Unsupported file type: .${ext}` }
   if (!buf || buf.length === 0) return { text: "", warning: "Empty file." }
   try {
+    let parsed: ParsedResume
     switch (kind) {
-      case "pdf": return await parsePdf(buf)
-      case "docx": return parseDocx(buf)
-      case "doc": return parseLegacyDoc(buf)
-      case "txt": return { text: buf.toString("utf8").trim() }
+      case "pdf": parsed = await parsePdf(buf); break
+      case "docx": parsed = parseDocx(buf); break
+      case "doc": parsed = parseLegacyDoc(buf); break
+      case "txt": parsed = { text: buf.toString("utf8", 0, RESUME_MAX_TEXT_CHARS * 4).trim() }; break
     }
+    // Bound what every downstream step (scoring, AI prompt) can ever see, whatever the file format.
+    if (parsed.text.length > RESUME_MAX_TEXT_CHARS) {
+      return { ...parsed, text: parsed.text.slice(0, RESUME_MAX_TEXT_CHARS), warning: [parsed.warning, TEXT_TRUNCATED_WARNING].filter(Boolean).join(" ") }
+    }
+    return parsed
   } catch (e) {
     if (e instanceof ResumeLimitError) {
       return { text: "", warning: "The document is too large or complex to process safely." }

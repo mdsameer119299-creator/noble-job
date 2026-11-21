@@ -48,6 +48,7 @@
                       "test:homepage-queries": "tsx src/lib/seo/homepageTailCities.test.ts",
                       "test:rate-limit": "tsx src/lib/security/distributedRateLimit.test.ts",
                       "test:pdf-isolation": "tsx src/lib/resume/pdfIsolation.test.ts",
+                      "test:resume-redos": "tsx src/lib/resume/resumeRedos.test.ts",
                       "test:ci-chain": "node scripts/run-script-chain.test.mjs",
                       "test:admin": "tsx src/lib/validation/adminValidation.test.ts",
                       "test:admin-route": "tsx src/app/api/admin/adminRoute.test.ts",

@@ -4,6 +4,7 @@ import { extractResumeText, extToKind } from "@/lib/resume/parse"
 import { hasValidResumeSignature } from "@/lib/resume/fileSignature"
 import { validateResumeFile, RESUME_MAX_BYTES } from "@/lib/utils/resumeUpload"
 import { readBodyLimited } from "@/lib/security/boundedBody"
+import { BODY_READ_TIMEOUT_MS } from "@/lib/resume/limits"
 import { checkRateLimit } from "@/lib/security/distributedRateLimit"
 import { QUICK_SCORE_RATE_POLICY } from "@/lib/resume/quickScorePolicy"
 
@@ -25,7 +26,9 @@ function fail(error: string, status: number, extra?: Record<string, string>) {
  * instant ATS score BEFORE creating an account (see ResumeUploadWidget / ImproveFlow).
  * Requiring login would remove that funnel. Instead the endpoint is protected by:
  *   1. a cross-instance rate limit (per client + global, durable store, no paid service),
- *   2. Content-Length checked BEFORE any body byte is read, plus a streaming byte cap,
+ *   2. Content-Length checked BEFORE any body byte is read, a streaming byte cap and a read deadline (408).
+ *      This route is excluded from src/middleware.ts: Next buffers (up to 10 MB) the body of every
+ *      middleware-matched request BEFORE the handler runs, which defeated these checks and the rate limit,
  *   3. real file-signature validation (extension/MIME alone are not trusted),
  *   4. bounded parsing (DOCX inflate cap, PDF page + time caps — see lib/resume/parse),
  *   5. generic errors only; uploaded content / extracted text is never logged or echoed.
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest) {
       return fail("Expected a file upload.", 415)
     }
 
-    const body = await readBodyLimited(req, RESUME_MAX_BYTES + MULTIPART_OVERHEAD_BYTES)
+    const body = await readBodyLimited(req, RESUME_MAX_BYTES + MULTIPART_OVERHEAD_BYTES, { timeoutMs: BODY_READ_TIMEOUT_MS })
     if (!body.ok) return fail(body.error, body.status)
 
     let form: FormData

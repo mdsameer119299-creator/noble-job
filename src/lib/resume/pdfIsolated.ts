@@ -45,6 +45,7 @@ export const PDF_MAX_CONCURRENT = 2
 export const PDF_WORKER_HEAP_MB = 128
 export const PDF_MAX_WORKER_BYTES = 256 * 1024 * 1024
 export const PDF_FLATE_STREAM_MAX = 16 * 1024 * 1024
+export const PDF_ALLOC_MAX = 48 * 1024 * 1024 // single typed-array allocation inside the worker (see installAllocationGuard)
 export const PDF_FLATE_TOTAL_MAX = 48 * 1024 * 1024
 const POLL_MS = 50
 const TERMINATE_WAIT_MS = 0 // never block the response on thread teardown
@@ -98,6 +99,34 @@ function a85(slice) {
   return out.subarray(0, o)
 }
 
+function unescapeNames(t) {
+  return t.indexOf("#") < 0 ? t : t.replace(/#([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+}
+
+// Real bound on decompression, independent of the pre-scan (which is best-effort and can be evaded:
+// indirect /Filter references, filter chains, stream-length tricks). pdf.js inflates into typed arrays
+// that it grows by doubling; refusing any single allocation above allocMax stops a bomb wherever it hides.
+// pdf.js may swallow the RangeError and carry on, so the flag is checked again before returning a result.
+let guardState = { tripped: false }
+function installAllocationGuard(maxBytes) {
+  const names = ["ArrayBuffer", "Uint8Array", "Uint8ClampedArray", "Int8Array", "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Float32Array", "Float64Array"]
+  for (const name of names) {
+    const Orig = globalThis[name]
+    if (typeof Orig !== "function") continue
+    const bpe = Orig.BYTES_PER_ELEMENT || 1
+    globalThis[name] = new Proxy(Orig, {
+      construct(target, args, newTarget) {
+        const a = args[0]
+        let n = 0
+        if (typeof a === "number") n = a * bpe
+        else if (a && typeof a === "object" && typeof a.length === "number") n = a.length * bpe
+        if (n > maxBytes) { guardState.tripped = true; throw new RangeError("allocation limit") }
+        return Reflect.construct(target, args, newTarget)
+      },
+    })
+  }
+}
+
 function preflight() {
   const txt = buf.toString("latin1")
   if (/\/(LZWDecode|RunLengthDecode)\b/.test(txt)) return "unsupported-compression"
@@ -109,7 +138,9 @@ function preflight() {
     let end = txt.indexOf("endstream", start)
     if (end < 0) end = txt.length
     re.lastIndex = end
-    const dict = txt.slice(Math.max(0, txt.lastIndexOf("obj", m.index)), m.index)
+    // PDF names may hide characters as #xx (e.g. /Flat#65Decode); decode them before matching.
+    const dict = unescapeNames(txt.slice(Math.max(0, txt.lastIndexOf("obj", m.index)), m.index))
+    if (/\/(LZWDecode|RunLengthDecode)\b/.test(dict)) return "unsupported-compression"
     if (!/\/FlateDecode\b|\/Fl\b/.test(dict)) continue
     try {
       let data = buf.subarray(start, end)
@@ -128,6 +159,7 @@ function preflight() {
 async function run() {
   const bad = preflight()
   if (bad) return done({ ok: false, reason: bad })
+  installAllocationGuard(d.allocMax)
   const PDFJS = require(d.pdfJsPath)
   PDFJS.disableWorker = true
   PDFJS.isEvalSupported = false
@@ -151,12 +183,13 @@ async function run() {
       text = text + "\n\n" + pageText
       if (text.length > d.maxChars) { text = text.slice(0, d.maxChars); truncated = true }
     }
+    if (guardState.tripped) return done({ ok: false, reason: "too-large" })
     return done({ ok: true, text, numPages: doc.numPages, evalDisabled: PDFJS.isEvalSupported === false, truncated })
   } finally {
     try { await task.destroy() } catch (e) { /* already torn down */ }
   }
 }
-run().catch(() => done({ ok: false, reason: "unreadable" }))
+run().catch(() => done({ ok: false, reason: guardState.tripped ? "too-large" : "unreadable" }))
 `
 
 let active = 0
@@ -250,6 +283,7 @@ export async function parsePdfIsolated(
         maxChars: over.maxChars ?? PDF_MAX_TEXT_CHARS,
         perStreamMax: over.perStreamMax ?? PDF_FLATE_STREAM_MAX,
         totalMax: over.totalMax ?? PDF_FLATE_TOTAL_MAX,
+        allocMax: PDF_ALLOC_MAX,
       },
       {
         timeoutMs: over.timeoutMs ?? PDF_PARSE_TIMEOUT_MS,

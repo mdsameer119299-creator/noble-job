@@ -193,8 +193,24 @@ function drainOrphans() {
   }
 }
 
-export async function checkRateLimit(req: Request, policy: RateLimitPolicy): Promise<RateLimitDecision> {
-  const clientKey = clientKeyFromRequest(req)
+/**
+ * Stable pseudonymous key for an authenticated subject (e.g. a user id), used instead of the IP so a
+ * signed-in user is limited per account whatever address they come from. The raw id is never stored.
+ */
+export function clientKeyForSubject(subject: string): string {
+  return createHmac("sha256", subKey()).update("subject:" + subject).digest("hex").slice(0, 32)
+}
+
+/**
+ * `opts.subject`: limit per authenticated subject (account) instead of per client IP. Everything else
+ * (record-then-count, global ceiling, fail-open-to-per-instance on store errors) is unchanged.
+ */
+export async function checkRateLimit(
+  req: Request,
+  policy: RateLimitPolicy,
+  opts: { subject?: string } = {},
+): Promise<RateLimitDecision> {
+  const clientKey = opts.subject ? clientKeyForSubject(opts.subject) : clientKeyFromRequest(req)
 
   // In-instance pre-gate. It only sees a subset of this client's traffic, so it can never
   // deny a client the shared store would allow; it just spares the DB from repeat offenders

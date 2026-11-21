@@ -215,6 +215,62 @@ async function main() {
       assert.ok(!(r.warning ?? "").includes(MARKER))
     }
   })
+  // ── Pre-scan evasion: the scan is best-effort (NOT a complete PDF security boundary). The worker's
+  // allocation guard is what must stop a bomb however its filter is spelled. A bomb must NEVER parse OK.
+  const BOMB_BYTES = 40 * 1024 * 1024 // > 32 MB of output forces a >48 MB inflate buffer
+  const bombDeflate = zlib.deflateSync(Buffer.alloc(BOMB_BYTES), { level: 9 })
+  /** One-page PDF whose content stream is `stream`, with `dictExtra` in the stream dictionary and `extraObjs` appended. */
+  function streamPdf(dictExtra: string, stream: Buffer, extraObjs: string[] = []): Buffer {
+    const objs: Buffer[] = [
+      Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
+      Buffer.from("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+      Buffer.from("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << >> >>"),
+      Buffer.concat([Buffer.from(`<< /Length ${stream.length} ${dictExtra} >>\nstream\n`, "latin1"), stream, Buffer.from("\nendstream")]),
+      ...extraObjs.map(o => Buffer.from(o, "latin1")),
+    ]
+    let out = Buffer.from("%PDF-1.4\n")
+    const offs: number[] = []
+    objs.forEach((o, i) => { offs.push(out.length); out = Buffer.concat([out, Buffer.from(`${i + 1} 0 obj\n`), o, Buffer.from("\nendobj\n")]) })
+    const xref = out.length
+    const table = ["0000000000 65535 f ", ...offs.map(o => `${String(o).padStart(10, "0")} 00000 n `)].map(l => l + "\n").join("")
+    return Buffer.concat([out, Buffer.from(`xref\n0 ${objs.length + 1}\n${table}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`)])
+  }
+  const adler = Buffer.alloc(4)
+  const evasions: [string, Buffer][] = [
+    ["plain /FlateDecode (caught by the pre-scan)", streamPdf("/Filter /FlateDecode", bombDeflate)],
+    ["escaped filter name /Flat#65Decode", streamPdf("/Filter /Flat#65Decode", bombDeflate)],
+    ["indirect filter reference /Filter 5 0 R", streamPdf("/Filter 5 0 R", bombDeflate, ["/FlateDecode"])],
+    ["filter array [/ASCIIHexDecode /FlateDecode]", streamPdf("/Filter [/ASCIIHexDecode /FlateDecode]", Buffer.from(bombDeflate.toString("hex") + ">"))],
+    ["filter array with #-escaped name [/ASCIIHexDecode /Flat#65Decode]", streamPdf("/Filter [/ASCIIHexDecode /Flat#65Decode]", Buffer.from(bombDeflate.toString("hex") + ">"))],
+    ["literal 'endstream' bytes planted inside the data (truncates the scan's view)", (() => {
+      const stored = Buffer.concat([Buffer.from([0x00, 9, 0, 0xf6, 0xff]), Buffer.from("endstream")]) // non-final stored block
+      const raw = zlib.deflateRawSync(Buffer.alloc(BOMB_BYTES), { level: 9 })
+      return streamPdf("/Filter /FlateDecode", Buffer.concat([Buffer.from([0x78, 0x9c]), stored, raw, adler]))
+    })()],
+  ]
+  for (const [name, pdf] of evasions) {
+    await test(`BOMB never parses OK: ${name}`, async () => {
+      const t0 = Date.now()
+      const r = await parsePdfIsolated(new Uint8Array(pdf))
+      assert.equal(r.ok, false, "a decompression bomb must never return a successful parse")
+      assert.ok(Date.now() - t0 < 6000, "and must fail promptly")
+      // The generic entry point returns no text and no machine code for it either.
+      const g = await extractResumeText(pdf, "pdf")
+      assert.equal(g.text, "")
+      assert.ok(g.warning)
+    })
+  }
+  await test("the allocation guard (not only the pre-scan) is what stops evasions: reason is too-large", async () => {
+    for (const [name, pdf] of evasions.slice(2, 4)) {
+      const r = await parsePdfIsolated(new Uint8Array(pdf))
+      assert.deepEqual(r, { ok: false, reason: "too-large" }, name)
+    }
+  })
+  await test("allocation guard keeps legitimate PDFs working (text, multi-page, many objects)", async () => {
+    const r = await parsePdfIsolated(new Uint8Array(buildPdf(5)))
+    assert.ok(r.ok && r.text.includes(MARKER))
+  })
+
   await test("host memory did not balloon across all hostile cases", async () => {
     await sleep(500)
     if (global.gc) global.gc()
