@@ -107,11 +107,14 @@ export interface LandingJobBlocks {
   trending: LandingJobCard[]
 }
 
+/** Landing pages are ISR/static: read with the cookie-less client so they never call cookies(). */
+const PUBLIC_READ = { cookieless: true } as const
+
 /** Fetch the latest + trending job cards that back a landing page. */
 export async function fetchLandingJobs(cfg: Landing): Promise<LandingJobBlocks> {
   try {
     if (cfg.kind === "city") {
-      const r = await getJobs({ location: cfg.locationQuery, limit: 18, sort: "latest" })
+      const r = await getJobs({ location: cfg.locationQuery, limit: 18, sort: "latest" }, PUBLIC_READ)
       const cards = r.jobs.map(privateCard)
       return { latest: cards.slice(0, 8), trending: cards.slice(8, 16) }
     }
@@ -124,17 +127,17 @@ export async function fetchLandingJobs(cfg: Landing): Promise<LandingJobBlocks> 
       }
       case "private": {
         const [latest, trending] = await Promise.all([
-          getJobs({ limit: 8, sort: "latest" }),
-          getJobs({ limit: 8, sort: "salary_high" }),
+          getJobs({ limit: 8, sort: "latest" }, PUBLIC_READ),
+          getJobs({ limit: 8, sort: "salary_high" }, PUBLIC_READ),
         ])
         return { latest: latest.jobs.map(privateCard), trending: trending.jobs.map(privateCard) }
       }
       case "fresher": {
-        const r = await getJobs({ exp: "fresher", limit: 18, sort: "latest" })
+        const r = await getJobs({ exp: "fresher", limit: 18, sort: "latest" }, PUBLIC_READ)
         const cards = r.jobs.map(privateCard)
         if (cards.length >= 4) return { latest: cards.slice(0, 8), trending: cards.slice(8, 16) }
         // Fallback: not enough fresher-tagged rows — show entry-level latest.
-        const all = (await getJobs({ limit: 16, sort: "latest" })).jobs.map(privateCard)
+        const all = (await getJobs({ limit: 16, sort: "latest" }, PUBLIC_READ)).jobs.map(privateCard)
         return { latest: cards.length ? cards : all.slice(0, 8), trending: all.slice(8, 16) }
       }
       case "wfh": {

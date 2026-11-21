@@ -49,6 +49,7 @@
                       "test:admin-candidates": "tsx src/lib/admin/candidateIntelligence.test.ts",
                       "test:egress": "tsx src/lib/config/govtCache.test.ts",
                       "test:jobservice-timeout": "tsx src/lib/services/jobService.test.ts",
+                      "test:jobservice-audit": "tsx src/lib/services/jobServiceAuditFixes.test.ts",
                       "test:snapshot-admin-client": "tsx src/lib/services/snapshotAdminClient.test.ts",
                       "test:ingest-status": "tsx src/lib/services/govtAutoUpdate.test.ts",
                       "test:govt-nav-stats": "tsx src/lib/services/govtNavStats.test.ts",

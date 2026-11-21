@@ -20,9 +20,29 @@ import type { Job, JobFilter, JobSearchResult } from "@/types/job"
  */
 export const MAX_POOL_ROWS = 1000
 
-async function getSupabaseClient() {
+/**
+ * `cookieless: true` reads with the anonymous, cookie-less client. Use it for public,
+ * user-independent reads on ISR/static pages: the cookie-based client calls `cookies()`,
+ * which makes Next.js throw "Page changed from static to dynamic at runtime" on those pages.
+ * RLS still applies exactly as it does for a signed-out visitor.
+ */
+export interface JobReadOptions {
+  cookieless?: boolean
+}
+
+async function getSupabaseClient(opts: JobReadOptions = {}) {
+  if (opts.cookieless) {
+    const { createPublicClient } = await import("@/lib/supabase/public")
+    return createPublicClient()
+  }
   const { createClient } = await import("@/lib/supabase/server")
   return createClient()
+}
+
+/** `jobs.id` is a Postgres uuid; any other id shape can never match a row and makes PostgREST return a 22P02 error. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export function isUuid(id: string): boolean {
+  return UUID_RE.test(id)
 }
 
 export class QueryTimeoutError extends Error {
@@ -50,7 +70,7 @@ function logQueryFallback(scope: string, err: unknown): void {
   }
 }
 
-export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> {
+export async function getJobs(filter: JobFilter = {}, opts: JobReadOptions = {}): Promise<JobSearchResult> {
   const page = filter.page ?? 1
   const limit = filter.limit ?? 20
   const { q, category, location, exp, type: jType, sort = "latest" } = filter
@@ -85,7 +105,7 @@ export async function getJobs(filter: JobFilter = {}): Promise<JobSearchResult> 
   }
 
   try {
-    const sb = await getSupabaseClient()
+    const sb = await getSupabaseClient(opts)
     if (!sb) return isProductionEnvironment() ? { jobs: liveExternal, total: liveExternal.length, page, totalPages: Math.ceil(liveExternal.length / limit), counts: countByStatus(liveExternal) } : localResult()
 
     let query = sb.from("jobs").select("*").eq("status", "active")
@@ -253,6 +273,9 @@ export async function getJobById(id: string): Promise<Job | null> {
     if (isProductionEnvironment()) return await getLivePrivateJobById(id)
     return (await getLivePrivateJobById(id)) || local
   }
+  // Non-uuid ids (e.g. "live-priv-24", "ver-priv-1472", "priv-1") can never match a `jobs` row; querying
+  // them only produces a Postgres 22P02 error per request. Resolve them from the live/local sources.
+  if (!isUuid(id)) return (await getLivePrivateJobById(id)) || local
   try {
     const sb = await getSupabaseClient()
     if (!sb) return isProductionEnvironment() ? await getLivePrivateJobById(id) : (await getLivePrivateJobById(id)) || local
